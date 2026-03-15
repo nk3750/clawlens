@@ -5,7 +5,9 @@ Status: decided
 
 ## Context
 
-OpenClaw uses JSON5 for its own configuration files (`config.json5`). ClawClip needs a format for user-defined policy files. Options considered:
+OpenClaw uses **JSON5** for its configuration (`~/.openclaw/openclaw.json`). This is confirmed from the source code — the config is loaded as JSON5, and all 20+ modular config type files in `src/config/` define JSON-compatible structures.
+
+ClawClip needs a format for user-defined policy files. Options considered:
 
 1. **JSON5** — match OpenClaw's convention
 2. **YAML** — widely used for config/policy files
@@ -14,7 +16,7 @@ OpenClaw uses JSON5 for its own configuration files (`config.json5`). ClawClip n
 
 ## Decision
 
-Use **YAML** for ClawClip policy files.
+Use **YAML** for ClawClip policy files. This is a **conscious divergence** from OpenClaw's JSON5 convention.
 
 ## Rationale
 
@@ -29,8 +31,10 @@ Use **YAML** for ClawClip policy files.
 ### Why not match OpenClaw's JSON5
 
 - ClawClip policies are **user-facing** — they need to be as readable as possible.
-- OpenClaw's JSON5 is **developer-facing** config — different audience.
+- OpenClaw's JSON5 is **developer/operator-facing** config — different audience. The config defines gateway ports, auth modes, plugin entries, TLS settings — technical details that developers are comfortable with in JSON5.
+- ClawClip policies are **rule lists with match conditions** — YAML's list syntax and indentation are more natural for this structure than JSON5's arrays and braces.
 - Users won't be editing both files in the same session — context-switching cost is low.
+- OpenClaw's own plugin config (in `openclaw.plugin.json`) uses JSON for manifests, but plugin-specific user config is whatever the plugin chooses. We choose YAML for policies.
 - We can always add JSON5 support later if users request it.
 
 ### Why not TOML
@@ -47,7 +51,7 @@ Use **YAML** for ClawClip policy files.
 
 ## Tradeoff
 
-Users who configure both OpenClaw (JSON5) and ClawClip (YAML) in the same session may notice the format difference. This is a minor UX friction we accept in exchange for a better policy authoring experience.
+Users who configure both OpenClaw (`~/.openclaw/openclaw.json`, JSON5) and ClawClip policies (YAML) may notice the format difference. This is a minor UX friction we accept in exchange for a better policy authoring experience.
 
 ## Example
 
@@ -56,7 +60,7 @@ Users who configure both OpenClaw (JSON5) and ClawClip (YAML) in the same sessio
 rules:
   - name: "Approve external emails"
     match:
-      skill: "email-send"
+      tool: "message"     # OpenClaw tool name (confirmed from tool-catalog.ts)
       parameters:
         to: "!*@mycompany.com"  # NOT internal
     action: approval_required
@@ -72,7 +76,7 @@ vs. JSON5 equivalent:
     {
       name: "Approve external emails",
       match: {
-        skill: "email-send",
+        tool: "message",
         parameters: { to: "!*@mycompany.com" }
       },
       action: "approval_required",
