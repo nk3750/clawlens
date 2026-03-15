@@ -1,55 +1,56 @@
 # ClawClip System Overview
 
+> **Confidence key:** Items marked **(confirmed)** are things we control or know to be true. Items marked **(assumed — needs verification)** depend on OpenClaw internals we haven't confirmed yet.
+
 ## Component Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    OpenClaw Daemon                           │
 │                                                             │
-│  ┌─────────┐    ┌──────────────────────────────────────┐   │
-│  │  PRISM   │    │          ClawClip Skill               │   │
-│  │ (pri: 0) │    │          (pri: 10)                    │   │
-│  │          │    │                                      │   │
-│  │ Perms ✓  │    │  ┌────────────────────────────────┐  │   │
-│  │ Threats ✓│    │  │     Hook Interceptors          │  │   │
-│  │ Sandbox ✓│    │  │  pre_plan │ pre_execute        │  │   │
-│  │          │    │  │  post_execute │ on_error        │  │   │
-│  └─────┬────┘    │  │  on_approval_timeout           │  │   │
-│        │         │  └──────────┬─────────────────────┘  │   │
-│        │         │             │                         │   │
-│        │         │  ┌──────────▼─────────────────────┐  │   │
-│        │         │  │      Policy Engine              │  │   │
-│        │         │  │                                │  │   │
-│        │         │  │  YAML policies → evaluate      │  │   │
-│        │         │  │  action against rules           │  │   │
-│        │         │  │  → allow / block / escalate     │  │   │
-│        │         │  └──────────┬─────────────────────┘  │   │
-│        │         │             │                         │   │
-│        │         │  ┌──────────▼─────────────────────┐  │   │
-│        │         │  │    Approval Manager             │  │   │
-│        │         │  │                                │  │   │
-│        │         │  │  Send prompt → wait for user   │  │   │
-│        │         │  │  response → approve/deny       │  │   │
-│        │         │  │  Timeout → default deny        │  │   │
-│        │         │  └──────────┬─────────────────────┘  │   │
-│        │         │             │                         │   │
-│        │         │  ┌──────────▼─────────────────────┐  │   │
-│        │         │  │      Audit Logger               │  │   │
-│        │         │  │                                │  │   │
-│        │         │  │  Log every decision + context   │  │   │
-│        │         │  │  Structured JSON log            │  │   │
-│        │         │  └──────────┬─────────────────────┘  │   │
-│        │         │             │                         │   │
-│        │         │  ┌──────────▼─────────────────────┐  │   │
-│        │         │  │    Digest Generator             │  │   │
-│        │         │  │                                │  │   │
-│        │         │  │  Daily/weekly summary of        │  │   │
-│        │         │  │  agent activity for user        │  │   │
-│        │         │  └────────────────────────────────┘  │   │
-│        │         │                                      │   │
-│        │         └──────────────────────────────────────┘   │
-│        │                                                     │
-│        ▼                                                     │
+│  ┌─────────────┐  ┌──────────────────────────────────────┐  │
+│  │  OpenClaw    │  │          ClawClip Skill               │  │
+│  │  built-in    │  │          (plugin)                     │  │
+│  │  security    │  │                                      │  │
+│  │  (details    │  │  ┌────────────────────────────────┐  │  │
+│  │   TBD)       │  │  │     Hook Interceptors          │  │  │
+│  │             │  │  │  (hooks we register — see       │  │  │
+│  │             │  │  │   note on assumed hooks below)  │  │  │
+│  └──────┬──────┘  │  └──────────┬─────────────────────┘  │  │
+│         │         │             │                         │  │
+│         │         │  ┌──────────▼─────────────────────┐  │  │
+│         │         │  │      Policy Engine              │  │  │
+│         │         │  │                                │  │  │
+│         │         │  │  YAML policies → evaluate      │  │  │
+│         │         │  │  action against rules           │  │  │
+│         │         │  │  → allow / block / escalate     │  │  │
+│         │         │  └──────────┬─────────────────────┘  │  │
+│         │         │             │                         │  │
+│         │         │  ┌──────────▼─────────────────────┐  │  │
+│         │         │  │    Approval Manager             │  │  │
+│         │         │  │                                │  │  │
+│         │         │  │  Send prompt → wait for user   │  │  │
+│         │         │  │  response → approve/deny       │  │  │
+│         │         │  │  Timeout → default deny        │  │  │
+│         │         │  └──────────┬─────────────────────┘  │  │
+│         │         │             │                         │  │
+│         │         │  ┌──────────▼─────────────────────┐  │  │
+│         │         │  │      Audit Logger               │  │  │
+│         │         │  │                                │  │  │
+│         │         │  │  Log every decision + context   │  │  │
+│         │         │  │  Structured JSON log            │  │  │
+│         │         │  └──────────┬─────────────────────┘  │  │
+│         │         │             │                         │  │
+│         │         │  ┌──────────▼─────────────────────┐  │  │
+│         │         │  │    Digest Generator             │  │  │
+│         │         │  │                                │  │  │
+│         │         │  │  Daily/weekly summary of        │  │  │
+│         │         │  │  agent activity for user        │  │  │
+│         │         │  └────────────────────────────────┘  │  │
+│         │         │                                      │  │
+│         │         └──────────────────────────────────────┘  │
+│         │                                                    │
+│         ▼                                                    │
 │  ┌──────────┐                                               │
 │  │  Skill   │                                               │
 │  │ Runtime  │  ← action executes (or is blocked)            │
@@ -63,27 +64,27 @@
 
 The entry points where ClawClip receives control from OpenClaw's lifecycle system.
 
-**Responsibilities:**
+**Responsibilities:** (confirmed — this is our design)
 - Register for relevant lifecycle hooks at startup
-- Extract action metadata from `SkillContext`
+- Extract action metadata from the hook context
 - Pass structured action data to the Policy Engine
-- Return `HookResult` to the runtime (allow/block/approve_required)
+- Return a result to the runtime (allow/block/approve_required)
 
-**Hooks registered (v0.1):**
+**Hooks we want to register:** (assumed — depends on what OpenClaw actually exposes)
 
 | Hook | Purpose |
 |------|---------|
-| `pre_plan` | Inject policy constraints into planning context |
-| `pre_execute` | Core enforcement — evaluate policy before each action |
-| `post_execute` | Audit logging after successful actions |
-| `on_error` | Log errors, detect failure loops |
-| `on_approval_timeout` | Block action when user doesn't respond |
+| Pre-plan | Inject policy constraints into planning context |
+| Pre-execute | Core enforcement — evaluate policy before each action |
+| Post-execute | Audit logging after successful actions |
+| On-error | Log errors, detect failure loops |
+| On-timeout | Block action when user doesn't respond |
 
-See [[clawclip-hook-strategy]] for detailed hook strategy.
+The actual hook names, signatures, and registration mechanism depend on what OpenClaw's plugin SDK provides. See [[clawclip-hook-strategy]] for our desired hook strategy and fallback plans.
 
 ### 2. Policy Engine
 
-Evaluates actions against user-defined rules.
+Evaluates actions against user-defined rules. **(confirmed — entirely our design)**
 
 **Responsibilities:**
 - Load and parse YAML policy files
@@ -101,7 +102,7 @@ See [[policy-engine]] for full specification.
 
 ### 3. Approval Manager
 
-Handles human-in-the-loop approval flows.
+Handles human-in-the-loop approval flows. **(confirmed — entirely our design)**
 
 **Responsibilities:**
 - Send approval prompts to the user's active channel (WhatsApp, web chat, etc.)
@@ -112,7 +113,7 @@ Handles human-in-the-loop approval flows.
 
 **Approval prompt example:**
 ```
-🔒 ClawClip: Approval needed
+ClawClip: Approval needed
 
 The agent wants to:
   Send an email to boss@company.com
@@ -125,11 +126,11 @@ Reply YES to approve or NO to deny.
 
 ### 4. Audit Logger
 
-Records every action and decision for accountability.
+Records every action and decision for accountability. **(confirmed — entirely our design)**
 
 **Responsibilities:**
-- Log every `pre_execute` decision (allow/block/escalate) with full context
-- Log every `post_execute` result (success/failure)
+- Log every pre-execute decision (allow/block/escalate) with full context
+- Log every post-execute result (success/failure)
 - Structured JSON format for parseability
 - Local file storage (v0.1), with export capability
 
@@ -151,7 +152,7 @@ Records every action and decision for accountability.
 
 ### 5. Digest Generator
 
-Creates human-readable summaries of agent activity.
+Creates human-readable summaries of agent activity. **(confirmed — entirely our design)**
 
 **Responsibilities:**
 - Aggregate audit log entries over a time window
@@ -161,17 +162,17 @@ Creates human-readable summaries of agent activity.
 
 **Digest example:**
 ```
-📋 ClawClip Daily Digest — March 15, 2026
+ClawClip Daily Digest — March 15, 2026
 
 Your agent performed 23 actions today:
-  ✅ 18 auto-approved (file reads, calendar checks)
-  🔒 3 required your approval (2 emails, 1 file delete)
-  ❌ 2 blocked by policy (shell commands)
+  - 18 auto-approved (file reads, calendar checks)
+  - 3 required your approval (2 emails, 1 file delete)
+  - 2 blocked by policy (shell commands)
 
 Notable:
-  • Sent 2 emails (both approved by you)
-  • Tried to run `rm -rf ~/Downloads/old` — blocked by filesystem policy
-  • Read 14 files in ~/Projects/webapp
+  - Sent 2 emails (both approved by you)
+  - Tried to run `rm -rf ~/Downloads/old` — blocked by filesystem policy
+  - Read 14 files in ~/Projects/webapp
 ```
 
 **v0.1:** Basic digest via audit log aggregation. v0.2: LLM-generated natural language summaries.
@@ -180,27 +181,31 @@ Notable:
 
 ```
 1. Agent plans action (e.g., "send email")
-2. OpenClaw triggers pre_execute hook
-3. PRISM evaluates (priority 0) → ALLOW
-4. ClawClip evaluates (priority 10):
+2. OpenClaw triggers pre-execute hook (assumed — hook name/mechanism TBD)
+3. OpenClaw's built-in security evaluates (details TBD — see note below)
+4. ClawClip evaluates:
    a. Hook Interceptor extracts action metadata
    b. Policy Engine matches against rules
    c. Decision:
-      - ALLOW → return { action: 'allow' } → skill executes
-      - BLOCK → return { action: 'block', reason: '...' } → skill denied
+      - ALLOW → skill executes
+      - BLOCK → skill denied, reason provided
       - APPROVAL_REQUIRED → Approval Manager sends prompt
-        → User responds YES → return { action: 'allow' }
-        → User responds NO → return { action: 'block' }
-        → Timeout → return { action: 'block' }
-5. post_execute hook fires → Audit Logger records result
+        → User responds YES → allow
+        → User responds NO → block
+        → Timeout → block
+5. Post-execute hook fires → Audit Logger records result
 6. End of day → Digest Generator summarizes activity
 ```
 
+> **Open question:** We assume OpenClaw has a built-in security layer that runs before plugins. We need to verify what it covers, how it interacts with plugin decisions, and whether there's a priority/ordering system for hooks. See [[openclaw-security]].
+
 ## File Structure (within ClawClip skill)
+
+**(confirmed — this is our design, though file names may change based on SDK conventions)**
 
 ```
 clawclip/
-├── manifest.yaml           # OpenClaw skill manifest
+├── manifest.yaml           # OpenClaw skill manifest (format assumed)
 ├── src/
 │   ├── index.ts            # Entry point, hook registration
 │   ├── hooks/
@@ -233,8 +238,8 @@ clawclip/
 
 ## See Also
 
-- [[clawclip-hook-strategy]] — detailed hook registration plan
+- [[clawclip-hook-strategy]] — desired hook registration plan
 - [[policy-engine]] — YAML policy schema and examples
 - [[openclaw-plugin-system]] — OpenClaw SDK we build on
-- [[openclaw-security-prism]] — PRISM layer that runs before us
+- [[openclaw-security]] — OpenClaw's built-in security (details TBD)
 - [[product/mvp-scope]] — what's in v0.1 vs later
