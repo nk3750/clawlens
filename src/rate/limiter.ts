@@ -4,13 +4,16 @@ import * as path from "node:path";
 export class RateLimiter {
   private counters: Map<string, number[]> = new Map();
   private statePath: string;
+  private restored = false;
 
   constructor(statePath: string) {
     this.statePath = statePath;
   }
 
-  /** Restore rate limit state from disk. */
+  /** Restore rate limit state from disk (idempotent). */
   restore(): void {
+    if (this.restored) return;
+    this.restored = true;
     try {
       if (fs.existsSync(this.statePath)) {
         const data = JSON.parse(fs.readFileSync(this.statePath, "utf-8"));
@@ -37,6 +40,7 @@ export class RateLimiter {
 
   /** Record a tool call for rate limiting. */
   record(toolName: string, ruleName?: string): void {
+    this.restore();
     const key = ruleName ? `${toolName}:${ruleName}` : toolName;
     const timestamps = this.counters.get(key) || [];
     timestamps.push(Date.now());
@@ -45,6 +49,7 @@ export class RateLimiter {
 
   /** Get the count of actions within a sliding window. */
   getCount(toolName: string, ruleName: string, windowSec: number): number {
+    this.restore();
     const key = `${toolName}:${ruleName}`;
     const timestamps = this.counters.get(key);
     if (!timestamps) return 0;

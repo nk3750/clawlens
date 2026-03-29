@@ -67,7 +67,33 @@ export class AuditLogger {
       .digest("hex");
   }
 
+  /** Ensure write stream is open. Called lazily on first write. */
+  private ensureStream(): void {
+    if (!this.writeStream) {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      // Recover last hash from existing file
+      if (this.lastHash === "0" && fs.existsSync(this.filePath)) {
+        const content = fs.readFileSync(this.filePath, "utf-8").trim();
+        if (content) {
+          const lines = content.split("\n");
+          try {
+            const lastEntry = JSON.parse(lines[lines.length - 1]) as AuditEntry;
+            this.lastHash = lastEntry.hash;
+          } catch {
+            // ignore
+          }
+        }
+      }
+      this.writeStream = fs.createWriteStream(this.filePath, { flags: "a" });
+    }
+  }
+
   private append(data: Omit<AuditEntry, "prevHash" | "hash">): void {
+    this.ensureStream();
+
     const entryWithPrev: Omit<AuditEntry, "hash"> = {
       ...data,
       prevHash: this.lastHash,
@@ -76,10 +102,7 @@ export class AuditLogger {
     const entry: AuditEntry = { ...entryWithPrev, hash };
 
     this.lastHash = hash;
-
-    if (this.writeStream) {
-      this.writeStream.write(JSON.stringify(entry) + "\n");
-    }
+    this.writeStream!.write(JSON.stringify(entry) + "\n");
   }
 
   /** Log a policy decision (from before_tool_call). */
