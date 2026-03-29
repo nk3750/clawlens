@@ -1,0 +1,101 @@
+// OpenClaw plugin SDK types (provided at runtime by OpenClaw)
+
+export interface PluginLogger {
+  info(...args: unknown[]): void;
+  warn(...args: unknown[]): void;
+  error(...args: unknown[]): void;
+}
+
+export interface OpenClawPluginApi {
+  id: string;
+  name: string;
+  config: Record<string, unknown>;
+  pluginConfig?: Record<string, unknown>;
+  logger: PluginLogger;
+  on(
+    hookName: string,
+    handler: (...args: unknown[]) => unknown,
+    opts?: { priority?: number },
+  ): void;
+  registerGatewayMethod(
+    method: string,
+    handler: (...args: unknown[]) => unknown,
+  ): void;
+  registerService(service: {
+    id: string;
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+  }): void;
+  registerCli(
+    registrar: (cli: CliRegistrar) => void,
+    opts?: Record<string, unknown>,
+  ): void;
+  registerHttpRoute(params: Record<string, unknown>): void;
+  resolvePath(input: string): string;
+}
+
+export interface CliRegistrar {
+  command(name: string): CliCommand;
+}
+
+export interface CliCommand {
+  description(desc: string): CliCommand;
+  option(flags: string, desc: string, defaultValue?: string): CliCommand;
+  action(fn: (...args: unknown[]) => void | Promise<void>): CliCommand;
+}
+
+export interface OpenClawPluginDefinition {
+  id?: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  register?: (api: OpenClawPluginApi) => void | Promise<void>;
+}
+
+export interface BeforeToolCallEvent {
+  toolName: string;
+  params: Record<string, unknown>;
+  runId?: string;
+  toolCallId?: string;
+}
+
+export interface BeforeToolCallResult {
+  params?: Record<string, unknown>;
+  block?: boolean;
+  blockReason?: string;
+  requireApproval?: {
+    title: string;
+    description: string;
+    severity?: "info" | "warning" | "critical";
+    timeoutMs?: number;
+    timeoutBehavior?: "allow" | "deny";
+    pluginId?: string;
+    onResolution?: (decision: {
+      approved: boolean;
+      resolvedBy?: string;
+    }) => Promise<void> | void;
+  };
+}
+
+export interface AfterToolCallEvent {
+  toolName: string;
+  params: Record<string, unknown>;
+  result: unknown;
+  runId?: string;
+  toolCallId?: string;
+}
+
+export interface SessionEvent {
+  sessionKey: string;
+}
+
+export interface BeforePromptBuildEvent {
+  agentId: string;
+  sessionKey: string;
+}
+
+export interface BeforePromptBuildResult {
+  systemPrompt?: string;
+  prependContext?: string;
+  appendSystemContext?: string;
+}
