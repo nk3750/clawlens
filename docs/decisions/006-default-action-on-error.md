@@ -1,7 +1,7 @@
 # Default ClawClip behavior on error
 
 Date: 2026-03-16
-Status: open
+Status: **decided** (2026-03-29)
 
 ## Context
 
@@ -21,37 +21,43 @@ This plugin behavior shapes the trust contract ClawClip makes with its users.
 
 ## Decision
 
-Not yet decided. Options below.
+**A + C + D combined:** Fail closed by default, with last-known-good fallback for policy errors, and per-rule timeout configuration.
 
-## Options
+### Scenario A — Policy engine failure
+- **Fail closed** (block the tool call) and surface error to user
+- **Plus fallback**: If a policy file fails to parse on hot-reload, revert to the last successfully loaded policy. Log the parse error loudly. The agent keeps running under the previous good policy — not without any policy.
+- This means a typo in YAML doesn't brick the agent, but a first-time load failure does block (there's no "last known good" to fall back to). This is the right tradeoff — if your first policy is broken, you should fix it before the agent runs.
 
-**A — Fail closed (block)**
-When uncertain, block the tool call and surface an error to the user.
-- Pro: Safest default — guardrails never silently bypass themselves
-- Con: A policy typo or slow response halts legitimate agent work
+### Scenario B — Approval timeout
+- **Global default: deny** (block the tool call on timeout)
+- **Configurable per rule** via `timeout_action: allow | deny`
+- Low-risk rules can use `timeout_action: allow` for a "heads-up" notification pattern — the user is informed but the action proceeds if they don't respond. Example: approving a `web_search` where blocking would be annoying but the user still wants to know.
+- High-risk rules keep `timeout_action: deny`. Example: `exec`, `message`, `write` to critical paths.
 
-**B — Fail open (allow)**
-When uncertain, allow the tool call and log the error loudly.
-- Pro: Agent keeps running; visibility through logs
-- Con: Silently bypasses the guardrail on any error — defeats the purpose
+### Why this combination
 
-**C — Fallback to last known-good policy**
-On parse failure, revert to the most recently loaded valid policy state.
-- Pro: Handles typos gracefully without blocking
-- Con: Requires policy versioning; doesn't address approval timeout
+The product's trust contract is: **ClawClip never silently lets something dangerous through.** Fail-closed is the only default consistent with that promise. But we add escape hatches that are explicit and auditable:
+- Last-known-good prevents a policy typo from halting all agent work
+- Per-rule timeout behavior lets power users reduce approval fatigue for low-risk actions
+- Everything is logged — there's never a silent bypass
 
-**D — Configurable per rule**
-Each policy rule declares its own fallback: `on_error: block` or `on_error: allow`.
-- Pro: Maximum flexibility; power users can tune per-tool risk tolerance
-- Con: Adds schema complexity before v0.1 ships; creates inconsistent user experience
+### Schema addition (Phase 2)
 
-## Tradeoff
+Per-rule timeout config:
+```yaml
+- name: "Approve web searches"
+  match:
+    tool: web_search
+  action: approval_required
+  timeout: 120
+  timeout_action: allow    # heads-up pattern: allow if no response
+```
 
-Options A and B are the clearest expression of the product's stance on safety vs.
-usability. C and D are more nuanced but carry implementation cost. 
+For Phase 1, all timeouts use the global default (`deny`). Per-rule override ships in Phase 2.
 
 ## See Also
 
 - [[architecture/clawclip-hook-strategy]] — before_tool_call hook execution model
 - [[architecture/policy-engine]] — policy evaluation algorithm and rate limit tracking
 - [[product/mvp-scope]] — human-in-the-loop approval as P0 feature
+- [[product/spec]] — phased spec with timeout behavior details
