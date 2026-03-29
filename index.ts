@@ -29,6 +29,16 @@ const plugin: OpenClawPluginDefinition = {
     const auditLogger = new AuditLogger(config.auditLogPath);
     const rateLimiter = new RateLimiter(config.rateStatePath);
 
+    // Load policy eagerly so hooks work even if service.start() hasn't run yet
+    // (OpenClaw may call register() per-session but service.start() only once)
+    try {
+      loader.load();
+    } catch (err) {
+      api.logger.warn(
+        `ClawClip: Failed to load policy during register: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     // Wire hooks
     api.on(
       "before_tool_call",
@@ -63,7 +73,9 @@ const plugin: OpenClawPluginDefinition = {
     api.registerService({
       id: "clawclip",
       start: async () => {
-        loader.load();
+        if (!engine.getPolicy()) {
+          loader.load();
+        }
         await auditLogger.init();
         rateLimiter.restore();
         loader.startWatching();
