@@ -2,5 +2,33 @@
   "id": "clawclip",
   "name": "ClawClip",
   "description": "Agent governance — policy enforcement, approval flows, and audit trails for OpenClaw",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "policiesPath": {
+        "type": "string",
+        "description": "Path to YAML policy file"
+      },
+      "auditLogPath": {
+        "type": "string",
+        "description": "Path to JSONL audit log"
+      },
+      "rateStatePath": {
+        "type": "string",
+        "description": "Path to rate limiter state file"
+      },
+      "retention": {
+        "type": "string",
+        "description": "Audit log retention (e.g. 7d, 30d, 90d)"
+      },
+      "digest": {
+        "type": "object",
+        "properties": {
+          "schedule": { "type": "string" },
+          "channel": { "type": "string" }
+        }
+      }
+    }
+  }
 }
