@@ -12,11 +12,8 @@ export interface OpenClawPluginApi {
   config: Record<string, unknown>;
   pluginConfig?: Record<string, unknown>;
   logger: PluginLogger;
-  on(
-    hookName: string,
-    handler: (...args: unknown[]) => unknown,
-    opts?: { priority?: number },
-  ): void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(hookName: string, handler: (...args: any[]) => any, opts?: { priority?: number }): void;
   registerGatewayMethod(
     method: string,
     handler: (...args: unknown[]) => unknown,
@@ -41,7 +38,8 @@ export interface CliRegistrar {
 export interface CliCommand {
   description(desc: string): CliCommand;
   option(flags: string, desc: string, defaultValue?: string): CliCommand;
-  action(fn: (...args: unknown[]) => void | Promise<void>): CliCommand;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  action(fn: (...args: any[]) => void | Promise<void>): CliCommand;
 }
 
 export interface OpenClawPluginDefinition {
