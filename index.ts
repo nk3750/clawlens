@@ -12,6 +12,7 @@ import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { createBeforePromptBuildHandler } from "./src/hooks/before-prompt-build";
 import { createSessionStartHandler } from "./src/hooks/session-start";
 import { createSessionEndHandler } from "./src/hooks/session-end";
+import { registerDashboardRoutes } from "./src/dashboard/routes";
 
 const plugin: OpenClawPluginDefinition = {
   id: "clawclip",
@@ -197,6 +198,9 @@ const plugin: OpenClawPluginDefinition = {
           }
         });
     });
+
+    // Dashboard
+    registerDashboardRoutes(api, { engine, auditLogger });
 
     api.logger.info("ClawClip: Plugin registered");
   },
