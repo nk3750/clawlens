@@ -1,5 +1,23 @@
 // OpenClaw plugin SDK types (provided at runtime by OpenClaw)
 
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+export type HttpRouteAuth = "gateway" | "plugin";
+export type HttpRouteMatch = "exact" | "prefix";
+
+export type HttpRouteHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+) => Promise<boolean | void> | boolean | void;
+
+export interface HttpRouteParams {
+  path: string;
+  handler: HttpRouteHandler;
+  auth: HttpRouteAuth;
+  match?: HttpRouteMatch;
+  replaceExisting?: boolean;
+}
+
 export interface PluginLogger {
   info(...args: unknown[]): void;
   warn(...args: unknown[]): void;
@@ -27,7 +45,7 @@ export interface OpenClawPluginApi {
     registrar: (cli: CliRegistrar) => void,
     opts?: Record<string, unknown>,
   ): void;
-  registerHttpRoute(params: Record<string, unknown>): void;
+  registerHttpRoute(params: HttpRouteParams): void;
   resolvePath(input: string): string;
 }
 
