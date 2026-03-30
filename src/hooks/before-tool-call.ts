@@ -57,8 +57,8 @@ export function createBeforeToolCallHandler(
                 auditLogger.logApprovalResolution({
                   toolCallId,
                   toolName,
-                  approved: resolution.approved,
-                  resolvedBy: resolution.resolvedBy,
+                  approved: resolution === "allow-once" || resolution === "allow-always",
+                  resolvedBy: typeof resolution === "string" ? resolution : undefined,
                 });
               },
             },

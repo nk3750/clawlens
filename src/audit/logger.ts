@@ -138,7 +138,6 @@ export class AuditLogger {
     this.append({
       ...data,
       params: {},
-      decision: "allow",
     });
   }
 
