@@ -68,10 +68,7 @@ export interface BeforeToolCallResult {
     timeoutMs?: number;
     timeoutBehavior?: "allow" | "deny";
     pluginId?: string;
-    onResolution?: (decision: {
-      approved: boolean;
-      resolvedBy?: string;
-    }) => Promise<void> | void;
+    onResolution?: (decision: string) => Promise<void> | void;
   };
 }
 

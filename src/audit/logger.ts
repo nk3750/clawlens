@@ -8,7 +8,7 @@ export interface AuditEntry {
   toolCallId?: string;
   params: Record<string, unknown>;
   policyRule?: string;
-  decision: "allow" | "block" | "approval_required";
+  decision?: "allow" | "block" | "approval_required";
   severity?: string;
   userResponse?: "approved" | "denied" | "timeout";
   executionResult?: "success" | "failure";
