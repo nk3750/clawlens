@@ -6,6 +6,7 @@ import { PolicyEngine } from "./src/policy/engine";
 import { PolicyLoader } from "./src/policy/loader";
 import { AuditLogger } from "./src/audit/logger";
 import { RateLimiter } from "./src/rate/limiter";
+import { SessionContext } from "./src/risk/session-context";
 import { exportToJSON, exportToCSV } from "./src/audit/exporter";
 import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
@@ -19,7 +20,7 @@ const plugin: OpenClawPluginDefinition = {
   name: "ClawLens",
   description:
     "Agent governance — policy enforcement, approval flows, and audit trails",
-  version: "0.1.0",
+  version: "0.2.0",
 
   register(api: OpenClawPluginApi) {
     const config = resolveConfig(api.pluginConfig, api.resolvePath);
@@ -29,6 +30,23 @@ const plugin: OpenClawPluginDefinition = {
     const loader = new PolicyLoader(engine, config.policiesPath, api.logger);
     const auditLogger = new AuditLogger(config.auditLogPath);
     const rateLimiter = new RateLimiter(config.rateStatePath);
+    const sessionContext = new SessionContext();
+
+    // Alert send function — uses gateway method if available
+    let alertSend: ((msg: string) => Promise<void> | void) | undefined;
+    try {
+      api.registerGatewayMethod("clawlens.alert", (msg: unknown) => {
+        api.logger.info(`ClawLens Alert: ${String(msg)}`);
+      });
+      alertSend = (msg: string) => {
+        api.logger.info(`ClawLens Alert:\n${msg}`);
+      };
+    } catch {
+      // Gateway method registration may not be available — alerts degrade to logs
+      alertSend = (msg: string) => {
+        api.logger.warn(`ClawLens Alert (no gateway):\n${msg}`);
+      };
+    }
 
     // Load policy eagerly so hooks work even if service.start() hasn't run yet
     // (OpenClaw may call register() per-session but service.start() only once)
@@ -43,7 +61,17 @@ const plugin: OpenClawPluginDefinition = {
     // Wire hooks
     api.on(
       "before_tool_call",
-      createBeforeToolCallHandler(engine, auditLogger, rateLimiter, config),
+      createBeforeToolCallHandler({
+        engine,
+        auditLogger,
+        rateLimiter,
+        config,
+        sessionContext,
+        alertSend,
+        runtime: (api as Record<string, unknown>).runtime as
+          | { subagent?: { run?: (opts: unknown) => Promise<unknown> } }
+          | undefined,
+      }),
       { priority: 100 },
     );
 
@@ -67,7 +95,13 @@ const plugin: OpenClawPluginDefinition = {
 
     api.on(
       "session_end",
-      createSessionEndHandler(auditLogger, rateLimiter, config, api.logger),
+      createSessionEndHandler(
+        auditLogger,
+        rateLimiter,
+        config,
+        api.logger,
+        sessionContext,
+      ),
     );
 
     // Register service for lifecycle management

@@ -2,6 +2,7 @@ import type { AuditEntry } from "./logger";
 
 /**
  * Generate a narrative daily digest from audit log entries.
+ * Now includes per-agent risk summaries and high-risk call highlights.
  */
 export function generateDigest(
   entries: AuditEntry[],
@@ -17,11 +18,12 @@ export function generateDigest(
   lines.push(`ClawLens Daily Summary (${dateStr})`);
   lines.push("");
 
-  // Separate decision entries from result/resolution entries
+  // Separate decision entries from result/resolution/evaluation entries
   const decisions = entries.filter(
     (e) =>
       !e.executionResult &&
-      !e.userResponse,
+      !e.userResponse &&
+      !e.refToolCallId,
   );
 
   const resolutions = entries.filter((e) => e.userResponse);
@@ -37,6 +39,10 @@ export function generateDigest(
     lines.push("No tool calls recorded today.");
     return lines.join("\n");
   }
+
+  // Risk summary across all decisions
+  const scoredDecisions = decisions.filter((e) => typeof e.riskScore === "number");
+  const hasRiskData = scoredDecisions.length > 0;
 
   lines.push(
     `Your agent made ${total} tool call${total !== 1 ? "s" : ""} today.`,
@@ -58,6 +64,57 @@ export function generateDigest(
     lines.push(`- ${part}`);
   }
 
+  // Per-agent risk breakdown (if risk data exists)
+  if (hasRiskData) {
+    lines.push("");
+
+    // LLM evaluation entries — index by refToolCallId for lookup
+    const evalEntries = entries.filter((e) => e.refToolCallId && e.llmEvaluation);
+    const evalByRef = new Map(
+      evalEntries.map((e) => [e.refToolCallId!, e]),
+    );
+
+    // Group decisions by agent (toolCallId prefix or "main")
+    // For now we treat all as one agent since ctx.agentId isn't in audit entries yet
+    const scores = scoredDecisions.map((e) => e.riskScore!);
+    const avgRisk = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    const peakRisk = Math.max(...scores);
+    const highRiskCalls = scoredDecisions.filter(
+      (e) => e.riskTier === "high" || e.riskTier === "critical",
+    );
+
+    lines.push(
+      `Risk: ${total} tool calls, avg risk ${avgRisk}, peak ${peakRisk}`,
+    );
+
+    if (highRiskCalls.length > 0) {
+      lines.push(`  \u2014 \u26a0\ufe0f ${highRiskCalls.length} high-risk call${highRiskCalls.length !== 1 ? "s" : ""}`);
+
+      for (const entry of highRiskCalls.slice(0, 5)) {
+        const detail = entry.params?.command
+          ? `${entry.toolName}(${truncate(String(entry.params.command), 60)})`
+          : entry.params?.url
+            ? `${entry.toolName}(${truncate(String(entry.params.url), 60)})`
+            : entry.toolName;
+
+        // Check for LLM evaluation
+        const evalEntry = entry.toolCallId ? evalByRef.get(entry.toolCallId) : undefined;
+        const reasoning = evalEntry?.llmEvaluation?.reasoning;
+
+        if (reasoning) {
+          lines.push(
+            `  \u2014 ${detail} scored ${entry.riskScore}: "${reasoning}"`,
+          );
+        } else {
+          const tagStr = entry.riskTags?.length
+            ? ` [${entry.riskTags.join(", ")}]`
+            : "";
+          lines.push(`  \u2014 ${detail} scored ${entry.riskScore}${tagStr}`);
+        }
+      }
+    }
+  }
+
   // Highlight blocked actions (up to 5)
   if (blocked.length > 0) {
     lines.push("");
@@ -71,7 +128,7 @@ export function generateDigest(
         : `\`${entry.toolName}\``;
       const rule = entry.policyRule || "policy";
       lines.push(
-        `Blocked: Agent tried to run ${detail} at ${time} — blocked by "${rule}" rule.`,
+        `Blocked: Agent tried to run ${detail} at ${time} \u2014 blocked by "${rule}" rule.`,
       );
     }
   }
@@ -91,7 +148,24 @@ export function generateDigest(
   }
 
   lines.push("");
-  lines.push("No anomalies detected.");
+  if (hasRiskData) {
+    const highCount = scoredDecisions.filter(
+      (e) => e.riskTier === "high" || e.riskTier === "critical",
+    ).length;
+    if (highCount === 0) {
+      lines.push("No anomalies detected. All actions were low/medium risk.");
+    } else {
+      lines.push(
+        `${highCount} high-risk action${highCount !== 1 ? "s" : ""} detected \u2014 review recommended.`,
+      );
+    }
+  } else {
+    lines.push("No anomalies detected.");
+  }
 
   return lines.join("\n");
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + "\u2026" : s;
 }

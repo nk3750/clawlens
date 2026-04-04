@@ -37,6 +37,9 @@ export type AuditDecisionData = {
   policyRule?: string;
   decision: "allow" | "block" | "approval_required";
   severity?: string;
+  riskScore?: number;
+  riskTier?: "low" | "medium" | "high" | "critical";
+  riskTags?: string[];
 };
 
 export class AuditLogger {
