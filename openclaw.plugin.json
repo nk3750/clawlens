@@ -1,7 +1,7 @@
 {
-  "id": "clawclip",
-  "name": "ClawClip",
-  "description": "Agent governance — policy enforcement, approval flows, and audit trails for OpenClaw",
+  "id": "clawlens",
+  "name": "ClawLens",
+  "description": "Agent observatory and governance for OpenClaw — see everything your agents do, understand risk, enforce when ready",
   "version": "0.1.0",
   "configSchema": {
     "type": "object",

@@ -1,7 +1,7 @@
 {
-  "name": "clawclip",
-  "version": "0.1.0",
-  "description": "Agent governance — policy enforcement, approval flows, and audit trails for OpenClaw",
+  "name": "clawlens",
+  "version": "0.2.0",
+  "description": "Agent observatory and governance for OpenClaw",
   "type": "module",
   "main": "index.ts",
   "scripts": {
