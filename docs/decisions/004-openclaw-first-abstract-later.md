@@ -5,7 +5,7 @@ Status: decided
 
 ## Context
 
-ClawClip's guardrails concept (policy enforcement, approval flows, audit trails) could apply to any agent platform — LangChain, CrewAI, Claude tool_use, etc. We had to decide: build a generic framework now, or go deep on OpenClaw first?
+ClawLens's guardrails concept (policy enforcement, approval flows, audit trails) could apply to any agent platform — LangChain, CrewAI, Claude tool_use, etc. We had to decide: build a generic framework now, or go deep on OpenClaw first?
 
 ## Decision
 
@@ -31,7 +31,7 @@ When we add platform #2, we'll see exactly what's shared (policy engine, YAML fo
 
 ## Implementation
 
-- Build ClawClip as an OpenClaw plugin with no abstraction layers
+- Build ClawLens as an OpenClaw plugin with no abstraction layers
 - Keep code naturally clean — policy engine separate from hook handlers, audit logger separate from approval flow (good design, not premature abstraction)
 - The YAML policy format is naturally portable — tool matching, rate limits, approval rules don't reference OpenClaw internals
 - When demand appears for platform #2, build an adapter and extract the common layer
@@ -39,7 +39,7 @@ When we add platform #2, we'll see exactly what's shared (policy engine, YAML fo
 
 ## Sequence
 
-1. Ship ClawClip for OpenClaw, get users
+1. Ship ClawLens for OpenClaw, get users
 2. When a second platform shows demand, build an adapter
 3. Extract common layer after 2-3 concrete implementations (rule of three)
 4. Common layer becomes the platform-agnostic framework

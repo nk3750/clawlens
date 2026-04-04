@@ -1,11 +1,11 @@
-# Default ClawClip behavior on error
+# Default ClawLens behavior on error
 
 Date: 2026-03-16
 Status: **decided** (2026-03-29)
 
 ## Context
 
-Two distinct scenarios can leave ClawClip unable to complete its job:
+Two distinct scenarios can leave ClawLens unable to complete its job:
 
 **Scenario A — Policy engine failure.** The YAML policy file is malformed, a regex
 throws, or rule evaluation times out. The `before_tool_call` hook is synchronous and
@@ -14,10 +14,10 @@ blocking — if it crashes or hangs, the agent stalls.
 **Scenario B — Approval timeout.** A human-in-the-loop approval was requested but
 the user didn't respond within the timeout window.
 
-Both force the same underlying question: does ClawClip block the tool call (fail closed)
+Both force the same underlying question: does ClawLens block the tool call (fail closed)
 or allow it (fail open)?
 
-This plugin behavior shapes the trust contract ClawClip makes with its users.
+This plugin behavior shapes the trust contract ClawLens makes with its users.
 
 ## Decision
 
@@ -36,7 +36,7 @@ This plugin behavior shapes the trust contract ClawClip makes with its users.
 
 ### Why this combination
 
-The product's trust contract is: **ClawClip never silently lets something dangerous through.** Fail-closed is the only default consistent with that promise. But we add escape hatches that are explicit and auditable:
+The product's trust contract is: **ClawLens never silently lets something dangerous through.** Fail-closed is the only default consistent with that promise. But we add escape hatches that are explicit and auditable:
 - Last-known-good prevents a policy typo from halting all agent work
 - Per-rule timeout behavior lets power users reduce approval fatigue for low-risk actions
 - Everything is logged — there's never a silent bypass
@@ -57,7 +57,7 @@ For Phase 1, all timeouts use the global default (`deny`). Per-rule override shi
 
 ## See Also
 
-- [[architecture/clawclip-hook-strategy]] — before_tool_call hook execution model
+- [[architecture/clawlens-hook-strategy]] — before_tool_call hook execution model
 - [[architecture/policy-engine]] — policy evaluation algorithm and rate limit tracking
 - [[product/mvp-scope]] — human-in-the-loop approval as P0 feature
 - [[product/spec]] — phased spec with timeout behavior details

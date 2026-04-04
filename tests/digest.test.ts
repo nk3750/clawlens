@@ -42,7 +42,7 @@ describe("generateDigest", () => {
 
     const digest = generateDigest(entries, testDate);
 
-    expect(digest).toContain("ClawClip Daily Summary");
+    expect(digest).toContain("ClawLens Daily Summary");
     expect(digest).toContain("March 29");
     // Decision entries: 3 allow + 1 block + 1 approval_required = 5
     // (resolution entry is filtered out because it has userResponse)

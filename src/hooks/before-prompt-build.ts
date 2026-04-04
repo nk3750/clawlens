@@ -14,7 +14,7 @@ export function createBeforePromptBuildHandler(engine: PolicyEngine) {
 
     if (blocked.length === 0 && approvalRequired.length === 0) return;
 
-    const lines = ["[ClawClip] Policy constraints active:"];
+    const lines = ["[ClawLens] Policy constraints active:"];
 
     if (blocked.length > 0) {
       lines.push(`Blocked tools: ${blocked.join(", ")}`);

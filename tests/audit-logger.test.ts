@@ -10,7 +10,7 @@ describe("AuditLogger", () => {
   let logger: AuditLogger;
 
   beforeEach(async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawclip-test-"));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-test-"));
     logPath = path.join(tmpDir, "audit.jsonl");
     logger = new AuditLogger(logPath);
     await logger.init();

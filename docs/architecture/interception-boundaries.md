@@ -1,10 +1,10 @@
-# ClawClip Interception Boundaries
+# ClawLens Interception Boundaries
 
-What ClawClip can and can't control. This is a fundamental architectural constraint that shapes our policy design, documentation, and user expectations.
+What ClawLens can and can't control. This is a fundamental architectural constraint that shapes our policy design, documentation, and user expectations.
 
 ## The Boundary
 
-ClawClip intercepts at the **OpenClaw tool call boundary**. The `before_tool_call` hook fires before each of the 30 built-in tools executes. We see `{toolName, params}` and can block, approve, or allow.
+ClawLens intercepts at the **OpenClaw tool call boundary**. The `before_tool_call` hook fires before each of the 30 built-in tools executes. We see `{toolName, params}` and can block, approve, or allow.
 
 We do NOT see what happens inside a tool after it executes.
 
@@ -31,12 +31,12 @@ Every action the agent takes goes through a tool call:
 
 ### Subprocess internals
 
-Once `exec` fires and a subprocess starts, whatever it does internally is invisible to ClawClip:
+Once `exec` fires and a subprocess starts, whatever it does internally is invisible to ClawLens:
 
 ```
 Agent: "Run the SEO pipeline"
   → exec({command: "python3 seo_pipeline.py"})
-    → ClawClip: sees command, can approve/block ✓
+    → ClawLens: sees command, can approve/block ✓
       → python3 starts...
         → requests.post("https://api.google.com") ← invisible ✗
         → os.remove("backup.sql")                 ← invisible ✗
@@ -55,25 +55,25 @@ We can observe `llm_input` and `llm_output` via hooks (fire-and-forget, parallel
 
 ### Network calls outside OpenClaw
 
-If a script or process makes direct network calls (HTTP requests, database connections, SMTP), those bypass OpenClaw's tool system entirely. ClawClip only sees what goes through OpenClaw's 30 tools.
+If a script or process makes direct network calls (HTTP requests, database connections, SMTP), those bypass OpenClaw's tool system entirely. ClawLens only sees what goes through OpenClaw's 30 tools.
 
 ## When This Matters
 
-**Good scenario for ClawClip:** Agent does granular tool calls.
+**Good scenario for ClawLens:** Agent does granular tool calls.
 ```
 Agent: "I'll audit the SEO"
-  → read({path: "sitemap.xml"})              ← ClawClip sees ✓
-  → web_fetch({url: "https://site.com"})     ← ClawClip sees ✓
-  → exec({command: "lighthouse https://..."}) ← ClawClip sees ✓
-  → write({path: "audit-report.md"})         ← ClawClip sees ✓
-  → message({content: "Audit done"})         ← ClawClip sees ✓
+  → read({path: "sitemap.xml"})              ← ClawLens sees ✓
+  → web_fetch({url: "https://site.com"})     ← ClawLens sees ✓
+  → exec({command: "lighthouse https://..."}) ← ClawLens sees ✓
+  → write({path: "audit-report.md"})         ← ClawLens sees ✓
+  → message({content: "Audit done"})         ← ClawLens sees ✓
 ```
 Each step is interceptable. This is how well-designed skills work.
 
-**Bad scenario for ClawClip:** Agent runs a monolithic script.
+**Bad scenario for ClawLens:** Agent runs a monolithic script.
 ```
 Agent: "I'll audit the SEO"
-  → exec({command: "python3 do_everything.py"})  ← ClawClip sees this ONE call
+  → exec({command: "python3 do_everything.py"})  ← ClawLens sees this ONE call
     → internally does 50 things                   ← invisible
 ```
 We can only gate the entry point.
@@ -95,13 +95,13 @@ We can only gate the entry point.
 
 ## The Bottom Line
 
-ClawClip is a **tool-call firewall**, not a sandbox. We control WHAT the agent can do (which tools, which parameters). We don't control what happens inside those tools after they execute.
+ClawLens is a **tool-call firewall**, not a sandbox. We control WHAT the agent can do (which tools, which parameters). We don't control what happens inside those tools after they execute.
 
-This is the same model as a network firewall — it controls which connections are allowed, not what data flows through them. For deeper isolation (sandboxing subprocess behavior), that's OpenClaw's sandbox system or infrastructure-level tools like NemoClaw. ClawClip complements those — see [[decisions/003-complement-not-replace]].
+This is the same model as a network firewall — it controls which connections are allowed, not what data flows through them. For deeper isolation (sandboxing subprocess behavior), that's OpenClaw's sandbox system or infrastructure-level tools like NemoClaw. ClawLens complements those — see [[decisions/003-complement-not-replace]].
 
 ## See Also
 
 - [[openclaw-plugin-system]] — `before_tool_call` hook details
 - [[openclaw-security]] — built-in exec approvals (shell only)
-- [[architecture/clawclip-hook-strategy]] — which hooks we register
+- [[architecture/clawlens-hook-strategy]] — which hooks we register
 - [[decisions/003-complement-not-replace]] — layered security model

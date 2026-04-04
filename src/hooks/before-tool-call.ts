@@ -1,14 +1,14 @@
 import type { PolicyEngine } from "../policy/engine";
 import type { AuditLogger } from "../audit/logger";
 import type { RateLimiter } from "../rate/limiter";
-import type { ClawClipConfig } from "../config";
+import type { ClawLensConfig } from "../config";
 import type { BeforeToolCallEvent, BeforeToolCallResult } from "../types";
 
 export function createBeforeToolCallHandler(
   engine: PolicyEngine,
   auditLogger: AuditLogger,
   rateLimiter: RateLimiter,
-  config: ClawClipConfig,
+  config: ClawLensConfig,
 ) {
   return (
     event: BeforeToolCallEvent,
@@ -42,13 +42,13 @@ export function createBeforeToolCallHandler(
         case "block":
           return {
             block: true,
-            blockReason: `ClawClip: ${decision.reason || "Blocked by policy"}`,
+            blockReason: `ClawLens: ${decision.reason || "Blocked by policy"}`,
           };
 
         case "approval_required":
           return {
             requireApproval: {
-              title: `ClawClip: ${decision.ruleName || "Policy approval"}`,
+              title: `ClawLens: ${decision.ruleName || "Policy approval"}`,
               description: formatApprovalDescription(toolName, params),
               severity: decision.severity || "warning",
               timeoutMs: (decision.timeout || defaultTimeout) * 1000,
@@ -82,7 +82,7 @@ export function createBeforeToolCallHandler(
       });
       return {
         block: true,
-        blockReason: `ClawClip: Internal error — blocked for safety. ${err instanceof Error ? err.message : String(err)}`,
+        blockReason: `ClawLens: Internal error — blocked for safety. ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   };

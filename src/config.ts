@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as os from "node:os";
 
-export interface ClawClipConfig {
+export interface ClawLensConfig {
   policiesPath: string;
   auditLogPath: string;
   rateStatePath: string;
@@ -12,9 +12,9 @@ export interface ClawClipConfig {
   };
 }
 
-const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawclip");
+const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawlens");
 
-export const DEFAULT_CONFIG: ClawClipConfig = {
+export const DEFAULT_CONFIG: ClawLensConfig = {
   policiesPath: path.join(DEFAULT_DIR, "policies.yaml"),
   auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
   rateStatePath: path.join(DEFAULT_DIR, "rate-state.json"),
@@ -27,7 +27,7 @@ export const DEFAULT_CONFIG: ClawClipConfig = {
 export function resolveConfig(
   pluginConfig?: Record<string, unknown>,
   resolvePath?: (input: string) => string,
-): ClawClipConfig {
+): ClawLensConfig {
   const resolve =
     resolvePath || ((p: string) => p.replace(/^~/, os.homedir()));
 

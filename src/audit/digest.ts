@@ -14,7 +14,7 @@ export function generateDigest(
   });
 
   const lines: string[] = [];
-  lines.push(`ClawClip Daily Summary (${dateStr})`);
+  lines.push(`ClawLens Daily Summary (${dateStr})`);
   lines.push("");
 
   // Separate decision entries from result/resolution entries

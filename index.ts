@@ -15,8 +15,8 @@ import { createSessionEndHandler } from "./src/hooks/session-end";
 import { registerDashboardRoutes } from "./src/dashboard/routes";
 
 const plugin: OpenClawPluginDefinition = {
-  id: "clawclip",
-  name: "ClawClip",
+  id: "clawlens",
+  name: "ClawLens",
   description:
     "Agent governance — policy enforcement, approval flows, and audit trails",
   version: "0.1.0",
@@ -36,7 +36,7 @@ const plugin: OpenClawPluginDefinition = {
       loader.load();
     } catch (err) {
       api.logger.warn(
-        `ClawClip: Failed to load policy during register: ${err instanceof Error ? err.message : String(err)}`,
+        `ClawLens: Failed to load policy during register: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -72,7 +72,7 @@ const plugin: OpenClawPluginDefinition = {
 
     // Register service for lifecycle management
     api.registerService({
-      id: "clawclip",
+      id: "clawlens",
       start: async () => {
         if (!engine.getPolicy()) {
           loader.load();
@@ -80,22 +80,22 @@ const plugin: OpenClawPluginDefinition = {
         await auditLogger.init();
         rateLimiter.restore();
         loader.startWatching();
-        api.logger.info("ClawClip: Service started");
+        api.logger.info("ClawLens: Service started");
       },
       stop: async () => {
         loader.stopWatching();
         await auditLogger.flush();
         rateLimiter.persist();
         rateLimiter.cleanup();
-        api.logger.info("ClawClip: Service stopped");
+        api.logger.info("ClawLens: Service stopped");
       },
     });
 
     // Register CLI commands
     api.registerCli((cli) => {
       cli
-        .command("clawclip init")
-        .description("Initialize ClawClip with default config and policies")
+        .command("clawlens init")
+        .description("Initialize ClawLens with default config and policies")
         .action(async () => {
           const configDir = path.dirname(config.policiesPath);
 
@@ -147,7 +147,7 @@ const plugin: OpenClawPluginDefinition = {
               );
             }
             console.log(
-              `ClawClip initialized. Edit policies at ${config.policiesPath}`,
+              `ClawLens initialized. Edit policies at ${config.policiesPath}`,
             );
           } else {
             console.log(
@@ -156,15 +156,15 @@ const plugin: OpenClawPluginDefinition = {
           }
 
           console.log(
-            "\nTo enable ClawClip, add to ~/.openclaw/openclaw.json:",
+            "\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:",
           );
           console.log(
             JSON.stringify(
               {
                 plugins: {
-                  load: { paths: ["~/code/clawClip"] },
+                  load: { paths: ["~/code/clawLens"] },
                   entries: {
-                    clawclip: {
+                    clawlens: {
                       enabled: true,
                       config: {
                         policiesPath: config.policiesPath,
@@ -181,7 +181,7 @@ const plugin: OpenClawPluginDefinition = {
         });
 
       cli
-        .command("clawclip audit export")
+        .command("clawlens audit export")
         .description("Export audit log")
         .option("--format <format>", "json or csv", "json")
         .option("--since <duration>", "time range, e.g. 7d, 24h, 1h")
@@ -202,7 +202,7 @@ const plugin: OpenClawPluginDefinition = {
     // Dashboard
     registerDashboardRoutes(api, { engine, auditLogger });
 
-    api.logger.info("ClawClip: Plugin registered");
+    api.logger.info("ClawLens: Plugin registered");
   },
 };
 

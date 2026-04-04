@@ -15,7 +15,7 @@ export function registerDashboardRoutes(
   deps: DashboardDeps,
 ): void {
   api.registerHttpRoute({
-    path: "/plugins/clawclip",
+    path: "/plugins/clawlens",
     auth: "plugin",
     match: "prefix",
     replaceExisting: true,
@@ -27,8 +27,8 @@ export function registerDashboardRoutes(
 
       // Strip the route prefix to get the sub-path
       let subPath = url.pathname;
-      if (subPath.startsWith("/plugins/clawclip")) {
-        subPath = subPath.slice("/plugins/clawclip".length);
+      if (subPath.startsWith("/plugins/clawlens")) {
+        subPath = subPath.slice("/plugins/clawlens".length);
       }
       subPath = subPath.replace(/^\//, "");
 
@@ -69,7 +69,7 @@ export function registerDashboardRoutes(
     },
   });
 
-  api.logger.info("ClawClip: Dashboard routes registered at /plugins/clawclip");
+  api.logger.info("ClawLens: Dashboard routes registered at /plugins/clawlens");
 }
 
 function sendJson(res: ServerResponse, data: unknown): void {

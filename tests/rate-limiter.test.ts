@@ -10,7 +10,7 @@ describe("RateLimiter", () => {
   let limiter: RateLimiter;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawclip-rate-test-"));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-rate-test-"));
     statePath = path.join(tmpDir, "rate-state.json");
     limiter = new RateLimiter(statePath);
   });

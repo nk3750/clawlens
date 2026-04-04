@@ -5,11 +5,11 @@ Status: decided
 
 ## Context
 
-OpenClaw uses **JSON5** for configuration (`~/.openclaw/openclaw.json`). ClawClip needs a format for user-defined policy files.
+OpenClaw uses **JSON5** for configuration (`~/.openclaw/openclaw.json`). ClawLens needs a format for user-defined policy files.
 
 ## Decision
 
-Use **YAML** for ClawClip policy files — a conscious divergence from OpenClaw's JSON5.
+Use **YAML** for ClawLens policy files — a conscious divergence from OpenClaw's JSON5.
 
 ## Rationale
 
@@ -22,7 +22,7 @@ Use **YAML** for ClawClip policy files — a conscious divergence from OpenClaw'
 ## Example
 
 ```yaml
-# ClawClip policy — readable, commentable
+# ClawLens policy — readable, commentable
 rules:
   - name: "Approve external emails"
     match:

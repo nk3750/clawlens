@@ -15,7 +15,7 @@ export function createSessionStartHandler(
     // Ensure policy is loaded
     if (!engine.getPolicy()) {
       logger.warn(
-        "ClawClip: No policy loaded at session start — service may not have started",
+        "ClawLens: No policy loaded at session start — service may not have started",
       );
     }
 
@@ -25,6 +25,6 @@ export function createSessionStartHandler(
     // Ensure rate limiter state is loaded
     rateLimiter.restore();
 
-    logger.info("ClawClip: Session started");
+    logger.info("ClawLens: Session started");
   };
 }

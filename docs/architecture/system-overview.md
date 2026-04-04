@@ -1,4 +1,4 @@
-# ClawClip System Overview
+# ClawLens System Overview
 
 ## Component Architecture
 
@@ -15,7 +15,7 @@
 │         │                                                        │
 │         ▼  (actions that pass built-in checks)                   │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │              ClawClip Plugin                                 │ │
+│  │              ClawLens Plugin                                 │ │
 │  │                                                             │ │
 │  │  ┌──────────────────────────────────────────────────────┐   │ │
 │  │  │     Hook Handlers                                     │   │ │
@@ -68,7 +68,7 @@
 
 ### 1. Hook Handlers
 
-The entry points where ClawClip receives control from OpenClaw's plugin hook system.
+The entry points where ClawLens receives control from OpenClaw's plugin hook system.
 
 **Registered hooks:**
 
@@ -88,7 +88,7 @@ api.on("before_tool_call", async (event, ctx) => {
   const decision = policyEngine.evaluate(event.toolName, event.params);
 
   if (decision === "block") {
-    return { block: true, blockReason: "Blocked by ClawClip policy" };
+    return { block: true, blockReason: "Blocked by ClawLens policy" };
   }
   if (decision === "approval_required") {
     const approved = await approvalManager.requestApproval(event, ctx);
@@ -100,7 +100,7 @@ api.on("before_tool_call", async (event, ctx) => {
 }, { priority: 100 });
 ```
 
-Priority 100 ensures ClawClip runs early in the hook chain (higher number = runs first). Built-in exec approvals operate separately in the tool execution pipeline.
+Priority 100 ensures ClawLens runs early in the hook chain (higher number = runs first). Built-in exec approvals operate separately in the tool execution pipeline.
 
 ### 2. Policy Engine
 
@@ -125,7 +125,7 @@ See [[policy-engine]] for full specification.
 Handles human-in-the-loop approval flows. Entirely our design.
 
 **Responsibilities:**
-- Send approval prompts to user via gateway methods (`clawclip.approve`, `clawclip.deny`)
+- Send approval prompts to user via gateway methods (`clawlens.approve`, `clawlens.deny`)
 - Wait for user response with configurable timeout
 - Format prompts with action details in plain language
 - Track pending approvals and their state
@@ -133,7 +133,7 @@ Handles human-in-the-loop approval flows. Entirely our design.
 
 **Approval prompt example:**
 ```
-ClawClip: Approval needed
+ClawLens: Approval needed
 
 The agent wants to:
   Send an email to boss@company.com
@@ -181,7 +181,7 @@ Creates human-readable summaries. Entirely our design.
 
 **v0.1:** Template-based digest via audit log aggregation. v0.2: LLM-generated natural language summaries.
 
-## Data Flow: Action Through ClawClip
+## Data Flow: Action Through ClawLens
 
 ```
 1. Agent plans action (e.g., "send email")
@@ -190,7 +190,7 @@ Creates human-readable summaries. Entirely our design.
    - Exec approvals (if shell command)
    - Tool profile check (is tool in agent's allowed set?)
    - Owner-only filter (if applicable)
-4. ClawClip evaluates (at priority 100):
+4. ClawLens evaluates (at priority 100):
    a. Hook handler extracts toolName + params from event
    b. Policy Engine matches against YAML rules
    c. Decision:
@@ -205,12 +205,12 @@ Creates human-readable summaries. Entirely our design.
 7. End of session → session_end hook → Digest Generator summarizes
 ```
 
-## File Structure (ClawClip Plugin)
+## File Structure (ClawLens Plugin)
 
 Following real OpenClaw plugin conventions (based on `extensions/voice-call/` and others):
 
 ```
-clawclip/
+clawlens/
 ├── openclaw.plugin.json     # Plugin manifest (JSON)
 ├── index.ts                 # Entry: exports OpenClawPluginDefinition
 ├── package.json             # Dependencies, scripts
@@ -234,7 +234,7 @@ clawclip/
 │   │   └── digest.ts             # Activity summary generation
 │   └── config.ts                 # Plugin config schema + validation
 ├── policies/
-│   ├── default.yaml              # Ships with ClawClip
+│   ├── default.yaml              # Ships with ClawLens
 │   └── examples/
 │       ├── strict.yaml           # Block everything, approve all
 │       ├── relaxed.yaml          # Allow most, approve destructive
@@ -245,7 +245,7 @@ clawclip/
 
 ## See Also
 
-- [[clawclip-hook-strategy]] — detailed hook mapping with all 24 hooks
+- [[clawlens-hook-strategy]] — detailed hook mapping with all 24 hooks
 - [[policy-engine]] — YAML policy schema and examples
 - [[openclaw-plugin-system]] — OpenClaw plugin API and hook system
 - [[openclaw-security]] — built-in security components we complement

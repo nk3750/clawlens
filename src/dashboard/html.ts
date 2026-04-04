@@ -5,7 +5,7 @@ export function getDashboardHtml(): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClawClip Dashboard</title>
+<title>ClawLens Dashboard</title>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 
@@ -313,7 +313,7 @@ footer .chain-broken{color:var(--red)}
 <div class="container">
 
   <header>
-    <h1><span class="brand">ClawClip</span> Dashboard</h1>
+    <h1><span class="brand">ClawLens</span> Dashboard</h1>
     <button class="refresh-btn" id="refresh-btn" aria-label="Refresh">
       <svg class="refresh-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
       Refresh
@@ -345,7 +345,7 @@ footer .chain-broken{color:var(--red)}
 
 <script>
 (function(){
-  const API = '/plugins/clawclip';
+  const API = '/plugins/clawlens';
   const PAGE_SIZE = 50;
   let currentOffset = 0;
   let totalLoaded = 0;

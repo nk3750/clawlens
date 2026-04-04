@@ -20,8 +20,8 @@ describe("getDashboardHtml", () => {
     expect(html).toContain("</body>");
   });
 
-  it("includes the ClawClip branding", () => {
-    expect(html).toContain("ClawClip");
+  it("includes the ClawLens branding", () => {
+    expect(html).toContain("ClawLens");
     expect(html).toContain("Dashboard");
   });
 

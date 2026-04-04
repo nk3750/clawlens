@@ -1,13 +1,13 @@
 import type { AuditLogger } from "../audit/logger";
 import type { RateLimiter } from "../rate/limiter";
-import type { ClawClipConfig } from "../config";
+import type { ClawLensConfig } from "../config";
 import type { PluginLogger, SessionEvent } from "../types";
 import { generateDigest } from "../audit/digest";
 
 export function createSessionEndHandler(
   auditLogger: AuditLogger,
   rateLimiter: RateLimiter,
-  config: ClawClipConfig,
+  config: ClawLensConfig,
   logger: PluginLogger,
 ) {
   return async (_event: SessionEvent, _ctx: unknown): Promise<void> => {
@@ -29,13 +29,13 @@ export function createSessionEndHandler(
 
         if (todayEntries.length > 0) {
           const digest = generateDigest(todayEntries);
-          logger.info("ClawClip: Session digest:\n" + digest);
+          logger.info("ClawLens: Session digest:\n" + digest);
         }
       } catch (err) {
-        logger.error("ClawClip: Failed to generate digest:", err);
+        logger.error("ClawLens: Failed to generate digest:", err);
       }
     }
 
-    logger.info("ClawClip: Session ended");
+    logger.info("ClawLens: Session ended");
   };
 }

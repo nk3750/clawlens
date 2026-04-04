@@ -5,7 +5,7 @@ Status: decided
 
 ## Context
 
-ClawClip logs every tool call decision to JSONL. Non-technical users (our target) won't read log files. We need the guardrails to be visible. Also, as co-founders, we need something demo-able.
+ClawLens logs every tool call decision to JSONL. Non-technical users (our target) won't read log files. We need the guardrails to be visible. Also, as co-founders, we need something demo-able.
 
 ## Decision
 
@@ -13,9 +13,9 @@ ClawClip logs every tool call decision to JSONL. Non-technical users (our target
 
 ## What's In (v0.1)
 
-The dashboard answers: **"What is my agent doing and what did ClawClip do about it?"**
+The dashboard answers: **"What is my agent doing and what did ClawLens do about it?"**
 
-- Recent tool calls — what the agent did, what ClawClip decided (allow/block/approved)
+- Recent tool calls — what the agent did, what ClawLens decided (allow/block/approved)
 - Active policies — what rules are loaded
 - Pending approvals — anything waiting for user response
 - Basic stats — X allowed, Y blocked, Z approved today
@@ -43,7 +43,7 @@ The dashboard should make guardrails visible, not become a general agent managem
 ## Implementation
 
 - Register HTTP routes via the plugin API: `api.registerHttpRoute()`
-- Serve on the existing gateway (port 18789) under `/clawclip/` path prefix
+- Serve on the existing gateway (port 18789) under `/clawlens/` path prefix
 - Plain HTML + minimal JS — no React, no build pipeline
 - Read from the same JSONL audit log and in-memory policy state
 - Static assets bundled with the plugin
@@ -51,4 +51,4 @@ The dashboard should make guardrails visible, not become a general agent managem
 ## See Also
 
 - [[product/mvp-scope]] — dashboard in v0.1 feature list
-- [[architecture/system-overview]] — ClawClip component architecture
+- [[architecture/system-overview]] — ClawLens component architecture

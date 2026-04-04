@@ -23,7 +23,7 @@ export class PolicyLoader {
     const policy = this.parse(content);
     this.engine.load(policy);
     this.logger.info(
-      `ClawClip: Policy loaded from ${this.policyPath} (${policy.rules.length} rules)`,
+      `ClawLens: Policy loaded from ${this.policyPath} (${policy.rules.length} rules)`,
     );
   }
 
@@ -37,7 +37,7 @@ export class PolicyLoader {
         this.debounceTimer = setTimeout(() => this.reload(), 100);
       }
     });
-    this.logger.info("ClawClip: Watching policy file for changes");
+    this.logger.info("ClawLens: Watching policy file for changes");
   }
 
   /** Stop watching the policy file. */
@@ -55,11 +55,11 @@ export class PolicyLoader {
   private reload(): void {
     try {
       this.load();
-      this.logger.info("ClawClip: Policy reloaded successfully");
+      this.logger.info("ClawLens: Policy reloaded successfully");
     } catch (err) {
       // Keep last-known-good policy on reload failure
       this.logger.error(
-        "ClawClip: Policy reload failed, keeping last-known-good policy:",
+        "ClawLens: Policy reload failed, keeping last-known-good policy:",
         err,
       );
     }
