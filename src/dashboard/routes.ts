@@ -1,19 +1,48 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "../types";
 import type { AuditLogger } from "../audit/logger";
+import type { AuditEntry } from "../audit/logger";
 import type { PolicyEngine } from "../policy/engine";
-import { computeStats, getRecentEntries, checkHealth } from "./api";
+import {
+  computeEnhancedStats,
+  getRecentEntries,
+  checkHealth,
+  getAgents,
+  getAgentDetail,
+  getSessions,
+  getSessionDetail,
+} from "./api";
 import { getDashboardHtml } from "./html";
 
 export interface DashboardDeps {
   engine: PolicyEngine;
   auditLogger: AuditLogger;
+  pluginDir?: string;
 }
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
 
 export function registerDashboardRoutes(
   api: OpenClawPluginApi,
   deps: DashboardDeps,
 ): void {
+  const distDir = deps.pluginDir
+    ? path.join(deps.pluginDir, "dashboard", "dist")
+    : null;
+
   api.registerHttpRoute({
     path: "/plugins/clawlens",
     auth: "plugin",
@@ -32,37 +61,151 @@ export function registerDashboardRoutes(
       }
       subPath = subPath.replace(/^\//, "");
 
-      // HTML dashboard
-      if (subPath === "") {
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(getDashboardHtml());
-        return true;
-      }
+      // ── API routes ──────────────────────────────
 
-      // API: today's stats
       if (subPath === "api/stats") {
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, computeStats(entries));
+        sendJson(res, computeEnhancedStats(entries));
         return true;
       }
 
-      // API: paginated entries
       if (subPath === "api/entries") {
         const limit = clampInt(url.searchParams.get("limit"), 1, 200, 50);
-        const offset = clampInt(url.searchParams.get("offset"), 0, Infinity, 0);
+        const offset = clampInt(
+          url.searchParams.get("offset"),
+          0,
+          Infinity,
+          0,
+        );
         const entries = deps.auditLogger.readEntries();
         sendJson(res, getRecentEntries(entries, limit, offset));
         return true;
       }
 
-      // API: hash chain health
       if (subPath === "api/health") {
         const entries = deps.auditLogger.readEntries();
         sendJson(res, checkHealth(entries));
         return true;
       }
 
-      // Unknown sub-path
+      if (subPath === "api/agents") {
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, getAgents(entries));
+        return true;
+      }
+
+      const agentMatch = subPath.match(/^api\/agent\/([^/]+)$/);
+      if (agentMatch) {
+        const agentId = decodeURIComponent(agentMatch[1]);
+        const entries = deps.auditLogger.readEntries();
+        const detail = getAgentDetail(entries, agentId);
+        if (!detail) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Agent not found" }));
+          return true;
+        }
+        sendJson(res, detail);
+        return true;
+      }
+
+      if (subPath === "api/sessions") {
+        const agentId = url.searchParams.get("agentId") || undefined;
+        const limit = clampInt(url.searchParams.get("limit"), 1, 100, 10);
+        const offset = clampInt(
+          url.searchParams.get("offset"),
+          0,
+          Infinity,
+          0,
+        );
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, getSessions(entries, agentId, limit, offset));
+        return true;
+      }
+
+      const sessionMatch = subPath.match(/^api\/session\/(.+)$/);
+      if (sessionMatch) {
+        const sessionKey = decodeURIComponent(sessionMatch[1]);
+        const entries = deps.auditLogger.readEntries();
+        const detail = getSessionDetail(entries, sessionKey);
+        if (!detail) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Session not found" }));
+          return true;
+        }
+        sendJson(res, detail);
+        return true;
+      }
+
+      // ── SSE stream ──────────────────────────────
+
+      if (subPath === "api/stream") {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+
+        const listener = (entry: AuditEntry) => {
+          res.write(`data: ${JSON.stringify(entry)}\n\n`);
+        };
+        deps.auditLogger.on("entry", listener);
+
+        req.on("close", () => {
+          deps.auditLogger.off("entry", listener);
+        });
+
+        return true;
+      }
+
+      // ── Static files from React SPA build ───────
+
+      if (distDir && fs.existsSync(distDir)) {
+        // Try to serve a static file from dist/
+        if (subPath) {
+          const filePath = path.join(distDir, subPath);
+          // Security: ensure resolved path stays within distDir
+          const resolved = path.resolve(filePath);
+          if (
+            resolved.startsWith(path.resolve(distDir)) &&
+            fs.existsSync(resolved) &&
+            fs.statSync(resolved).isFile()
+          ) {
+            const ext = path.extname(resolved);
+            const mime = MIME_TYPES[ext] || "application/octet-stream";
+            const content = fs.readFileSync(resolved);
+            res.writeHead(200, {
+              "Content-Type": mime,
+              "Cache-Control":
+                ext === ".html"
+                  ? "no-cache"
+                  : "public, max-age=31536000, immutable",
+            });
+            res.end(content);
+            return true;
+          }
+        }
+
+        // SPA fallback — serve index.html for all non-API, non-file routes
+        const indexPath = path.join(distDir, "index.html");
+        if (fs.existsSync(indexPath)) {
+          const html = fs.readFileSync(indexPath, "utf-8");
+          res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache",
+          });
+          res.end(html);
+          return true;
+        }
+      }
+
+      // ── Fallback: v1 HTML dashboard ─────────────
+
+      if (subPath === "") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(getDashboardHtml());
+        return true;
+      }
+
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Not found" }));
       return true;

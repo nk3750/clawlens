@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
+import { EventEmitter } from "node:events";
 
 export interface AuditEntry {
   timestamp: string;
@@ -25,6 +26,8 @@ export interface AuditEntry {
   };
   /** When present, this entry is an async evaluation appended for a prior tool call. */
   refToolCallId?: string;
+  agentId?: string;
+  sessionKey?: string;
   prevHash: string;
   hash: string;
 }
@@ -40,14 +43,17 @@ export type AuditDecisionData = {
   riskScore?: number;
   riskTier?: "low" | "medium" | "high" | "critical";
   riskTags?: string[];
+  agentId?: string;
+  sessionKey?: string;
 };
 
-export class AuditLogger {
+export class AuditLogger extends EventEmitter {
   private filePath: string;
   private lastHash: string = "0";
   private writeStream: fs.WriteStream | null = null;
 
   constructor(filePath: string) {
+    super();
     this.filePath = filePath;
   }
 
@@ -118,6 +124,7 @@ export class AuditLogger {
 
     this.lastHash = hash;
     this.writeStream!.write(JSON.stringify(entry) + "\n");
+    this.emit("entry", entry);
   }
 
   /** Log a policy decision (from before_tool_call). */

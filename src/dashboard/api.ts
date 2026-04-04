@@ -1,6 +1,8 @@
 import { AuditLogger } from "../audit/logger";
 import type { AuditEntry } from "../audit/logger";
 
+// ── Response types ──────────────────────────────────────
+
 export interface StatsResponse {
   total: number;
   allowed: number;
@@ -8,6 +10,19 @@ export interface StatsResponse {
   blocked: number;
   timedOut: number;
   pending: number;
+}
+
+export interface EnhancedStatsResponse extends StatsResponse {
+  riskBreakdown: {
+    low: number;
+    medium: number;
+    high: number;
+    critical: number;
+  };
+  avgRiskScore: number;
+  peakRiskScore: number;
+  activeAgents: number;
+  activeSessions: number;
 }
 
 export interface EntryResponse {
@@ -22,6 +37,18 @@ export interface EntryResponse {
   userResponse?: string;
   executionResult?: string;
   durationMs?: number;
+  riskScore?: number;
+  riskTier?: string;
+  riskTags?: string[];
+  llmEvaluation?: {
+    adjustedScore: number;
+    reasoning: string;
+    tags: string[];
+    confidence: string;
+    patterns: string[];
+  };
+  agentId?: string;
+  sessionKey?: string;
 }
 
 export interface HealthResponse {
@@ -29,6 +56,48 @@ export interface HealthResponse {
   brokenAt?: number;
   totalEntries: number;
 }
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  status: "active" | "idle";
+  todayToolCalls: number;
+  avgRiskScore: number;
+  peakRiskScore: number;
+  lastActiveTimestamp: string | null;
+  currentSession?: {
+    sessionKey: string;
+    startTime: string;
+    toolCallCount: number;
+  };
+}
+
+export interface SessionInfo {
+  sessionKey: string;
+  agentId: string;
+  startTime: string;
+  endTime: string | null;
+  duration: number | null;
+  toolCallCount: number;
+  avgRisk: number;
+  peakRisk: number;
+}
+
+export interface AgentDetailResponse {
+  agent: AgentInfo;
+  recentActivity: EntryResponse[];
+  sessions: SessionInfo[];
+  totalSessions: number;
+}
+
+export interface SessionDetailResponse {
+  session: SessionInfo;
+  entries: EntryResponse[];
+}
+
+// ── Internal helpers ────────────────────────────────────
+
+const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
 /** Filter entries to today (since midnight UTC). */
 function getTodayEntries(entries: AuditEntry[]): AuditEntry[] {
@@ -55,6 +124,80 @@ export function getEffectiveDecision(entry: AuditEntry): string {
 function isDecisionEntry(entry: AuditEntry): boolean {
   return entry.decision !== undefined;
 }
+
+function mapEntry(entry: AuditEntry): EntryResponse {
+  return {
+    timestamp: entry.timestamp,
+    toolName: entry.toolName,
+    toolCallId: entry.toolCallId,
+    params: entry.params,
+    policyRule: entry.policyRule,
+    decision: entry.decision,
+    effectiveDecision: getEffectiveDecision(entry),
+    severity: entry.severity,
+    userResponse: entry.userResponse,
+    executionResult: entry.executionResult,
+    durationMs: entry.durationMs,
+    riskScore: entry.riskScore,
+    riskTier: entry.riskTier,
+    riskTags: entry.riskTags,
+    llmEvaluation: entry.llmEvaluation,
+    agentId: entry.agentId,
+    sessionKey: entry.sessionKey,
+  };
+}
+
+function groupBySessions(entries: AuditEntry[]): Map<string, AuditEntry[]> {
+  const sessions = new Map<string, AuditEntry[]>();
+  for (const e of entries) {
+    if (!e.sessionKey) continue;
+    const existing = sessions.get(e.sessionKey);
+    if (existing) {
+      existing.push(e);
+    } else {
+      sessions.set(e.sessionKey, [e]);
+    }
+  }
+  return sessions;
+}
+
+function buildSessionInfo(
+  sessionKey: string,
+  entries: AuditEntry[],
+): SessionInfo {
+  const sorted = [...entries].sort((a, b) =>
+    a.timestamp.localeCompare(b.timestamp),
+  );
+  const startTime = sorted[0].timestamp;
+  const endTime = sorted[sorted.length - 1].timestamp;
+  const startMs = new Date(startTime).getTime();
+  const endMs = new Date(endTime).getTime();
+
+  const decisions = entries.filter(isDecisionEntry);
+  let riskSum = 0;
+  let riskCount = 0;
+  let peakRisk = 0;
+  for (const e of entries) {
+    if (e.riskScore !== undefined) {
+      riskSum += e.riskScore;
+      riskCount++;
+      if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+    }
+  }
+
+  return {
+    sessionKey,
+    agentId: entries.find((e) => e.agentId)?.agentId || "default",
+    startTime,
+    endTime,
+    duration: endMs > startMs ? endMs - startMs : null,
+    toolCallCount: decisions.length,
+    avgRisk: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
+    peakRisk,
+  };
+}
+
+// ── Existing functions (unchanged signatures) ───────────
 
 /** Compute today's decision counts. */
 export function computeStats(entries: AuditEntry[]): StatsResponse {
@@ -105,20 +248,7 @@ export function getRecentEntries(
   offset: number,
 ): EntryResponse[] {
   const decisions = entries.filter(isDecisionEntry).reverse();
-
-  return decisions.slice(offset, offset + limit).map((entry) => ({
-    timestamp: entry.timestamp,
-    toolName: entry.toolName,
-    toolCallId: entry.toolCallId,
-    params: entry.params,
-    policyRule: entry.policyRule,
-    decision: entry.decision,
-    effectiveDecision: getEffectiveDecision(entry),
-    severity: entry.severity,
-    userResponse: entry.userResponse,
-    executionResult: entry.executionResult,
-    durationMs: entry.durationMs,
-  }));
+  return decisions.slice(offset, offset + limit).map(mapEntry);
 }
 
 /** Verify the hash chain integrity of all entries. */
@@ -129,4 +259,227 @@ export function checkHealth(entries: AuditEntry[]): HealthResponse {
     brokenAt: result.brokenAt,
     totalEntries: entries.length,
   };
+}
+
+// ── New v2 functions ────────────────────────────────────
+
+/** Enhanced stats with risk breakdown and active counts. */
+export function computeEnhancedStats(
+  entries: AuditEntry[],
+): EnhancedStatsResponse {
+  const base = computeStats(entries);
+  const todayDecisions = getTodayEntries(entries).filter(isDecisionEntry);
+
+  let low = 0;
+  let medium = 0;
+  let high = 0;
+  let critical = 0;
+  let riskSum = 0;
+  let riskCount = 0;
+  let peakRisk = 0;
+
+  for (const e of todayDecisions) {
+    if (e.riskTier === "low") low++;
+    else if (e.riskTier === "medium") medium++;
+    else if (e.riskTier === "high") high++;
+    else if (e.riskTier === "critical") critical++;
+
+    if (e.riskScore !== undefined) {
+      riskSum += e.riskScore;
+      riskCount++;
+      if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+    }
+  }
+
+  const now = Date.now();
+  const activeAgentIds = new Set<string>();
+  const activeSessionKeys = new Set<string>();
+  for (const e of entries) {
+    if (now - new Date(e.timestamp).getTime() <= ACTIVE_THRESHOLD_MS) {
+      if (e.agentId) activeAgentIds.add(e.agentId);
+      if (e.sessionKey) activeSessionKeys.add(e.sessionKey);
+    }
+  }
+
+  return {
+    ...base,
+    riskBreakdown: { low, medium, high, critical },
+    avgRiskScore: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
+    peakRiskScore: peakRisk,
+    activeAgents: activeAgentIds.size,
+    activeSessions: activeSessionKeys.size,
+  };
+}
+
+/** Get aggregated agent list from audit entries. */
+export function getAgents(entries: AuditEntry[]): AgentInfo[] {
+  const agentMap = new Map<string, AuditEntry[]>();
+
+  for (const e of entries) {
+    const id = e.agentId || "default";
+    const existing = agentMap.get(id);
+    if (existing) {
+      existing.push(e);
+    } else {
+      agentMap.set(id, [e]);
+    }
+  }
+
+  const now = Date.now();
+  const todayCutoff = new Date(
+    Date.UTC(
+      new Date().getUTCFullYear(),
+      new Date().getUTCMonth(),
+      new Date().getUTCDate(),
+    ),
+  ).toISOString();
+
+  const agents: AgentInfo[] = [];
+
+  for (const [id, agentEntries] of agentMap) {
+    let lastTimestamp: string | null = null;
+    for (const e of agentEntries) {
+      if (!lastTimestamp || e.timestamp > lastTimestamp) {
+        lastTimestamp = e.timestamp;
+      }
+    }
+
+    const isActive = lastTimestamp
+      ? now - new Date(lastTimestamp).getTime() <= ACTIVE_THRESHOLD_MS
+      : false;
+
+    const todayDecisions = agentEntries.filter(
+      (e) => e.timestamp >= todayCutoff && isDecisionEntry(e),
+    );
+
+    let riskSum = 0;
+    let riskCount = 0;
+    let peakRisk = 0;
+    for (const e of agentEntries) {
+      if (e.riskScore !== undefined) {
+        riskSum += e.riskScore;
+        riskCount++;
+        if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+      }
+    }
+
+    let currentSession: AgentInfo["currentSession"];
+    if (isActive) {
+      const withSession = agentEntries
+        .filter((e) => e.sessionKey)
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+      if (withSession.length > 0) {
+        const sessionKey = withSession[0].sessionKey!;
+        const sessionEntries = agentEntries.filter(
+          (e) => e.sessionKey === sessionKey,
+        );
+        const startTime = sessionEntries.reduce(
+          (min, e) => (e.timestamp < min ? e.timestamp : min),
+          sessionEntries[0].timestamp,
+        );
+        currentSession = {
+          sessionKey,
+          startTime,
+          toolCallCount: sessionEntries.filter(isDecisionEntry).length,
+        };
+      }
+    }
+
+    agents.push({
+      id,
+      name: id,
+      status: isActive ? "active" : "idle",
+      todayToolCalls: todayDecisions.length,
+      avgRiskScore: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
+      peakRiskScore: peakRisk,
+      lastActiveTimestamp: lastTimestamp,
+      currentSession,
+    });
+  }
+
+  agents.sort((a, b) => {
+    if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+    return (b.lastActiveTimestamp || "").localeCompare(
+      a.lastActiveTimestamp || "",
+    );
+  });
+
+  return agents;
+}
+
+/** Get detailed info for a single agent. */
+export function getAgentDetail(
+  entries: AuditEntry[],
+  agentId: string,
+): AgentDetailResponse | null {
+  const agentEntries = entries.filter(
+    (e) => (e.agentId || "default") === agentId,
+  );
+  if (agentEntries.length === 0) return null;
+
+  const agents = getAgents(entries);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return null;
+
+  const recentActivity = agentEntries
+    .filter(isDecisionEntry)
+    .reverse()
+    .slice(0, 20)
+    .map(mapEntry);
+
+  const sessionMap = groupBySessions(agentEntries);
+  const allSessions: SessionInfo[] = [];
+  for (const [key, sEntries] of sessionMap) {
+    allSessions.push(buildSessionInfo(key, sEntries));
+  }
+  allSessions.sort((a, b) => b.startTime.localeCompare(a.startTime));
+
+  return {
+    agent,
+    recentActivity,
+    sessions: allSessions.slice(0, 10),
+    totalSessions: allSessions.length,
+  };
+}
+
+/** Get paginated session list, optionally filtered by agent. */
+export function getSessions(
+  entries: AuditEntry[],
+  agentId?: string,
+  limit: number = 10,
+  offset: number = 0,
+): { sessions: SessionInfo[]; total: number } {
+  let filtered = entries;
+  if (agentId) {
+    filtered = entries.filter((e) => (e.agentId || "default") === agentId);
+  }
+
+  const sessionMap = groupBySessions(filtered);
+  const allSessions: SessionInfo[] = [];
+  for (const [key, sEntries] of sessionMap) {
+    allSessions.push(buildSessionInfo(key, sEntries));
+  }
+  allSessions.sort((a, b) => b.startTime.localeCompare(a.startTime));
+
+  return {
+    sessions: allSessions.slice(offset, offset + limit),
+    total: allSessions.length,
+  };
+}
+
+/** Get full detail for a single session. */
+export function getSessionDetail(
+  entries: AuditEntry[],
+  sessionKey: string,
+): SessionDetailResponse | null {
+  const sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
+  if (sessionEntries.length === 0) return null;
+
+  const session = buildSessionInfo(sessionKey, sessionEntries);
+  const mappedEntries = sessionEntries
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    .map(mapEntry);
+
+  return { session, entries: mappedEntries };
 }
