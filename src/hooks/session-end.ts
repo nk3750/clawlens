@@ -2,6 +2,7 @@ import type { AuditLogger } from "../audit/logger";
 import type { RateLimiter } from "../rate/limiter";
 import type { ClawLensConfig } from "../config";
 import type { PluginLogger, SessionEvent } from "../types";
+import type { SessionContext } from "../risk/session-context";
 import { generateDigest } from "../audit/digest";
 
 export function createSessionEndHandler(
@@ -9,8 +10,12 @@ export function createSessionEndHandler(
   rateLimiter: RateLimiter,
   config: ClawLensConfig,
   logger: PluginLogger,
+  sessionContext: SessionContext,
 ) {
-  return async (_event: SessionEvent, _ctx: unknown): Promise<void> => {
+  return async (event: SessionEvent, _ctx: unknown): Promise<void> => {
+    // Clean up session context
+    sessionContext.cleanup(event.sessionKey);
+
     // Flush audit log
     await auditLogger.flush();
 

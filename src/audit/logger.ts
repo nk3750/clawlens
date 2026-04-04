@@ -13,6 +13,18 @@ export interface AuditEntry {
   userResponse?: "approved" | "denied" | "timeout";
   executionResult?: "success" | "failure";
   durationMs?: number;
+  riskScore?: number;
+  riskTier?: "low" | "medium" | "high" | "critical";
+  riskTags?: string[];
+  llmEvaluation?: {
+    adjustedScore: number;
+    reasoning: string;
+    tags: string[];
+    confidence: string;
+    patterns: string[];
+  };
+  /** When present, this entry is an async evaluation appended for a prior tool call. */
+  refToolCallId?: string;
   prevHash: string;
   hash: string;
 }
@@ -138,6 +150,32 @@ export class AuditLogger {
     this.append({
       ...data,
       params: {},
+    });
+  }
+
+  /**
+   * Append an LLM evaluation entry that references the original tool call.
+   * This preserves the hash chain (no in-place mutation) by adding a new
+   * entry with refToolCallId pointing to the original.
+   */
+  appendEvaluation(data: {
+    refToolCallId: string;
+    toolName: string;
+    llmEvaluation: NonNullable<AuditEntry["llmEvaluation"]>;
+    riskScore: number;
+    riskTier: NonNullable<AuditEntry["riskTier"]>;
+    riskTags: string[];
+  }): void {
+    this.append({
+      timestamp: new Date().toISOString(),
+      toolName: data.toolName,
+      toolCallId: data.refToolCallId,
+      refToolCallId: data.refToolCallId,
+      params: {},
+      riskScore: data.riskScore,
+      riskTier: data.riskTier,
+      riskTags: data.riskTags,
+      llmEvaluation: data.llmEvaluation,
     });
   }
 
