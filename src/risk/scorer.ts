@@ -1,6 +1,11 @@
 import type { RiskScore, RiskTier } from "./types";
+import {
+  parseExecCommand,
+  EXEC_BASE_SCORES,
+  type ParsedExecCommand,
+} from "./exec-parser";
 
-// Base risk scores by tool type
+// Base risk scores by tool type (non-exec)
 const BASE_SCORES: Record<string, number> = {
   read: 5,
   glob: 5,
@@ -14,7 +19,7 @@ const BASE_SCORES: Record<string, number> = {
   browser: 45,
   message: 50,
   process: 60,
-  exec: 70,
+  // exec is handled via sub-classification — see getExecBase()
   sessions_spawn: 75,
   cron: 80,
 };
@@ -22,21 +27,14 @@ const BASE_SCORES: Record<string, number> = {
 const DEFAULT_BASE = 30; // Unknown tools get a moderate score
 
 interface Modifier {
-  match: (toolName: string, params: Record<string, unknown>) => boolean;
+  match: (
+    toolName: string,
+    params: Record<string, unknown>,
+    parsed?: ParsedExecCommand,
+  ) => boolean;
   delta: number;
   reason: string;
   tag: string;
-}
-
-function paramContains(
-  params: Record<string, unknown>,
-  key: string,
-  ...needles: string[]
-): boolean {
-  const val = params[key];
-  if (typeof val !== "string") return false;
-  const lower = val.toLowerCase();
-  return needles.some((n) => lower.includes(n));
 }
 
 function pathMatches(
@@ -53,65 +51,156 @@ function pathMatches(
   return patterns.some((pat) => p.includes(pat));
 }
 
-const MODIFIERS: Modifier[] = [
-  // exec command modifiers
+// ── Localhost detection for network commands ──────────────────
+
+const LOCALHOST_PATTERNS = [
+  /^localhost(:\d+)?(\/|$)/i,
+  /^127\.\d+\.\d+\.\d+(:\d+)?(\/|$)/,
+  /^\[?::1\]?(:\d+)?(\/|$)/,
+  /^https?:\/\/localhost(:\d+)?(\/|$)/i,
+  /^https?:\/\/127\.\d+\.\d+\.\d+(:\d+)?(\/|$)/,
+  /^https?:\/\/\[?::1\]?(:\d+)?(\/|$)/,
+];
+
+function isLocalhostUrl(url: string): boolean {
+  return LOCALHOST_PATTERNS.some((pat) => pat.test(url));
+}
+
+function allUrlsAreLocal(urls: string[]): boolean {
+  if (urls.length === 0) return true; // no URLs = no external network
+  return urls.every(isLocalhostUrl);
+}
+
+// ── Exec-specific modifiers (use parsed command info) ────────
+
+const EXEC_MODIFIERS: Modifier[] = [
+  // destructive: only if parsed category IS destructive OR primaryCommand is rm/kill/etc.
+  // NOT from substring matching inside Python code
   {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "rm", "delete"),
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      return parsed.category === "destructive";
+    },
     delta: 15,
-    reason: 'exec command contains "rm" or "delete"',
+    reason: "exec command is destructive (rm, kill, etc.)",
     tag: "destructive",
   },
+
+  // force-flag: only if --force or -f is in parsed flags array
+  // NOT from -c or other unrelated flags
   {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "push", "deploy"),
-    delta: 10,
-    reason: 'exec command contains "push" or "deploy"',
-    tag: "deployment",
-  },
-  {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "merge"),
-    delta: 10,
-    reason: 'exec command contains "merge"',
-    tag: "git-merge",
-  },
-  {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "--force", "-f"),
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      return parsed.flags.some((f) => {
+        if (f === "--force") return true;
+        // Match -f as standalone flag or within combined short flags like -rf
+        if (f.startsWith("--")) return false;
+        // For short flags like -f, -rf, -fr etc., check if 'f' is one of the flag chars
+        const chars = f.slice(1); // strip leading -
+        return chars.includes("f");
+      });
+    },
     delta: 15,
-    reason: 'exec command contains "--force" or "-f"',
+    reason: "exec command has --force or -f flag",
     tag: "force-flag",
   },
+
+  // network: split into local vs external based on parsed URLs
   {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "curl", "wget"),
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      if (parsed.category !== "network-read" && parsed.category !== "network-write") return false;
+      return allUrlsAreLocal(parsed.urls);
+    },
+    delta: 0,
+    reason: "exec network command targeting localhost",
+    tag: "network-local",
+  },
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      if (parsed.category !== "network-read" && parsed.category !== "network-write") return false;
+      return !allUrlsAreLocal(parsed.urls);
+    },
     delta: 10,
-    reason: 'exec command contains "curl" or "wget"',
-    tag: "network",
-  },
-  {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "ssh", "scp"),
-    delta: 10,
-    reason: 'exec command contains "ssh" or "scp"',
-    tag: "remote-access",
-  },
-  {
-    match: (t, p) =>
-      t === "exec" && paramContains(p, "command", "crontab", "launchd"),
-    delta: 15,
-    reason: 'exec command contains "crontab" or "launchd"',
-    tag: "persistence",
-  },
-  {
-    match: (t, p) => t === "exec" && paramContains(p, "command", "chmod", "chown"),
-    delta: 10,
-    reason: 'exec command contains "chmod" or "chown"',
-    tag: "permissions",
-  },
-  {
-    match: (t, p) =>
-      t === "exec" && paramContains(p, "command", "pip install", "npm install"),
-    delta: 5,
-    reason: 'exec command contains "pip install" or "npm install"',
-    tag: "package-install",
+    reason: "exec network command targeting external URL",
+    tag: "network-external",
   },
 
+  // deployment: only for git-write commands containing push/deploy
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      if (parsed.category !== "git-write") return false;
+      const cmd = parsed.segments.join(" ").toLowerCase();
+      return cmd.includes("push") || cmd.includes("deploy");
+    },
+    delta: 10,
+    reason: "exec git push/deploy command",
+    tag: "deployment",
+  },
+
+  // git-merge: only for git-write commands containing merge
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      if (parsed.category !== "git-write") return false;
+      const cmd = parsed.segments.join(" ").toLowerCase();
+      return cmd.includes("merge");
+    },
+    delta: 10,
+    reason: "exec git merge command",
+    tag: "git-merge",
+  },
+
+  // remote-access: based on parsed category
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      return parsed.category === "remote";
+    },
+    delta: 10,
+    reason: "exec remote access command (ssh, scp, rsync)",
+    tag: "remote-access",
+  },
+
+  // persistence: based on parsed category
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      return parsed.category === "persistence";
+    },
+    delta: 15,
+    reason: "exec persistence command (crontab, launchctl, systemctl)",
+    tag: "persistence",
+  },
+
+  // permissions: based on parsed category
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      return parsed.category === "permissions";
+    },
+    delta: 10,
+    reason: "exec permissions command (chmod, chown, chgrp)",
+    tag: "permissions",
+  },
+
+  // package-install: based on parsed category
+  {
+    match: (_t, _p, parsed) => {
+      if (!parsed) return false;
+      return parsed.category === "package-mgmt";
+    },
+    delta: 5,
+    reason: "exec package install command",
+    tag: "package-install",
+  },
+];
+
+// ── Non-exec modifiers (unchanged from original) ────────────
+
+const NON_EXEC_MODIFIERS: Modifier[] = [
   // web_fetch external URL
   {
     match: (t, p) => {
@@ -197,15 +286,38 @@ function getTier(score: number): RiskTier {
 export function computeRiskScore(
   toolName: string,
   params: Record<string, unknown>,
-  llmEvalThreshold: number = 75,
+  llmEvalThreshold: number = 50,
 ): RiskScore {
-  const base = BASE_SCORES[toolName] ?? DEFAULT_BASE;
   const modifiers: Array<{ reason: string; delta: number }> = [];
   const tags: string[] = [];
 
+  let base: number;
+  let parsed: ParsedExecCommand | undefined;
+
+  if (toolName === "exec") {
+    // Sub-classify exec commands using the parser
+    const command = typeof params.command === "string" ? params.command : "";
+    parsed = parseExecCommand(command);
+    base = EXEC_BASE_SCORES[parsed.category];
+  } else {
+    base = BASE_SCORES[toolName] ?? DEFAULT_BASE;
+  }
+
   let score = base;
 
-  for (const mod of MODIFIERS) {
+  // Apply exec-specific modifiers (use parsed command info)
+  if (toolName === "exec" && parsed) {
+    for (const mod of EXEC_MODIFIERS) {
+      if (mod.match(toolName, params, parsed)) {
+        modifiers.push({ reason: mod.reason, delta: mod.delta });
+        tags.push(mod.tag);
+        score += mod.delta;
+      }
+    }
+  }
+
+  // Apply non-exec modifiers
+  for (const mod of NON_EXEC_MODIFIERS) {
     if (mod.match(toolName, params)) {
       modifiers.push({ reason: mod.reason, delta: mod.delta });
       tags.push(mod.tag);

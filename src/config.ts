@@ -15,6 +15,8 @@ export interface ClawLensConfig {
   risk: {
     llmEvalThreshold: number;
     llmEnabled: boolean;
+    llmModel: string;
+    llmApiKeyEnv: string;
   };
   alerts: {
     enabled: boolean;
@@ -37,8 +39,10 @@ export const DEFAULT_CONFIG: ClawLensConfig = {
     schedule: "daily",
   },
   risk: {
-    llmEvalThreshold: 75,
+    llmEvalThreshold: 50,
     llmEnabled: true,
+    llmModel: "claude-haiku-4-5-20251001",
+    llmApiKeyEnv: "ANTHROPIC_API_KEY",
   },
   alerts: {
     enabled: true,
@@ -88,6 +92,14 @@ export function resolveConfig(
         typeof riskCfg?.llmEnabled === "boolean"
           ? riskCfg.llmEnabled
           : DEFAULT_CONFIG.risk.llmEnabled,
+      llmModel:
+        typeof riskCfg?.llmModel === "string"
+          ? riskCfg.llmModel
+          : DEFAULT_CONFIG.risk.llmModel,
+      llmApiKeyEnv:
+        typeof riskCfg?.llmApiKeyEnv === "string"
+          ? riskCfg.llmApiKeyEnv
+          : DEFAULT_CONFIG.risk.llmApiKeyEnv,
     },
     alerts: {
       enabled:

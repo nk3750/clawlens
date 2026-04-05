@@ -2,7 +2,7 @@ import type { RiskScore, LlmRiskEvaluation } from "./types";
 import type { SessionAction } from "./session-context";
 import type { PluginLogger } from "../types";
 
-const EVAL_SYSTEM_PROMPT = `You are a security analyst evaluating an AI agent's tool call for risk.
+export const EVAL_SYSTEM_PROMPT = `You are a security analyst evaluating an AI agent's tool call for risk.
 
 Evaluate:
 1. Is this action potentially dangerous? (destructive, exfiltration, persistence, scope-creep)
@@ -72,16 +72,13 @@ export function parseEvalResponse(raw: string): LlmRiskEvaluation | null {
 /**
  * Evaluate a tool call with an LLM for deeper risk analysis.
  *
- * Uses OpenClaw's runtime.subagent API:
- *   1. run() — spawns a subagent with the eval prompt, returns { runId }
- *   2. waitForRun() — waits for subagent to finish
- *   3. getSessionMessages() — retrieves the response
- *   4. deleteSession() — cleanup
+ * Evaluation paths (tried in order):
+ *   1. runtime.subagent — OpenClaw's built-in subagent API (works during gateway requests)
+ *   2. Direct Anthropic API — via @anthropic-ai/sdk (works everywhere, including cron)
+ *   3. Stub fallback — returns tier-1 score unchanged
  *
  * This is fire-and-forget. It does NOT block the tool call.
  * The result updates the audit entry after the fact.
- *
- * Falls back to a stub if runtime.subagent is unavailable.
  */
 export async function evaluateWithLlm(
   toolName: string,
@@ -97,14 +94,19 @@ export async function evaluateWithLlm(
     };
   },
   logger?: PluginLogger,
+  directApiConfig?: {
+    apiKeyEnv?: string;
+    model?: string;
+  },
 ): Promise<LlmRiskEvaluation> {
+  const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
+
+  // Path 1: Try runtime.subagent (works during gateway requests)
   const subagent = runtime?.subagent;
   if (subagent?.run && subagent?.waitForRun && subagent?.getSessionMessages) {
     const sessionKey = `clawlens:risk-eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 
     try {
-      const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
-
       // 1. Spawn subagent
       const idempotencyKey = `clawlens:eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
       const runResult = (await subagent.run({
@@ -122,56 +124,123 @@ export async function evaluateWithLlm(
 
       if (waitResult.status !== "ok") {
         logger?.warn(`ClawLens: LLM eval subagent failed: ${waitResult.status} ${waitResult.error || ""}`);
-        return fallbackStub(tier1Score);
-      }
+        // Fall through to direct API
+      } else {
+        // 3. Get response messages
+        const messagesResult = (await subagent.getSessionMessages({
+          sessionKey,
+          limit: 5,
+        })) as { messages: unknown[] };
 
-      // 3. Get response messages
-      const messagesResult = (await subagent.getSessionMessages({
-        sessionKey,
-        limit: 5,
-      })) as { messages: unknown[] };
+        // Find the assistant's response — last message with content
+        const assistantMsg = [...messagesResult.messages]
+          .reverse()
+          .find((m: unknown) => {
+            const msg = m as Record<string, unknown>;
+            return msg.role === "assistant" && msg.content;
+          }) as Record<string, unknown> | undefined;
 
-      // Find the assistant's response — last message with content
-      const assistantMsg = [...messagesResult.messages]
-        .reverse()
-        .find((m: unknown) => {
-          const msg = m as Record<string, unknown>;
-          return msg.role === "assistant" && msg.content;
-        }) as Record<string, unknown> | undefined;
-
-      if (assistantMsg?.content) {
-        let raw: string;
-        if (typeof assistantMsg.content === "string") {
-          raw = assistantMsg.content;
-        } else if (Array.isArray(assistantMsg.content)) {
-          // Anthropic content block format: [{type: "text", text: "..."}]
-          raw = (assistantMsg.content as Array<Record<string, unknown>>)
-            .filter((b) => b.type === "text" && typeof b.text === "string")
-            .map((b) => b.text as string)
-            .join("\n");
-        } else {
-          raw = JSON.stringify(assistantMsg.content);
+        if (assistantMsg?.content) {
+          let raw: string;
+          if (typeof assistantMsg.content === "string") {
+            raw = assistantMsg.content;
+          } else if (Array.isArray(assistantMsg.content)) {
+            // Anthropic content block format: [{type: "text", text: "..."}]
+            raw = (assistantMsg.content as Array<Record<string, unknown>>)
+              .filter((b) => b.type === "text" && typeof b.text === "string")
+              .map((b) => b.text as string)
+              .join("\n");
+          } else {
+            raw = JSON.stringify(assistantMsg.content);
+          }
+          const parsed = parseEvalResponse(raw);
+          if (parsed) {
+            // 4. Cleanup session
+            subagent.deleteSession?.({ sessionKey }).catch(() => {});
+            return parsed;
+          }
         }
-        const parsed = parseEvalResponse(raw);
-        if (parsed) {
-          // 4. Cleanup session
-          subagent.deleteSession?.({ sessionKey }).catch(() => {});
-          return parsed;
-        }
-      }
 
-      logger?.warn("ClawLens: LLM eval returned unparseable response, using stub");
-      subagent.deleteSession?.({ sessionKey }).catch(() => {});
+        logger?.warn("ClawLens: LLM eval returned unparseable response, trying direct API");
+        subagent.deleteSession?.({ sessionKey }).catch(() => {});
+      }
     } catch (err) {
       logger?.warn(
-        `ClawLens: LLM eval via subagent failed: ${err instanceof Error ? err.message : String(err)}`,
+        `ClawLens: LLM eval via subagent failed: ${err instanceof Error ? err.message : String(err)}, trying direct API`,
       );
       // Best-effort cleanup
       subagent.deleteSession?.({ sessionKey }).catch(() => {});
     }
   }
 
+  // Path 2: Direct Anthropic API fallback (works in cron and everywhere)
+  const directResult = await evaluateWithDirectApi(message, logger, directApiConfig);
+  if (directResult) {
+    return directResult;
+  }
+
+  // Path 3: Stub fallback
   return fallbackStub(tier1Score);
+}
+
+/**
+ * Evaluate via the Anthropic SDK directly. Used as fallback when
+ * runtime.subagent is unavailable (e.g., cron sessions).
+ */
+async function evaluateWithDirectApi(
+  message: string,
+  logger?: PluginLogger,
+  config?: {
+    apiKeyEnv?: string;
+    model?: string;
+  },
+): Promise<LlmRiskEvaluation | null> {
+  const envVar = config?.apiKeyEnv || "ANTHROPIC_API_KEY";
+  const apiKey = process.env[envVar];
+
+  if (!apiKey) {
+    logger?.warn(`ClawLens: Direct API fallback unavailable — ${envVar} not set`);
+    return null;
+  }
+
+  const model = config?.model || "claude-haiku-4-5-20251001";
+
+  try {
+    // Dynamic import to avoid hard failure if SDK not installed
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const client = new Anthropic({ apiKey });
+
+    const response = await Promise.race([
+      client.messages.create({
+        model,
+        max_tokens: 512,
+        system: EVAL_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: message }],
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Direct API timeout (15s)")), 15_000),
+      ),
+    ]);
+
+    // Extract text from response
+    const textBlocks = response.content.filter(
+      (b): b is { type: "text"; text: string } => b.type === "text",
+    );
+    const raw = textBlocks.map((b) => b.text).join("\n");
+
+    const parsed = parseEvalResponse(raw);
+    if (parsed) {
+      return parsed;
+    }
+
+    logger?.warn("ClawLens: Direct API returned unparseable response");
+    return null;
+  } catch (err) {
+    logger?.warn(
+      `ClawLens: Direct API eval failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
 }
 
 function fallbackStub(tier1Score: RiskScore): LlmRiskEvaluation {

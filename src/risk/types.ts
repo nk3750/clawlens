@@ -6,7 +6,7 @@ export interface RiskScore {
     base: number;
     modifiers: Array<{ reason: string; delta: number }>;
   };
-  needsLlmEval: boolean; // true if score >= llmEvalThreshold (default 75)
+  needsLlmEval: boolean; // true if score >= llmEvalThreshold (default 50)
 }
 
 export interface LlmRiskEvaluation {

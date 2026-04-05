@@ -114,6 +114,71 @@ export class EvalCache {
   clear(): void {
     this.cache.clear();
   }
+
+  /**
+   * Pre-warm the cache from audit log entries that have real LLM evaluations.
+   * Only caches entries with high-confidence evaluations.
+   * Limit to last 200 qualifying entries.
+   * Returns the number of entries warmed.
+   */
+  warmFromAuditLog(entries: Array<{
+    toolName: string;
+    params: Record<string, unknown>;
+    llmEvaluation?: {
+      adjustedScore: number;
+      confidence: string;
+      tags: string[];
+      reasoning: string;
+    };
+  }>): number {
+    // Filter to entries with high-confidence LLM evaluations
+    const qualifying = entries.filter(
+      (e) => e.llmEvaluation && e.llmEvaluation.confidence === "high",
+    );
+
+    // Take last 200 qualifying entries
+    const toWarm = qualifying.slice(-200);
+
+    let warmed = 0;
+    for (const entry of toWarm) {
+      const evaluation = entry.llmEvaluation!;
+      const key = EvalCache.buildKey(entry.toolName, entry.params);
+
+      // Don't overwrite existing entries
+      if (this.cache.has(key)) continue;
+
+      // Evict oldest if at capacity
+      if (this.cache.size >= MAX_CACHE_SIZE) {
+        let oldestKey: string | undefined;
+        let oldestTime = Infinity;
+        for (const [k, v] of this.cache) {
+          if (v.cachedAt < oldestTime) {
+            oldestTime = v.cachedAt;
+            oldestKey = k;
+          }
+        }
+        if (oldestKey) this.cache.delete(oldestKey);
+      }
+
+      const tier =
+        evaluation.adjustedScore >= 80 ? "critical" :
+        evaluation.adjustedScore >= 60 ? "high" :
+        evaluation.adjustedScore >= 30 ? "medium" : "low";
+
+      this.cache.set(key, {
+        adjustedScore: evaluation.adjustedScore,
+        tier,
+        tags: evaluation.tags,
+        reasoning: evaluation.reasoning,
+        cachedAt: Date.now(),
+        hitCount: 0,
+      });
+
+      warmed++;
+    }
+
+    return warmed;
+  }
 }
 
 /**

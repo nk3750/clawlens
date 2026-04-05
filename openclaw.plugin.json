@@ -2,7 +2,7 @@
   "id": "clawlens",
   "name": "ClawLens",
   "description": "Agent observatory and governance for OpenClaw — see everything your agents do, understand risk, enforce when ready",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "configSchema": {
     "type": "object",
     "properties": {

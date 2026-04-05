@@ -72,7 +72,6 @@ const READ_ONLY_COMMANDS = new Set([
   "file",
   "stat",
   "du",
-  "df",
   "diff",
   "md5sum",
   "sha256sum",
@@ -95,6 +94,7 @@ const SYSTEM_INFO_COMMANDS = new Set([
   "ps",
   "top",
   "htop",
+  "df",
   "env",
   "printenv",
   "date",
@@ -533,8 +533,14 @@ function findPrimaryCommand(tokens: string[]): { command: string; remaining: str
       continue;
     } else if (baseName === "env") {
       // env can have VAR=val pairs before the command
+      // But bare `env` (no further command) is system-info
+      const envStart = i;
       while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) {
         i++;
+      }
+      // If nothing left after env + VAR=val pairs, `env` is the primary command
+      if (i >= tokens.length) {
+        return { command: "env", remaining: tokens.slice(envStart - 1) };
       }
     }
     // For pushd/popd/eval, skip all remaining tokens

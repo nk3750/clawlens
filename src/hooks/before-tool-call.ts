@@ -18,6 +18,7 @@ export interface BeforeToolCallDeps {
   sessionContext: SessionContext;
   evalCache?: EvalCache;
   alertSend?: (msg: string) => Promise<void> | void;
+  logger?: import("../types").PluginLogger;
   runtime?: {
     subagent?: {
       run?: (opts: unknown) => Promise<unknown>;
@@ -37,6 +38,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
     sessionContext,
     evalCache,
     alertSend,
+    logger,
     runtime,
   } = deps;
 
@@ -124,6 +126,11 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
             recentActions,
             risk,
             runtime,
+            logger,
+            {
+              apiKeyEnv: config.risk.llmApiKeyEnv,
+              model: config.risk.llmModel,
+            },
           ).then((evaluation) => {
             // Skip writing stub evaluations to audit log
             if (evaluation.reasoning?.includes("Stub evaluation")) return;

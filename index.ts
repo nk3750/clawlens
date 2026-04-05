@@ -76,6 +76,7 @@ const plugin: OpenClawPluginDefinition = {
         sessionContext,
         evalCache,
         alertSend,
+        logger: api.logger,
         runtime: runtime as
           | {
               subagent?: {
@@ -127,6 +128,20 @@ const plugin: OpenClawPluginDefinition = {
           loader.load();
         }
         await auditLogger.init();
+
+        // Pre-warm eval cache from audit log entries with real LLM evaluations
+        try {
+          const entries = auditLogger.readEntries();
+          const warmed = evalCache.warmFromAuditLog(entries);
+          if (warmed > 0) {
+            api.logger.info(`ClawLens: Pre-warmed eval cache with ${warmed} entries`);
+          }
+        } catch (err) {
+          api.logger.warn(
+            `ClawLens: Cache pre-warming failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
         rateLimiter.restore();
         loader.startWatching();
         api.logger.info("ClawLens: Service started");
