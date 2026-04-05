@@ -9,6 +9,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
     "js-yaml": "^4.1.0",
     "minimatch": "^10.0.0"
   },
