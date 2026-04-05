@@ -93,6 +93,38 @@ export function describeAction(entry: {
   }
 }
 
+// ── Session context parsing ─────────────────
+
+/**
+ * Parse a session key like "agent:main:telegram:direct:7928586762"
+ * into a human-readable label: "via Telegram" or "Cron: daily-audit"
+ */
+export function parseSessionContext(sessionKey: string): {
+  channel: string;
+  trigger: string;
+  label: string;
+} {
+  const parts = sessionKey.split(":");
+  // Format: agent:<agentId>:<channel>:<trigger>:<...>
+  const channel = parts[2] || "unknown";
+  const trigger = parts[3] || "";
+
+  if (channel === "cron") {
+    const cronName = parts.slice(3).join(":") || "scheduled";
+    return { channel: "cron", trigger: "cron", label: `Cron: ${cronName}` };
+  }
+  if (channel === "telegram") {
+    return { channel: "telegram", trigger: trigger || "direct", label: "via Telegram" };
+  }
+  if (channel === "web") {
+    return { channel: "web", trigger: trigger || "session", label: "via Web" };
+  }
+  if (channel === "api") {
+    return { channel: "api", trigger: trigger || "call", label: "via API" };
+  }
+  return { channel, trigger, label: `via ${channel}` };
+}
+
 /** Decision label in plain language */
 export function decisionLabel(d: string): string {
   const map: Record<string, string> = {

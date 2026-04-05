@@ -1,6 +1,11 @@
 /**
  * Mock data for local dashboard development.
  * Run: cd dashboard && npm run dev
+ *
+ * Guarantees:
+ * - "main" agent always has recent entries (shows as Active)
+ * - Mix of cron and interactive sessions
+ * - Some pending approvals and blocked actions for testing
  */
 
 const now = Date.now();
@@ -67,14 +72,19 @@ interface MockEntry {
   };
 }
 
-function generateEntry(offsetMs: number): MockEntry {
-  const tool = pick(tools);
-  const agent = pick(agents);
-  const session = pick(sessions.filter((s) => s.includes(agent))) || pick(sessions);
-  const score = Math.floor(Math.random() * 100);
+function generateEntry(offsetMs: number, overrides?: Partial<MockEntry>): MockEntry {
+  const tool = overrides?.toolName || pick(tools);
+  const agent = overrides?.agentId || pick(agents);
+  const session =
+    overrides?.sessionKey ||
+    pick(sessions.filter((s) => s.includes(agent))) ||
+    pick(sessions);
+  const score = overrides?.riskScore ?? Math.floor(Math.random() * 100);
   const tier = riskTier(score);
-  const decisions: Array<"allow" | "block" | "approval_required"> = ["allow", "allow", "allow", "block", "approval_required"];
-  const decision = pick(decisions);
+  const decisions: Array<"allow" | "block" | "approval_required"> = [
+    "allow", "allow", "allow", "block", "approval_required",
+  ];
+  const decision = overrides?.decision || pick(decisions);
 
   let effectiveDecision = decision === "approval_required" ? "pending" : decision;
   let userResponse: string | undefined;
@@ -87,15 +97,21 @@ function generateEntry(offsetMs: number): MockEntry {
   if (score > 50) tags.push(pick(riskTags));
   if (score > 70) tags.push(pick(riskTags.filter((t) => !tags.includes(t))));
 
-  const params: Record<string, unknown> = {};
-  if (tool === "exec") params.command = pick(["ls -la", "git status", "npm test", "rm -rf /tmp/cache", "curl https://api.example.com"]);
-  if (tool === "write") params.path = pick(["/tmp/output.json", "config.yaml", "data/report.csv"]);
-  if (tool === "message") {
-    params.to = pick(["boss@company.com", "#general", "user:12345"]);
-    params.subject = pick(["Status update", "Quarterly report", "Alert: anomaly detected"]);
+  const params: Record<string, unknown> = overrides?.params || {};
+  if (Object.keys(params).length === 0) {
+    if (tool === "exec")
+      params.command = pick(["ls -la", "git status", "npm test", "rm -rf /tmp/cache", "curl https://api.example.com"]);
+    if (tool === "write")
+      params.path = pick(["/tmp/output.json", "config.yaml", "data/report.csv"]);
+    if (tool === "message") {
+      params.to = pick(["boss@company.com", "#general", "user:12345"]);
+      params.subject = pick(["Status update", "Quarterly report", "Alert: anomaly detected"]);
+    }
+    if (tool === "read")
+      params.path = pick(["package.json", "src/index.ts", ".env", "database.sqlite"]);
+    if (tool === "fetch_url")
+      params.url = pick(["https://api.github.com/repos", "https://internal.corp/data", "https://webhook.site/test"]);
   }
-  if (tool === "read") params.path = pick(["package.json", "src/index.ts", ".env", "database.sqlite"]);
-  if (tool === "fetch_url") params.url = pick(["https://api.github.com/repos", "https://internal.corp/data", "https://webhook.site/test"]);
 
   const entry: MockEntry = {
     timestamp: new Date(now - offsetMs).toISOString(),
@@ -112,11 +128,12 @@ function generateEntry(offsetMs: number): MockEntry {
     sessionKey: session,
     executionResult: decision !== "block" ? pick(["success", "success", "success", "failure"]) : undefined,
     durationMs: Math.floor(Math.random() * 3000) + 50,
+    ...overrides,
   };
 
   if (userResponse) entry.userResponse = userResponse;
 
-  // Add LLM evaluation for high-risk entries
+  // LLM evaluation for high-risk entries
   if (score > 60 && Math.random() > 0.5) {
     entry.llmEvaluation = {
       adjustedScore: score + Math.floor(Math.random() * 20) - 10,
@@ -127,7 +144,7 @@ function generateEntry(offsetMs: number): MockEntry {
         "Multiple rapid tool calls detected in sequence. The pattern resembles an automated scanning or brute-force attempt.",
         "Email being sent to external recipient with attachment containing sensitive data fields from recent database queries.",
       ]),
-      tags: tags,
+      tags,
       confidence: pick(["high", "medium", "low"]),
       patterns: pick([
         ["rapid-sequence", "external-target"],
@@ -141,19 +158,80 @@ function generateEntry(offsetMs: number): MockEntry {
   return entry;
 }
 
-// Generate 80 entries spread over the last 24 hours
 export function generateMockEntries(): MockEntry[] {
   const entries: MockEntry[] = [];
-  for (let i = 0; i < 80; i++) {
+
+  // ── Guarantee "main" is always active ──────────────
+  // Inject 8 recent entries for "main" within the last 5 minutes
+  const mainActions = [
+    { toolName: "read", params: { path: "package.json" }, riskScore: 8 },
+    { toolName: "read", params: { path: "src/index.ts" }, riskScore: 5 },
+    { toolName: "exec", params: { command: "git status" }, riskScore: 22 },
+    { toolName: "exec", params: { command: "npm test" }, riskScore: 28 },
+    { toolName: "write", params: { path: "config.yaml" }, riskScore: 35 },
+    { toolName: "read", params: { path: ".env" }, riskScore: 45 },
+    { toolName: "message", params: { to: "boss@company.com", subject: "Status update" }, riskScore: 52 },
+    { toolName: "fetch_url", params: { url: "https://api.github.com/repos" }, riskScore: 15 },
+  ];
+  for (let i = 0; i < mainActions.length; i++) {
+    entries.push(
+      generateEntry(i * 30_000 + Math.random() * 20_000, {
+        agentId: "main",
+        sessionKey: "agent:main:telegram:direct:7928586762",
+        decision: "allow",
+        effectiveDecision: "allow",
+        ...mainActions[i],
+        riskTier: riskTier(mainActions[i].riskScore),
+      }),
+    );
+  }
+
+  // Add one pending approval for "main" (makes attention banner appear)
+  entries.push(
+    generateEntry(2 * min, {
+      agentId: "main",
+      sessionKey: "agent:main:telegram:direct:7928586762",
+      toolName: "message",
+      params: { to: "external@gmail.com", subject: "Quarterly report" },
+      decision: "approval_required",
+      effectiveDecision: "pending",
+      riskScore: 58,
+      riskTier: "medium",
+    }),
+  );
+
+  // ── seo-bot: cron job from ~2 hours ago ────────────
+  for (let i = 0; i < 15; i++) {
+    entries.push(
+      generateEntry(2 * hour + i * 3 * min + Math.random() * min, {
+        agentId: "seo-bot",
+        sessionKey: "agent:seo-bot:cron:daily-audit",
+      }),
+    );
+  }
+
+  // ── data-pipeline: cron ETL from ~6 hours ago ──────
+  for (let i = 0; i < 12; i++) {
+    entries.push(
+      generateEntry(6 * hour + i * 5 * min + Math.random() * min, {
+        agentId: "data-pipeline",
+        sessionKey: "agent:data-pipeline:cron:etl-run",
+      }),
+    );
+  }
+
+  // ── Random additional entries across agents ────────
+  for (let i = 0; i < 40; i++) {
     const offset = Math.floor(Math.random() * 24 * hour);
     entries.push(generateEntry(offset));
   }
-  // Sort newest first
+
   entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return entries;
 }
 
-// Generate agent list from entries
+// ── Aggregation helpers (unchanged) ──────────────────
+
 export function generateMockAgents(entries: MockEntry[]) {
   const agentMap = new Map<string, MockEntry[]>();
   for (const e of entries) {
@@ -192,7 +270,6 @@ export function generateMockAgents(entries: MockEntry[]) {
   });
 }
 
-// Generate stats from entries
 export function generateMockStats(entries: MockEntry[]) {
   const todayCutoff = new Date();
   todayCutoff.setUTCHours(0, 0, 0, 0);
@@ -240,7 +317,6 @@ export function generateMockStats(entries: MockEntry[]) {
   };
 }
 
-// Generate sessions from entries
 export function generateMockSessions(entries: MockEntry[], agentId?: string) {
   let filtered = entries;
   if (agentId) filtered = entries.filter((e) => e.agentId === agentId);

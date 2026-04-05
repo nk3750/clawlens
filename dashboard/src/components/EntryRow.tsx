@@ -1,30 +1,33 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { EntryResponse } from "../lib/types";
-import {
-  relTime,
-  describeAction,
-  decisionLabel,
-  riskTierFromScore,
-} from "../lib/utils";
+import { relTime, describeAction, decisionLabel } from "../lib/utils";
 import AgentAvatar from "./AgentAvatar";
 import RiskBadge from "./RiskBadge";
 import RiskTags from "./RiskTags";
 
+/** Risk tier → dot color for the subtle indicator */
+function riskDotColor(entry: EntryResponse): string {
+  if (!entry.riskTier && entry.riskScore == null) return "#1e2130";
+  const tier = entry.riskTier || (entry.riskScore! > 80 ? "critical" : entry.riskScore! > 60 ? "high" : entry.riskScore! > 30 ? "medium" : "low");
+  return tier === "critical" ? "#ff4040" : tier === "high" ? "#f87171" : tier === "medium" ? "#fbbf24" : "#34d399";
+}
+
 const decisionColors: Record<string, string> = {
-  allow: "text-status-active",
+  allow: "text-muted",
   block: "text-risk-high",
-  approved: "text-risk-medium",
+  approved: "text-muted",
   denied: "text-risk-high",
   timeout: "text-muted",
   pending: "text-risk-medium",
-  success: "text-status-active",
+  success: "text-muted",
   failure: "text-risk-high",
 };
 
 /**
- * Action Item — a single agent action shown narratively.
- * "seo-bot searched for competitor keywords → allowed (risk 12)"
+ * Clean feed-style action item.
+ * Surface: agent avatar + narrative + risk dot + time
+ * Expand: full technical details (risk score, params, LLM eval, etc.)
  */
 export default function EntryRow({
   entry,
@@ -37,79 +40,87 @@ export default function EntryRow({
   isNew?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const tier = entry.riskTier || (entry.riskScore != null ? riskTierFromScore(entry.riskScore) : undefined);
-  const hasDetails = Object.keys(entry.params).length > 0 || entry.llmEvaluation || entry.policyRule;
+  const hasDetails = Object.keys(entry.params).length > 0 || entry.llmEvaluation || entry.policyRule || entry.riskScore != null;
+  const dotColor = riskDotColor(entry);
+  const isBlocked = entry.effectiveDecision === "block" || entry.effectiveDecision === "denied";
+  const isPending = entry.effectiveDecision === "pending";
 
   return (
-    <div className={`group ${isNew ? "entry-flash" : ""}`}>
+    <div className={isNew ? "entry-flash" : ""}>
       <button
         onClick={() => hasDetails && setExpanded(!expanded)}
-        className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 ${
-          hasDetails ? "cursor-pointer hover:bg-surface/60" : "cursor-default"
-        } ${expanded ? "bg-surface/40" : ""}`}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all duration-200 ${
+          hasDetails ? "cursor-pointer hover:bg-surface/40" : "cursor-default"
+        } ${expanded ? "bg-surface/30" : ""}`}
       >
+        {/* Risk dot */}
+        <div
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{ backgroundColor: dotColor }}
+        />
+
         {/* Agent avatar */}
         {showAgent && entry.agentId && (
-          <div className="pt-0.5">
-            <AgentAvatar agentId={entry.agentId} size="sm" />
-          </div>
+          <AgentAvatar agentId={entry.agentId} size="sm" />
         )}
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          {/* Main narrative line */}
-          <div className="flex items-baseline gap-2 flex-wrap">
-            {showAgent && entry.agentId && (
-              <span className="font-display font-semibold text-primary text-[13px]">
-                {entry.agentId}
-              </span>
-            )}
-            <span className="text-secondary text-[13px]">
-              {describeAction(entry)}
+        {/* Narrative */}
+        <div className="flex-1 min-w-0 text-[13px]">
+          {showAgent && entry.agentId && (
+            <span className="font-display font-semibold text-primary mr-1.5">
+              {entry.agentId}
             </span>
-            <span className="text-muted text-[11px]">{"\u2192"}</span>
-            <span className={`text-[12px] font-medium ${decisionColors[entry.effectiveDecision] || "text-muted"}`}>
-              {decisionLabel(entry.effectiveDecision)}
+          )}
+          <span className="text-secondary">{describeAction(entry)}</span>
+          {(isBlocked || isPending) && (
+            <span className={`ml-1.5 text-[11px] font-medium ${decisionColors[entry.effectiveDecision] || "text-muted"}`}>
+              {"\u2014"} {decisionLabel(entry.effectiveDecision)}
             </span>
-          </div>
-
-          {/* Risk tags inline */}
-          {entry.riskTags && entry.riskTags.length > 0 && (
-            <div className="mt-1">
-              <RiskTags tags={entry.riskTags} />
-            </div>
           )}
         </div>
 
-        {/* Right side: risk + time */}
-        <div className="flex items-center gap-2.5 shrink-0 pt-0.5">
-          <RiskBadge score={entry.riskScore} tier={tier} />
-          <span className="text-[11px] text-muted/60 font-mono w-14 text-right hidden sm:block">
-            {relTime(entry.timestamp)}
-          </span>
-          {hasDetails && (
-            <svg
-              className={`w-3.5 h-3.5 text-muted/40 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          )}
-        </div>
+        {/* Time */}
+        <span className="text-[11px] text-muted/50 font-mono shrink-0 hidden sm:block">
+          {relTime(entry.timestamp)}
+        </span>
+
+        {/* Expand chevron */}
+        {hasDetails && (
+          <svg
+            className={`w-3 h-3 text-muted/30 transition-transform duration-200 shrink-0 ${expanded ? "rotate-180" : ""}`}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
       </button>
 
-      {/* Expanded detail */}
+      {/* Expanded technical detail — progressive disclosure */}
       {expanded && (
-        <div className="ml-9 mr-3 mb-2 p-3 bg-surface/60 rounded-xl border border-border/30 space-y-3 animate-slide-in">
+        <div className="mx-3 mb-2 ml-8 p-3 bg-surface/50 rounded-xl border border-border/20 space-y-3 animate-slide-in">
+          {/* Risk info */}
+          {entry.riskScore != null && (
+            <div className="flex items-center gap-4 text-xs">
+              <RiskBadge score={entry.riskScore} tier={entry.riskTier} />
+              <span className="text-muted">
+                {entry.riskTier} risk {"\u00b7"} {decisionLabel(entry.effectiveDecision)}
+              </span>
+            </div>
+          )}
+
+          {entry.riskTags && entry.riskTags.length > 0 && (
+            <RiskTags tags={entry.riskTags} />
+          )}
+
+          {/* Detail grid */}
           <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
             <span className="text-muted">Time</span>
             <span className="text-secondary font-mono text-[11px]">
               {new Date(entry.timestamp).toLocaleString()}
             </span>
-
             {entry.policyRule && (
               <>
-                <span className="text-muted">Policy rule</span>
+                <span className="text-muted">Policy</span>
                 <span className="text-secondary font-mono text-[11px]">{entry.policyRule}</span>
               </>
             )}
@@ -133,30 +144,22 @@ export default function EntryRow({
             {Object.keys(entry.params).length > 0 && (
               <>
                 <span className="text-muted">Params</span>
-                <pre className="text-secondary/80 font-mono text-[11px] whitespace-pre-wrap break-all bg-deep/50 rounded-lg p-2 max-h-32 overflow-auto">
+                <pre className="text-secondary/70 font-mono text-[10px] whitespace-pre-wrap break-all bg-deep/40 rounded-lg p-2 max-h-28 overflow-auto">
                   {JSON.stringify(entry.params, null, 2)}
                 </pre>
               </>
             )}
           </div>
 
+          {/* LLM evaluation */}
           {entry.llmEvaluation && (
-            <div className="p-3 bg-deep/40 rounded-xl border border-border/20">
+            <div className="p-3 bg-deep/30 rounded-xl border border-border/15">
               <div className="text-[10px] font-display font-semibold text-muted uppercase tracking-wider mb-1.5">
-                AI Risk Assessment
+                AI Assessment
               </div>
-              <blockquote className="text-xs text-secondary/90 italic border-l-2 border-accent/30 pl-3 leading-relaxed">
+              <blockquote className="text-xs text-secondary/80 italic border-l-2 border-accent/20 pl-3 leading-relaxed">
                 {entry.llmEvaluation.reasoning}
               </blockquote>
-              <div className="mt-2 flex items-center gap-3 text-[10px] text-muted">
-                <span>
-                  Adjusted score:{" "}
-                  <span className="text-secondary font-mono">{entry.llmEvaluation.adjustedScore}</span>
-                </span>
-                <span>
-                  Confidence: <span className="text-secondary">{entry.llmEvaluation.confidence}</span>
-                </span>
-              </div>
             </div>
           )}
         </div>

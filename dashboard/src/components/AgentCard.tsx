@@ -1,117 +1,85 @@
 import { Link } from "react-router-dom";
-import type { AgentInfo, EntryResponse } from "../lib/types";
-import {
-  relTime,
-  agentColor,
-  describeAction,
-  decisionLabel,
-  riskTierFromScore,
-} from "../lib/utils";
+import type { AgentInfo } from "../lib/types";
+import { relTime, agentColor, parseSessionContext } from "../lib/utils";
 import AgentAvatar from "./AgentAvatar";
-import RiskBadge from "./RiskBadge";
 
 /**
- * Agent Station — the hero card on the Overview page.
- * Shows what an agent is doing, not just stats about it.
+ * Agent card — name, status, trigger context. No risk numbers on surface.
+ * Risk only shows as a subtle text label when it's elevated.
  */
-export default function AgentCard({
-  agent,
-  recentActions,
-}: {
-  agent: AgentInfo;
-  recentActions?: EntryResponse[];
-  index?: number;
-}) {
-  const color = agentColor(agent.id);
+export default function AgentCard({ agent }: { agent: AgentInfo; index?: number }) {
   const isActive = agent.status === "active";
-  const riskTier = agent.peakRiskScore
-    ? riskTierFromScore(agent.peakRiskScore)
-    : undefined;
+  const color = agentColor(agent.id);
+
+  // Parse trigger context from session key
+  const sessionContext = agent.currentSession
+    ? parseSessionContext(agent.currentSession.sessionKey)
+    : null;
+
+  // Only surface risk when it's noteworthy (medium+)
+  const riskLabel =
+    agent.avgRiskScore > 60 ? "high risk" :
+    agent.avgRiskScore > 30 ? "moderate risk" :
+    null;
+
+  const riskColor =
+    agent.avgRiskScore > 60 ? "text-risk-high" :
+    agent.avgRiskScore > 30 ? "text-risk-medium" :
+    "";
 
   return (
     <Link
       to={`/agent/${encodeURIComponent(agent.id)}`}
-      className={`block bg-card border rounded-2xl p-5 transition-all duration-300 group hover:translate-y-[-2px] ${
+      className={`flex items-center gap-4 px-4 py-4 rounded-2xl border transition-all duration-300 group hover:translate-y-[-1px] ${
         isActive
-          ? "border-border-hover agent-glow hover:shadow-lg"
-          : "border-border hover:border-border-hover"
+          ? "bg-card border-border-hover agent-glow"
+          : "bg-card/60 border-border/60 hover:border-border-hover hover:bg-card"
       }`}
       style={{ "--agent-color": color } as React.CSSProperties}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <AgentAvatar agentId={agent.id} size="lg" showPulse={isActive} />
-          <div>
-            <h3 className="font-display font-bold text-primary text-base group-hover:text-accent transition-colors">
-              {agent.name}
-            </h3>
-            <p className="text-xs text-muted mt-0.5">
-              {isActive ? (
-                <>
-                  <span className="text-status-active">Active</span>
-                  {agent.currentSession && (
-                    <span> {"\u00b7"} {agent.currentSession.toolCallCount} actions in session</span>
-                  )}
-                </>
-              ) : (
-                <>
-                  Idle {"\u00b7"}{" "}
-                  {agent.lastActiveTimestamp
-                    ? `last seen ${relTime(agent.lastActiveTimestamp)}`
-                    : "no activity yet"}
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-        <div className="text-right">
-          <RiskBadge score={agent.peakRiskScore || undefined} tier={riskTier} />
-          <div className="text-[10px] text-muted mt-1">peak risk</div>
-        </div>
-      </div>
+      <AgentAvatar agentId={agent.id} size="md" showPulse={isActive} />
 
-      {/* Recent actions mini-feed */}
-      {recentActions && recentActions.length > 0 && (
-        <div className="mt-3 space-y-1 bg-surface/50 rounded-xl p-3 border border-border/30">
-          {recentActions.slice(0, 4).map((action, i) => {
-            const tier = action.riskTier || (action.riskScore != null ? riskTierFromScore(action.riskScore) : undefined);
-            return (
-              <div key={action.toolCallId || i} className="flex items-center gap-2 text-xs py-0.5">
-                <RiskBadge score={action.riskScore} tier={tier} compact />
-                <span className="text-secondary truncate flex-1">
-                  {describeAction(action)}
-                </span>
-                <span className={`shrink-0 text-[10px] ${
-                  action.effectiveDecision === "block" || action.effectiveDecision === "denied"
-                    ? "text-risk-high"
-                    : action.effectiveDecision === "pending"
-                      ? "text-risk-medium"
-                      : "text-muted"
-                }`}>
-                  {decisionLabel(action.effectiveDecision)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Footer stats */}
-      <div className="mt-3 flex items-center gap-4 text-xs text-muted pt-2 border-t border-border/30">
-        <span>
-          <span className="text-secondary font-mono">{agent.todayToolCalls}</span> actions today
-        </span>
-        {agent.avgRiskScore > 0 && (
-          <span>
-            avg risk{" "}
-            <span className="text-secondary font-mono">{agent.avgRiskScore}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-display font-semibold text-primary text-[14px] group-hover:text-accent transition-colors">
+            {agent.name}
           </span>
-        )}
-        <span className="ml-auto text-[11px] text-muted/60 group-hover:text-accent/60 transition-colors">
-          View details {"\u2192"}
-        </span>
+          {isActive ? (
+            <span className="text-[11px] text-status-active font-medium">Active</span>
+          ) : (
+            <span className="text-[11px] text-muted">
+              {agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "no activity"}
+            </span>
+          )}
+        </div>
+        <div className="text-[11px] text-muted mt-0.5 flex items-center gap-2">
+          {/* Trigger/channel context */}
+          {isActive && sessionContext && (
+            <>
+              <span className="text-secondary/70">{sessionContext.label}</span>
+              <span className="text-border">{"\u00b7"}</span>
+            </>
+          )}
+          {!isActive && agent.todayToolCalls === 0 && sessionContext === null && (
+            // Try to infer if this is a cron agent from the name
+            agent.name.includes("bot") || agent.name.includes("pipeline") ? (
+              <span className="text-muted/60">Scheduled agent</span>
+            ) : null
+          )}
+          <span>
+            {agent.todayToolCalls > 0
+              ? `${agent.todayToolCalls} action${agent.todayToolCalls !== 1 ? "s" : ""} today`
+              : "No actions today"}
+          </span>
+        </div>
       </div>
+
+      {/* Risk — only show when noteworthy */}
+      {riskLabel && (
+        <span className={`text-[11px] ${riskColor} shrink-0`}>
+          {riskLabel}
+        </span>
+      )}
     </Link>
   );
 }
