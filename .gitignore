@@ -3,7 +3,8 @@
 
 # Node
 node_modules/
-dist/
+## dashboard/dist/ is committed for plugin deployment
+!dashboard/dist/
 .env
 .env.*
 
