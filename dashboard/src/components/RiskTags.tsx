@@ -6,7 +6,7 @@ export default function RiskTags({ tags }: { tags?: string[] }) {
       {tags.map((tag) => (
         <span
           key={tag}
-          className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-elevated text-muted border border-border/50"
+          className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-elevated/80 text-muted border border-border/40"
         >
           {tag}
         </span>

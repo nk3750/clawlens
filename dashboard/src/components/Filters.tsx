@@ -1,84 +1,109 @@
 import type { AgentInfo } from "../lib/types";
+import AgentAvatar from "./AgentAvatar";
 
 interface FiltersProps {
   agents: AgentInfo[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
-  selectedTool: string;
-  onToolChange: (tool: string) => void;
   selectedRisk: string;
   onRiskChange: (risk: string) => void;
   selectedTime: string;
   onTimeChange: (time: string) => void;
-  tools: string[];
 }
-
-const selectClass =
-  "bg-surface border border-border rounded-lg px-3 py-2 text-sm text-secondary focus:outline-none focus:border-accent/50 font-body cursor-pointer";
 
 export default function Filters({
   agents,
   selectedAgent,
   onAgentChange,
-  selectedTool,
-  onToolChange,
   selectedRisk,
   onRiskChange,
   selectedTime,
   onTimeChange,
-  tools,
 }: FiltersProps) {
   return (
-    <div className="flex flex-wrap gap-2 mb-4">
-      <select
-        className={selectClass}
-        value={selectedAgent}
-        onChange={(e) => onAgentChange(e.target.value)}
-      >
-        <option value="">All Agents</option>
+    <div className="flex flex-wrap items-center gap-2 mb-5">
+      {/* Agent pills */}
+      <div className="flex items-center gap-1.5">
+        <Pill active={!selectedAgent} onClick={() => onAgentChange("")}>
+          All
+        </Pill>
         {agents.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
+          <Pill
+            key={a.id}
+            active={selectedAgent === a.id}
+            onClick={() => onAgentChange(selectedAgent === a.id ? "" : a.id)}
+          >
+            <AgentAvatar agentId={a.id} size="sm" />
+            <span className="hidden sm:inline">{a.name}</span>
+          </Pill>
         ))}
-      </select>
+      </div>
 
-      <select
-        className={selectClass}
-        value={selectedTool}
-        onChange={(e) => onToolChange(e.target.value)}
-      >
-        <option value="">All Tools</option>
-        {tools.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
+      <div className="w-px h-5 bg-border mx-1 hidden sm:block" />
+
+      {/* Risk pills */}
+      <div className="flex items-center gap-1">
+        {(["low", "medium", "high", "critical"] as const).map((r) => (
+          <Pill
+            key={r}
+            active={selectedRisk === r}
+            onClick={() => onRiskChange(selectedRisk === r ? "" : r)}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                backgroundColor:
+                  r === "low" ? "#34d399" : r === "medium" ? "#fbbf24" : r === "high" ? "#f87171" : "#ff4040",
+              }}
+            />
+            <span className="hidden sm:inline capitalize">{r}</span>
+          </Pill>
         ))}
-      </select>
+      </div>
 
-      <select
-        className={selectClass}
-        value={selectedRisk}
-        onChange={(e) => onRiskChange(e.target.value)}
-      >
-        <option value="">All Risk</option>
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-        <option value="critical">Critical</option>
-      </select>
+      <div className="w-px h-5 bg-border mx-1 hidden sm:block" />
 
-      <select
-        className={selectClass}
-        value={selectedTime}
-        onChange={(e) => onTimeChange(e.target.value)}
-      >
-        <option value="1h">Last 1h</option>
-        <option value="6h">Last 6h</option>
-        <option value="24h">Last 24h</option>
-        <option value="7d">Last 7d</option>
-        <option value="">All time</option>
-      </select>
+      {/* Time pills */}
+      <div className="flex items-center gap-1">
+        {[
+          { value: "1h", label: "1h" },
+          { value: "6h", label: "6h" },
+          { value: "24h", label: "24h" },
+          { value: "7d", label: "7d" },
+          { value: "", label: "All" },
+        ].map((t) => (
+          <Pill
+            key={t.value}
+            active={selectedTime === t.value}
+            onClick={() => onTimeChange(t.value)}
+          >
+            {t.label}
+          </Pill>
+        ))}
+      </div>
     </div>
+  );
+}
+
+function Pill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 ${
+        active
+          ? "bg-elevated text-primary border border-border-hover shadow-sm"
+          : "text-muted hover:text-secondary hover:bg-surface/60 border border-transparent"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

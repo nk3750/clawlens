@@ -12,17 +12,12 @@
   }
 
   body {
-    background: #06070b;
-    background-image: radial-gradient(
-        ellipse at 20% 50%,
-        rgba(255, 92, 92, 0.02) 0%,
-        transparent 50%
-      ),
-      radial-gradient(
-        ellipse at 80% 20%,
-        rgba(56, 60, 100, 0.04) 0%,
-        transparent 40%
-      );
+    background-color: #06070b;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.018) 1px, transparent 0),
+      radial-gradient(ellipse at 15% 80%, rgba(99, 102, 241, 0.04) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 20%, rgba(255, 92, 92, 0.03) 0%, transparent 50%);
+    background-size: 32px 32px, 100% 100%, 100% 100%;
     color: #9395a1;
     font-family: "DM Sans", sans-serif;
     font-size: 14px;
@@ -32,18 +27,47 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Scrollbar styling for dark theme */
   ::-webkit-scrollbar {
-    width: 6px;
+    width: 5px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #2d3148;
+    background: #1e2130;
     border-radius: 3px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #3d4168;
+
+  /* Agent-specific accent glow on active cards */
+  .agent-glow {
+    box-shadow: 0 0 0 1px var(--agent-color, #34d399) inset,
+      0 0 20px -5px color-mix(in srgb, var(--agent-color, #34d399) 15%, transparent);
+  }
+
+  /* Stagger animation helper */
+  .stagger > * {
+    animation: fadeUp 0.5s ease-out both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger > *:nth-child(7) { animation-delay: 360ms; }
+  .stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* New entry flash — used when SSE pushes a new action */
+  .entry-flash {
+    animation: flash 0.6s ease-out;
+  }
+  @keyframes flash {
+    0% { background-color: rgba(255, 255, 255, 0.06); }
+    100% { background-color: transparent; }
   }
 }

@@ -10,21 +10,29 @@ const tierStyles: Record<RiskTier, string> = {
 export default function RiskBadge({
   score,
   tier,
+  compact = false,
 }: {
   score?: number;
   tier?: string;
+  compact?: boolean;
 }) {
   if (score == null) {
-    return <span className="text-muted text-xs font-mono">{"\u2014"}</span>;
+    return <span className="text-muted/40 text-xs">{"\u2014"}</span>;
   }
 
   const t = (tier || "low") as RiskTier;
   const style = tierStyles[t] || tierStyles.low;
 
+  if (compact) {
+    return (
+      <span className={`w-1.5 h-1.5 rounded-full inline-block ${style.split(" ")[0].replace("/10", "").replace("/15", "")}`}
+        style={{ backgroundColor: t === "low" ? "#34d399" : t === "medium" ? "#fbbf24" : t === "high" ? "#f87171" : "#ff4040" }}
+      />
+    );
+  }
+
   return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold font-mono tabular-nums ${style}`}
-    >
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold font-mono tabular-nums ${style}`}>
       {score}
     </span>
   );

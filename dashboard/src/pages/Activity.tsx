@@ -11,11 +11,11 @@ export default function Activity() {
   const initialAgent = searchParams.get("agent") || "";
 
   const [entries, setEntries] = useState<EntryResponse[]>([]);
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(initialAgent);
-  const [selectedTool, setSelectedTool] = useState("");
   const [selectedRisk, setSelectedRisk] = useState("");
   const [selectedTime, setSelectedTime] = useState("24h");
 
@@ -39,10 +39,19 @@ export default function Activity() {
     useCallback((raw: EntryResponse) => {
       const entry: EntryResponse = {
         ...raw,
-        effectiveDecision:
-          raw.effectiveDecision || computeDecision(raw),
+        effectiveDecision: raw.effectiveDecision || computeDecision(raw),
       };
+      const id = entry.toolCallId || entry.timestamp;
+      setNewIds((prev) => new Set(prev).add(id));
       setEntries((prev) => [entry, ...prev]);
+      // Clear "new" highlight after 2 seconds
+      setTimeout(() => {
+        setNewIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 2000);
     }, []),
   );
 
@@ -57,7 +66,7 @@ export default function Activity() {
       setOffset((prev) => prev + more.length);
       setHasMore(more.length >= 50);
     } catch {
-      // ignore
+      /* ignore */
     } finally {
       setLoadingMore(false);
     }
@@ -66,7 +75,6 @@ export default function Activity() {
   // Client-side filtering
   const filtered = entries.filter((e) => {
     if (selectedAgent && e.agentId !== selectedAgent) return false;
-    if (selectedTool && e.toolName !== selectedTool) return false;
     if (selectedRisk && e.riskTier !== selectedRisk) return false;
     if (selectedTime) {
       const cutoff = getTimeCutoff(selectedTime);
@@ -75,87 +83,90 @@ export default function Activity() {
     return true;
   });
 
-  const tools = [...new Set(entries.map((e) => e.toolName))].sort();
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h1 className="font-display font-bold text-primary text-lg">
-            Live Activity
-          </h1>
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-risk-low animate-pulse" />
-            <span className="text-[11px] text-muted">streaming</span>
+    <div className="max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6 animate-fade-in">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="font-display font-bold text-primary text-2xl">
+              Activity
+            </h1>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-status-active/10">
+              <div className="w-1.5 h-1.5 rounded-full bg-status-active animate-pulse" />
+              <span className="text-[11px] text-status-active font-medium">live</span>
+            </div>
           </div>
+          <p className="text-sm text-muted">
+            Real-time feed of agent actions across all sessions
+          </p>
         </div>
         {stats && (
-          <div className="flex items-center gap-4 text-xs text-muted">
-            <span>
-              Today:{" "}
-              <span className="text-secondary font-mono">
-                {stats.total}
-              </span>{" "}
-              events
-            </span>
-            {stats.activeAgents > 0 && (
-              <span className="text-status-active">
-                {stats.activeAgents} active
-              </span>
-            )}
+          <div className="text-right hidden sm:block">
+            <div className="text-2xl font-bold font-mono text-primary tabular-nums">
+              {stats.total}
+            </div>
+            <div className="text-[11px] text-muted">actions today</div>
           </div>
         )}
       </div>
 
+      {/* Filters */}
       <Filters
         agents={agents || []}
         selectedAgent={selectedAgent}
         onAgentChange={setSelectedAgent}
-        selectedTool={selectedTool}
-        onToolChange={setSelectedTool}
         selectedRisk={selectedRisk}
         onRiskChange={setSelectedRisk}
         selectedTime={selectedTime}
         onTimeChange={setSelectedTime}
-        tools={tools}
       />
 
+      {/* Loading */}
       {loading && entries.length === 0 && (
-        <div className="text-center py-16 text-muted">
-          <div className="inline-block w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin mb-3" />
-          <p className="text-sm">Loading activity...</p>
+        <div className="text-center py-20 text-muted">
+          <div className="inline-block w-6 h-6 border-2 border-border border-t-accent rounded-full animate-spin mb-4" />
+          <p className="text-sm font-display">Loading activity\u2026</p>
         </div>
       )}
 
+      {/* Empty */}
       {!loading && filtered.length === 0 && (
-        <div className="text-center py-16 text-muted">
-          <div className="text-3xl mb-3 opacity-40">
-            {"\u{1f4e1}"}
+        <div className="text-center py-20 text-muted animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-surface border border-border flex items-center justify-center mx-auto mb-4">
+            <svg className="w-7 h-7 text-muted/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
           </div>
-          <p className="text-sm font-display font-medium text-secondary mb-1">
-            No activity
+          <p className="font-display font-semibold text-secondary text-base mb-1">Waiting for actions</p>
+          <p className="text-xs max-w-xs mx-auto">
+            New actions will appear here in real-time as your agents work.
           </p>
-          <p className="text-xs">Waiting for agent events...</p>
         </div>
       )}
 
-      <div className="space-y-1.5">
-        {filtered.map((entry, i) => (
-          <EntryRow
-            key={entry.toolCallId || `${entry.timestamp}-${i}`}
-            entry={entry}
-            index={i}
-          />
-        ))}
-      </div>
+      {/* Feed */}
+      {filtered.length > 0 && (
+        <div className="bg-card/50 border border-border/50 rounded-2xl divide-y divide-border/30 overflow-hidden">
+          {filtered.map((entry, i) => (
+            <EntryRow
+              key={entry.toolCallId || `${entry.timestamp}-${i}`}
+              entry={entry}
+              index={i}
+              isNew={newIds.has(entry.toolCallId || entry.timestamp)}
+            />
+          ))}
+        </div>
+      )}
 
+      {/* Load more */}
       {hasMore && filtered.length > 0 && (
         <button
           onClick={loadMore}
           disabled={loadingMore}
-          className="w-full mt-4 py-3 bg-card border border-border rounded-lg text-sm text-muted hover:text-secondary hover:border-border-hover transition-colors disabled:opacity-50"
+          className="w-full mt-4 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-secondary hover:border-border-hover transition-all duration-200 disabled:opacity-50"
         >
-          {loadingMore ? "Loading..." : "Load more"}
+          {loadingMore ? "Loading\u2026" : "Load older actions"}
         </button>
       )}
     </div>
@@ -165,16 +176,11 @@ export default function Activity() {
 function getTimeCutoff(range: string): number | null {
   const now = Date.now();
   switch (range) {
-    case "1h":
-      return now - 60 * 60 * 1000;
-    case "6h":
-      return now - 6 * 60 * 60 * 1000;
-    case "24h":
-      return now - 24 * 60 * 60 * 1000;
-    case "7d":
-      return now - 7 * 24 * 60 * 60 * 1000;
-    default:
-      return null;
+    case "1h": return now - 60 * 60 * 1000;
+    case "6h": return now - 6 * 60 * 60 * 1000;
+    case "24h": return now - 24 * 60 * 60 * 1000;
+    case "7d": return now - 7 * 24 * 60 * 60 * 1000;
+    default: return null;
   }
 }
 
