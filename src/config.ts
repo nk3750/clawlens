@@ -2,6 +2,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 export interface ClawLensConfig {
+  /** "observe" = score and log everything, never block. "enforce" = apply policy decisions. */
+  mode: "observe" | "enforce";
   policiesPath: string;
   auditLogPath: string;
   rateStatePath: string;
@@ -26,6 +28,7 @@ export interface ClawLensConfig {
 const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawlens");
 
 export const DEFAULT_CONFIG: ClawLensConfig = {
+  mode: "observe",
   policiesPath: path.join(DEFAULT_DIR, "policies.yaml"),
   auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
   rateStatePath: path.join(DEFAULT_DIR, "rate-state.json"),
@@ -34,7 +37,7 @@ export const DEFAULT_CONFIG: ClawLensConfig = {
     schedule: "daily",
   },
   risk: {
-    llmEvalThreshold: 50,
+    llmEvalThreshold: 75,
     llmEnabled: true,
   },
   alerts: {
@@ -55,7 +58,10 @@ export function resolveConfig(
   const riskCfg = pluginConfig.risk as Record<string, unknown> | undefined;
   const alertsCfg = pluginConfig.alerts as Record<string, unknown> | undefined;
 
+  const mode = pluginConfig.mode === "enforce" ? "enforce" : "observe";
+
   return {
+    mode,
     policiesPath: resolve(
       (pluginConfig.policiesPath as string) || DEFAULT_CONFIG.policiesPath,
     ),

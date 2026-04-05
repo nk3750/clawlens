@@ -16,7 +16,14 @@ export interface BeforeToolCallDeps {
   config: ClawLensConfig;
   sessionContext: SessionContext;
   alertSend?: (msg: string) => Promise<void> | void;
-  runtime?: { subagent?: { run?: (opts: unknown) => Promise<unknown> } };
+  runtime?: {
+    subagent?: {
+      run?: (opts: unknown) => Promise<unknown>;
+      waitForRun?: (opts: unknown) => Promise<unknown>;
+      getSessionMessages?: (opts: unknown) => Promise<unknown>;
+      deleteSession?: (opts: unknown) => Promise<void>;
+    };
+  };
 }
 
 export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
@@ -38,6 +45,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
     const sessionKey = (ctx?.sessionKey as string) || "default";
 
     try {
+      // Evaluate policy (for logging what *would* happen, even in observe mode)
       const decision = engine.evaluate(
         toolName,
         params,
@@ -75,13 +83,14 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
         riskScore: risk.score,
         riskTier: risk.tier,
         riskTags: risk.tags,
+        agentId: ctx?.agentId as string | undefined,
+        sessionKey: sessionKey !== "default" ? sessionKey : undefined,
       });
 
       // Fire alert if score exceeds threshold (async, non-blocking)
       if (alertSend && shouldAlert(risk.score, config.alerts)) {
         const dashboardUrl = config.dashboardUrl || "";
         const msg = formatAlert(toolName, params, risk, dashboardUrl);
-        // Fire and forget
         sendAlert(msg, alertSend);
       }
 
@@ -104,7 +113,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
             riskTags: evaluation.tags,
           });
 
-          // Alert on LLM-adjusted score too (might have been raised above threshold)
+          // Alert on LLM-adjusted score if it was raised above threshold
           if (
             alertSend &&
             evaluation.adjustedScore > risk.score &&
@@ -127,6 +136,17 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
         });
       }
 
+      // Record for rate limiting (always, for tracking)
+      rateLimiter.record(toolName, decision.ruleName);
+
+      // ── Mode: observe (default) ──────────────────────────────
+      // Score, log, alert — but never block. Always return void.
+      if (config.mode === "observe") {
+        return;
+      }
+
+      // ── Mode: enforce ────────────────────────────────────────
+      // Apply policy decisions: block or require approval.
       switch (decision.action) {
         case "block":
           return {
@@ -155,24 +175,27 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
 
         case "allow":
         default:
-          // Record for rate limiting
-          rateLimiter.record(toolName, decision.ruleName);
-          return; // void = allow
+          return;
       }
     } catch (err) {
-      // Fail closed: if anything throws, block the tool call
+      // In observe mode, never block — just log the error
       auditLogger.logDecision({
         timestamp: new Date().toISOString(),
         toolName,
         toolCallId,
         params,
-        decision: "block",
+        decision: config.mode === "enforce" ? "block" : "allow",
         severity: "critical",
       });
-      return {
-        block: true,
-        blockReason: `ClawLens: Internal error — blocked for safety. ${err instanceof Error ? err.message : String(err)}`,
-      };
+
+      if (config.mode === "enforce") {
+        return {
+          block: true,
+          blockReason: `ClawLens: Internal error — blocked for safety. ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+      // observe mode: log error, allow through
+      return;
     }
   };
 }
@@ -190,7 +213,6 @@ function formatApprovalDescription(
 ): string {
   const lines: string[] = [`The agent wants to use **${toolName}**`];
 
-  // Show relevant params in readable form
   const interesting = ["command", "path", "url", "to", "content", "name"];
   for (const key of interesting) {
     if (params[key] !== undefined) {

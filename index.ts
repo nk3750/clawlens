@@ -69,7 +69,14 @@ const plugin: OpenClawPluginDefinition = {
         sessionContext,
         alertSend,
         runtime: (api as Record<string, unknown>).runtime as
-          | { subagent?: { run?: (opts: unknown) => Promise<unknown> } }
+          | {
+              subagent?: {
+                run?: (opts: unknown) => Promise<unknown>;
+                waitForRun?: (opts: unknown) => Promise<unknown>;
+                getSessionMessages?: (opts: unknown) => Promise<unknown>;
+                deleteSession?: (opts: unknown) => Promise<void>;
+              };
+            }
           | undefined,
       }),
       { priority: 100 },

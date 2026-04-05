@@ -262,13 +262,13 @@ describe("computeRiskScore", () => {
   });
 
   describe("needsLlmEval flag", () => {
-    it("true when score >= default threshold (50)", () => {
-      const r = computeRiskScore("message", {}); // 55
+    it("true when score >= default threshold (75)", () => {
+      const r = computeRiskScore("sessions_spawn", {}); // 75
       expect(r.needsLlmEval).toBe(true);
     });
 
     it("false when score < default threshold", () => {
-      const r = computeRiskScore("read", {}); // 5
+      const r = computeRiskScore("exec", {}); // 70
       expect(r.needsLlmEval).toBe(false);
     });
 

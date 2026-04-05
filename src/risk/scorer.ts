@@ -197,7 +197,7 @@ function getTier(score: number): RiskTier {
 export function computeRiskScore(
   toolName: string,
   params: Record<string, unknown>,
-  llmEvalThreshold: number = 50,
+  llmEvalThreshold: number = 75,
 ): RiskScore {
   const base = BASE_SCORES[toolName] ?? DEFAULT_BASE;
   const modifiers: Array<{ reason: string; delta: number }> = [];
