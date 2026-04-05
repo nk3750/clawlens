@@ -115,7 +115,12 @@ export function getEffectiveDecision(entry: AuditEntry): string {
   if (entry.userResponse === "timeout") return "timeout";
   if (entry.decision === "allow") return "allow";
   if (entry.decision === "block") return "block";
-  if (entry.decision === "approval_required") return "pending";
+  if (entry.decision === "approval_required") {
+    // In observe mode, approval_required is logged but never enforced —
+    // the action goes through. Only show "pending" if there's no result yet
+    // AND no indication it was allowed through.
+    return entry.executionResult ? entry.executionResult : "allow";
+  }
   if (entry.executionResult) return entry.executionResult;
   return "unknown";
 }
@@ -125,7 +130,11 @@ function isDecisionEntry(entry: AuditEntry): boolean {
   return entry.decision !== undefined;
 }
 
-function mapEntry(entry: AuditEntry): EntryResponse {
+function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>): EntryResponse {
+  // If there's an LLM eval for this tool call, use its adjusted score/tier/tags
+  const evalEntry = entry.toolCallId ? evalIndex?.get(entry.toolCallId) : undefined;
+  const llmEval = evalEntry?.llmEvaluation ?? entry.llmEvaluation;
+
   return {
     timestamp: entry.timestamp,
     toolName: entry.toolName,
@@ -138,13 +147,24 @@ function mapEntry(entry: AuditEntry): EntryResponse {
     userResponse: entry.userResponse,
     executionResult: entry.executionResult,
     durationMs: entry.durationMs,
-    riskScore: entry.riskScore,
-    riskTier: entry.riskTier,
-    riskTags: entry.riskTags,
-    llmEvaluation: entry.llmEvaluation,
+    riskScore: llmEval ? llmEval.adjustedScore : entry.riskScore,
+    riskTier: evalEntry?.riskTier ?? entry.riskTier,
+    riskTags: evalEntry?.riskTags ?? entry.riskTags,
+    llmEvaluation: llmEval,
     agentId: entry.agentId,
     sessionKey: entry.sessionKey,
   };
+}
+
+/** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
+function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {
+  const index = new Map<string, AuditEntry>();
+  for (const e of entries) {
+    if (e.refToolCallId && e.llmEvaluation) {
+      index.set(e.refToolCallId, e);
+    }
+  }
+  return index;
 }
 
 function groupBySessions(entries: AuditEntry[]): Map<string, AuditEntry[]> {
@@ -247,8 +267,9 @@ export function getRecentEntries(
   limit: number,
   offset: number,
 ): EntryResponse[] {
+  const evalIdx = buildEvalIndex(entries);
   const decisions = entries.filter(isDecisionEntry).reverse();
-  return decisions.slice(offset, offset + limit).map(mapEntry);
+  return decisions.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx));
 }
 
 /** Verify the hash chain integrity of all entries. */
@@ -268,6 +289,7 @@ export function computeEnhancedStats(
   entries: AuditEntry[],
 ): EnhancedStatsResponse {
   const base = computeStats(entries);
+  const evalIdx = buildEvalIndex(entries);
   const todayDecisions = getTodayEntries(entries).filter(isDecisionEntry);
 
   let low = 0;
@@ -279,15 +301,20 @@ export function computeEnhancedStats(
   let peakRisk = 0;
 
   for (const e of todayDecisions) {
-    if (e.riskTier === "low") low++;
-    else if (e.riskTier === "medium") medium++;
-    else if (e.riskTier === "high") high++;
-    else if (e.riskTier === "critical") critical++;
+    // Use LLM-adjusted score/tier when available
+    const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
+    const effectiveScore = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore;
+    const effectiveTier = evalEntry?.riskTier ?? e.riskTier;
 
-    if (e.riskScore !== undefined) {
-      riskSum += e.riskScore;
+    if (effectiveTier === "low") low++;
+    else if (effectiveTier === "medium") medium++;
+    else if (effectiveTier === "high") high++;
+    else if (effectiveTier === "critical") critical++;
+
+    if (effectiveScore !== undefined) {
+      riskSum += effectiveScore;
       riskCount++;
-      if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+      if (effectiveScore > peakRisk) peakRisk = effectiveScore;
     }
   }
 
@@ -422,11 +449,12 @@ export function getAgentDetail(
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return null;
 
+  const evalIdx = buildEvalIndex(entries);
   const recentActivity = agentEntries
     .filter(isDecisionEntry)
     .reverse()
     .slice(0, 20)
-    .map(mapEntry);
+    .map((e) => mapEntry(e, evalIdx));
 
   const sessionMap = groupBySessions(agentEntries);
   const allSessions: SessionInfo[] = [];
@@ -476,10 +504,11 @@ export function getSessionDetail(
   const sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
   if (sessionEntries.length === 0) return null;
 
+  const evalIdx = buildEvalIndex(entries);
   const session = buildSessionInfo(sessionKey, sessionEntries);
   const mappedEntries = sessionEntries
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-    .map(mapEntry);
+    .map((e) => mapEntry(e, evalIdx));
 
   return { session, entries: mappedEntries };
 }

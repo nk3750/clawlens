@@ -8,6 +8,7 @@ import type { RiskScore } from "../risk/types";
 import { computeRiskScore } from "../risk/scorer";
 import { shouldAlert, formatAlert, sendAlert } from "../alerts/telegram";
 import { evaluateWithLlm } from "../risk/llm-evaluator";
+import { EvalCache } from "../risk/eval-cache";
 
 export interface BeforeToolCallDeps {
   engine: PolicyEngine;
@@ -15,6 +16,7 @@ export interface BeforeToolCallDeps {
   rateLimiter: RateLimiter;
   config: ClawLensConfig;
   sessionContext: SessionContext;
+  evalCache?: EvalCache;
   alertSend?: (msg: string) => Promise<void> | void;
   runtime?: {
     subagent?: {
@@ -33,6 +35,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
     rateLimiter,
     config,
     sessionContext,
+    evalCache,
     alertSend,
     runtime,
   } = deps;
@@ -96,44 +99,78 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
 
       // Queue async LLM evaluation if needed (fire-and-forget, does NOT block)
       if (risk.needsLlmEval && config.risk.llmEnabled && toolCallId) {
-        const recentActions = sessionContext.getRecent(sessionKey, 5);
-        evaluateWithLlm(
-          toolName,
-          params,
-          recentActions,
-          risk,
-          runtime,
-        ).then((evaluation) => {
+        // Check eval cache first — skip LLM if this pattern was already evaluated
+        const cached = evalCache?.get(toolName, params);
+        if (cached) {
           auditLogger.appendEvaluation({
             refToolCallId: toolCallId,
             toolName,
-            llmEvaluation: evaluation,
-            riskScore: evaluation.adjustedScore,
-            riskTier: getTierFromScore(evaluation.adjustedScore),
-            riskTags: evaluation.tags,
+            llmEvaluation: {
+              adjustedScore: cached.adjustedScore,
+              reasoning: `${cached.reasoning} (cached)`,
+              tags: cached.tags,
+              confidence: "high",
+              patterns: [],
+            },
+            riskScore: cached.adjustedScore,
+            riskTier: getTierFromScore(cached.adjustedScore) as "low" | "medium" | "high" | "critical",
+            riskTags: cached.tags,
           });
+        } else {
+          const recentActions = sessionContext.getRecent(sessionKey, 5);
+          evaluateWithLlm(
+            toolName,
+            params,
+            recentActions,
+            risk,
+            runtime,
+          ).then((evaluation) => {
+            // Skip writing stub evaluations to audit log
+            if (evaluation.reasoning?.includes("Stub evaluation")) return;
 
-          // Alert on LLM-adjusted score if it was raised above threshold
-          if (
-            alertSend &&
-            evaluation.adjustedScore > risk.score &&
-            shouldAlert(evaluation.adjustedScore, config.alerts)
-          ) {
-            const adjustedRisk = {
-              ...risk,
-              score: evaluation.adjustedScore,
-              tier: getTierFromScore(evaluation.adjustedScore),
-              tags: evaluation.tags,
-            } as RiskScore;
-            const msg = formatAlert(
+            auditLogger.appendEvaluation({
+              refToolCallId: toolCallId,
+              toolName,
+              llmEvaluation: evaluation,
+              riskScore: evaluation.adjustedScore,
+              riskTier: getTierFromScore(evaluation.adjustedScore),
+              riskTags: evaluation.tags,
+            });
+
+            // Cache high-confidence low-risk evaluations for future use
+            evalCache?.maybeCache(
               toolName,
               params,
-              adjustedRisk,
-              config.dashboardUrl || "",
+              evaluation,
+              config.risk.llmEvalThreshold,
             );
-            sendAlert(msg, alertSend);
-          }
-        });
+
+            // Alert on LLM-adjusted score if it was raised above threshold
+            if (
+              alertSend &&
+              evaluation.adjustedScore > risk.score &&
+              shouldAlert(evaluation.adjustedScore, config.alerts)
+            ) {
+              const adjustedRisk = {
+                ...risk,
+                score: evaluation.adjustedScore,
+                tier: getTierFromScore(evaluation.adjustedScore),
+                tags: evaluation.tags,
+              } as RiskScore;
+              const msg = formatAlert(
+                toolName,
+                params,
+                adjustedRisk,
+                config.dashboardUrl || "",
+              );
+              sendAlert(msg, alertSend);
+            }
+          }).catch((err) => {
+            console.error(
+              `ClawLens: LLM eval failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+        }
       }
 
       // Record for rate limiting (always, for tracking)

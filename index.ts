@@ -7,6 +7,7 @@ import { PolicyLoader } from "./src/policy/loader";
 import { AuditLogger } from "./src/audit/logger";
 import { RateLimiter } from "./src/rate/limiter";
 import { SessionContext } from "./src/risk/session-context";
+import { EvalCache } from "./src/risk/eval-cache";
 import { exportToJSON, exportToCSV } from "./src/audit/exporter";
 import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
@@ -31,6 +32,7 @@ const plugin: OpenClawPluginDefinition = {
     const auditLogger = new AuditLogger(config.auditLogPath);
     const rateLimiter = new RateLimiter(config.rateStatePath);
     const sessionContext = new SessionContext();
+    const evalCache = new EvalCache();
 
     // Alert send function — uses gateway method if available
     let alertSend: ((msg: string) => Promise<void> | void) | undefined;
@@ -58,6 +60,11 @@ const plugin: OpenClawPluginDefinition = {
       );
     }
 
+    // Resolve runtime from OpenClaw plugin API (runtime.subagent used for async LLM eval)
+    const runtime = (api as Record<string, unknown>).runtime as
+      | { subagent?: Record<string, unknown> }
+      | undefined;
+
     // Wire hooks
     api.on(
       "before_tool_call",
@@ -67,8 +74,9 @@ const plugin: OpenClawPluginDefinition = {
         rateLimiter,
         config,
         sessionContext,
+        evalCache,
         alertSend,
-        runtime: (api as Record<string, unknown>).runtime as
+        runtime: runtime as
           | {
               subagent?: {
                 run?: (opts: unknown) => Promise<unknown>;

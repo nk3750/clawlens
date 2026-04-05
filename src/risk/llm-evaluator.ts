@@ -99,7 +99,6 @@ export async function evaluateWithLlm(
   logger?: PluginLogger,
 ): Promise<LlmRiskEvaluation> {
   const subagent = runtime?.subagent;
-
   if (subagent?.run && subagent?.waitForRun && subagent?.getSessionMessages) {
     const sessionKey = `clawlens:risk-eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 
@@ -107,10 +106,12 @@ export async function evaluateWithLlm(
       const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
 
       // 1. Spawn subagent
+      const idempotencyKey = `clawlens:eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
       const runResult = (await subagent.run({
         sessionKey,
         message,
         extraSystemPrompt: EVAL_SYSTEM_PROMPT,
+        idempotencyKey,
       })) as { runId: string };
 
       // 2. Wait for completion (30s timeout)
@@ -139,9 +140,18 @@ export async function evaluateWithLlm(
         }) as Record<string, unknown> | undefined;
 
       if (assistantMsg?.content) {
-        const raw = typeof assistantMsg.content === "string"
-          ? assistantMsg.content
-          : JSON.stringify(assistantMsg.content);
+        let raw: string;
+        if (typeof assistantMsg.content === "string") {
+          raw = assistantMsg.content;
+        } else if (Array.isArray(assistantMsg.content)) {
+          // Anthropic content block format: [{type: "text", text: "..."}]
+          raw = (assistantMsg.content as Array<Record<string, unknown>>)
+            .filter((b) => b.type === "text" && typeof b.text === "string")
+            .map((b) => b.text as string)
+            .join("\n");
+        } else {
+          raw = JSON.stringify(assistantMsg.content);
+        }
         const parsed = parseEvalResponse(raw);
         if (parsed) {
           // 4. Cleanup session

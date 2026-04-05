@@ -30,7 +30,9 @@ describe("getEffectiveDecision", () => {
   it("maps raw decisions when no userResponse", () => {
     expect(getEffectiveDecision(entry({ decision: "allow" }))).toBe("allow");
     expect(getEffectiveDecision(entry({ decision: "block" }))).toBe("block");
-    expect(getEffectiveDecision(entry({ decision: "approval_required" }))).toBe("pending");
+    // In observe mode, approval_required without userResponse means
+    // the action was allowed through — not actually pending
+    expect(getEffectiveDecision(entry({ decision: "approval_required" }))).toBe("allow");
   });
 
   it("falls back to executionResult for result entries", () => {
@@ -77,12 +79,12 @@ describe("computeStats", () => {
     ];
 
     const stats = computeStats(entries);
-    expect(stats.allowed).toBe(2);
+    expect(stats.allowed).toBe(3); // 2 explicit allow + 1 approval_required (observe mode passthrough)
     expect(stats.approved).toBe(1);
     expect(stats.blocked).toBe(2); // 1 block + 1 denied
     expect(stats.timedOut).toBe(1);
-    expect(stats.pending).toBe(1);
-    expect(stats.total).toBe(6); // total excludes pending
+    expect(stats.pending).toBe(0);
+    expect(stats.total).toBe(7);
   });
 
   it("only counts entries from today (UTC)", () => {
