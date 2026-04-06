@@ -231,6 +231,45 @@ export function generateMockEntries(): EntryResponse[] {
     entries.push(buildEntry({ ...spec, agentId: "data-sync", sessionKey: "agent:data-sync:api:sync-run:batch-91" }));
   }
 
+  // ── test-runner: interactive, active, running tests, low risk ──
+  const testSpecs: MockEntrySpec[] = [
+    { toolName: "read", params: { path: "tests/auth.test.ts" }, riskScore: 5, offsetMs: 2 * min },
+    { toolName: "exec", params: { command: "npm test -- --filter auth" }, riskScore: 15, offsetMs: 2.5 * min },
+    { toolName: "read", params: { path: "tests/api.test.ts" }, riskScore: 5, offsetMs: 3 * min },
+    { toolName: "exec", params: { command: "npm test -- --filter api" }, riskScore: 12, offsetMs: 3.5 * min },
+    { toolName: "exec", params: { command: "npm run coverage" }, riskScore: 18, offsetMs: 4 * min },
+    { toolName: "read", params: { path: "coverage/lcov-report/index.html" }, riskScore: 4, offsetMs: 4.5 * min },
+    { toolName: "message", params: { to: "#ci-results", subject: "Tests passed" }, riskScore: 20, offsetMs: 5 * min },
+  ];
+  for (const spec of testSpecs) {
+    entries.push(buildEntry({ ...spec, agentId: "test-runner", sessionKey: "agent:test-runner:web:ci-tests:run-103" }));
+  }
+
+  // ── api-monitor: scheduled, idle (4h ago), monitoring endpoints ──
+  const monitorSpecs: MockEntrySpec[] = [
+    { toolName: "fetch_url", params: { url: "https://api.internal/health" }, riskScore: 5, offsetMs: 4 * hour },
+    { toolName: "fetch_url", params: { url: "https://api.internal/v2/status" }, riskScore: 8, offsetMs: 4 * hour + 1 * min },
+    { toolName: "fetch_url", params: { url: "https://api.internal/metrics" }, riskScore: 5, offsetMs: 4 * hour + 2 * min },
+    { toolName: "exec", params: { command: "curl -s https://api.internal/latency" }, riskScore: 12, offsetMs: 4 * hour + 3 * min },
+    { toolName: "message", params: { to: "#ops-alerts", subject: "All endpoints healthy" }, riskScore: 15, offsetMs: 4 * hour + 4 * min },
+  ];
+  for (const spec of monitorSpecs) {
+    entries.push(buildEntry({ ...spec, agentId: "api-monitor", sessionKey: "agent:api-monitor:cron:health-check" }));
+  }
+
+  // ── log-analyzer: interactive, idle (8h ago), analyzed logs ──
+  const logSpecs: MockEntrySpec[] = [
+    { toolName: "read", params: { path: "/var/log/app/error.log" }, riskScore: 30, offsetMs: 8 * hour },
+    { toolName: "grep", params: { pattern: "FATAL|ERROR|WARN", path: "/var/log/" }, riskScore: 25, offsetMs: 8 * hour + 1 * min },
+    { toolName: "read", params: { path: "/var/log/app/access.log" }, riskScore: 18, offsetMs: 8 * hour + 2 * min },
+    { toolName: "exec", params: { command: "wc -l /var/log/app/*.log" }, riskScore: 10, offsetMs: 8 * hour + 3 * min },
+    { toolName: "fetch_url", params: { url: "https://grafana.internal/api/alerts" }, riskScore: 15, offsetMs: 8 * hour + 4 * min },
+    { toolName: "message", params: { to: "#incidents", subject: "Log analysis: 3 new errors" }, riskScore: 35, offsetMs: 8 * hour + 5 * min },
+  ];
+  for (const spec of logSpecs) {
+    entries.push(buildEntry({ ...spec, agentId: "log-analyzer", sessionKey: "agent:log-analyzer:telegram:on-demand:user-42" }));
+  }
+
   entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return entries;
 }
