@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { riskTierFromScore, riskColor, riskColorRaw } from "../lib/utils";
 
 interface Props {
@@ -6,6 +7,14 @@ interface Props {
 }
 
 export default function RiskArc({ score, size = 80 }: Props) {
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    // Delay to allow mount, then trigger arc animation
+    const raf = requestAnimationFrame(() => setAnimated(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   const tier = riskTierFromScore(score);
   const color = riskColor(tier);
   const rawColor = riskColorRaw(tier);
@@ -20,7 +29,6 @@ export default function RiskArc({ score, size = 80 }: Props) {
   const r = size * 0.38;
   const strokeWidth = size * 0.05;
   const totalArc = Math.PI;
-  const fillArc = (score / 100) * totalArc;
 
   function arcPath(angle: number) {
     const x = cx + r * Math.cos(Math.PI - angle);
@@ -42,7 +50,7 @@ export default function RiskArc({ score, size = 80 }: Props) {
       >
         {/* Glow filter */}
         <defs>
-          <filter id={`glow-${score}`} x="-40%" y="-40%" width="180%" height="180%">
+          <filter id={`glow-${score}-${size}`} x="-40%" y="-40%" width="180%" height="180%">
             <feGaussianBlur stdDeviation="3" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
@@ -60,26 +68,20 @@ export default function RiskArc({ score, size = 80 }: Props) {
           strokeLinecap="round"
         />
 
-        {/* Filled arc with glow */}
-        {fillArc > 0 && (
-          <path
-            d={bgPath}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeDasharray={arcLength}
-            strokeDashoffset={dashTarget}
-            filter={`url(#glow-${score})`}
-            className="transition-all duration-700"
-            style={
-              {
-                "--arc-length": `${arcLength}`,
-                "--arc-target": `${dashTarget}`,
-              } as React.CSSProperties
-            }
-          />
-        )}
+        {/* Filled arc with glow — animates from empty to final */}
+        <path
+          d={bgPath}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={arcLength}
+          strokeDashoffset={animated ? dashTarget : arcLength}
+          filter={`url(#glow-${score}-${size})`}
+          style={{
+            transition: `stroke-dashoffset 0.8s var(--cl-spring)`,
+          }}
+        />
 
         {/* Score number */}
         <text

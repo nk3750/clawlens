@@ -4,31 +4,27 @@ import type { SessionDetailResponse } from "../lib/types";
 import SessionHeader from "../components/SessionHeader";
 import RiskTimeline from "../components/RiskTimeline";
 import ToolCallTimeline from "../components/ToolCallTimeline";
+import ErrorCard from "../components/ErrorCard";
+import { SessionDetailSkeleton } from "../components/Skeleton";
 
 export default function SessionDetail() {
   const { sessionKey } = useParams<{ sessionKey: string }>();
-  const { data, loading, error } = useApi<SessionDetailResponse>(
+  const { data, loading, error, refetch } = useApi<SessionDetailResponse>(
     `api/session/${encodeURIComponent(sessionKey || "")}`,
   );
 
-  if (loading) {
-    return (
-      <div className="text-center py-20">
-        <div
-          className="inline-block w-6 h-6 rounded-full border-2 animate-spin"
-          style={{
-            borderColor: "var(--cl-border-default)",
-            borderTopColor: "var(--cl-accent)",
-          }}
-        />
-      </div>
-    );
+  if (loading && !data) {
+    return <SessionDetailSkeleton />;
   }
 
-  if (error || !data) {
+  if (error && !data) {
+    return <ErrorCard message={error} onRetry={refetch} />;
+  }
+
+  if (!data) {
     return (
       <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
-        {error ? `Error: ${error}` : "Session not found"}
+        Session not found
         <br />
         <Link to="/" className="text-sm mt-2 inline-block" style={{ color: "var(--cl-accent)" }}>
           &larr; Back to Agents
@@ -40,7 +36,7 @@ export default function SessionDetail() {
   const { session, entries } = data;
 
   return (
-    <div className="stagger">
+    <div className="page-enter stagger">
       <SessionHeader session={session} />
 
       {/* Risk Timeline chart — the session risk hero */}

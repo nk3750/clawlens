@@ -6,32 +6,28 @@ import RiskPanel from "../components/RiskPanel";
 import ActivityProfile from "../components/ActivityProfile";
 import ActivityStream from "../components/ActivityStream";
 import SessionCard from "../components/SessionCard";
+import ErrorCard from "../components/ErrorCard";
+import { AgentDetailSkeleton } from "../components/Skeleton";
 
 export default function AgentDetail() {
   const { agentId } = useParams<{ agentId: string }>();
-  const { data, loading, error } = useApi<AgentDetailResponse>(
+  const { data, loading, error, refetch } = useApi<AgentDetailResponse>(
     `api/agent/${encodeURIComponent(agentId || "")}`,
   );
   const { data: allAgents } = useApi<AgentInfo[]>("api/agents");
 
-  if (loading) {
-    return (
-      <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
-        <div
-          className="inline-block w-6 h-6 rounded-full border-2 animate-spin"
-          style={{
-            borderColor: "var(--cl-border-default)",
-            borderTopColor: "var(--cl-accent)",
-          }}
-        />
-      </div>
-    );
+  if (loading && !data) {
+    return <AgentDetailSkeleton />;
   }
 
-  if (error || !data) {
+  if (error && !data) {
+    return <ErrorCard message={error} onRetry={refetch} />;
+  }
+
+  if (!data) {
     return (
       <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
-        {error ? `Error: ${error}` : "Agent not found"}
+        Agent not found
         <br />
         <Link
           to="/"
@@ -63,7 +59,7 @@ export default function AgentDetail() {
     : undefined;
 
   return (
-    <div className="stagger">
+    <div className="page-enter stagger">
       {/* Hero header */}
       <AgentHeader agent={agent} />
 

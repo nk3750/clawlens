@@ -133,7 +133,6 @@ function StatusLine({ agent }: { agent: AgentInfo }) {
           }}
         />
         <span className="font-mono text-[11px]" style={{ color: "var(--cl-risk-low)" }}>Active</span>
-        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
       </span>
     );
   }

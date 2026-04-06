@@ -50,7 +50,7 @@ export default function HexNode({ agent, position, tooltipAnchor, onHover }: Pro
           {/* Attention badge */}
           {agent.needsAttention && (
             <div
-              className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center z-10"
+              className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center z-10 attention-pulse"
               style={{
                 backgroundColor: "rgba(251, 191, 36, 0.2)",
                 border: "1px solid rgba(251, 191, 36, 0.4)",

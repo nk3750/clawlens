@@ -8,6 +8,7 @@ import GradientAvatar from "../components/GradientAvatar";
 import DecisionBadge from "../components/DecisionBadge";
 import FilterBar, { type FilterState } from "../components/FilterBar";
 import LiveIndicator from "../components/LiveIndicator";
+import { ActivityFeedSkeleton } from "../components/Skeleton";
 
 const EMPTY_FILTERS: FilterState = {
   agent: "",
@@ -138,7 +139,7 @@ export default function Activity() {
   const hasActiveFilters = filters.agent || filters.category || filters.riskTier || filters.decision || filters.since;
 
   return (
-    <div className="stagger">
+    <div className="page-enter stagger">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
@@ -168,17 +169,9 @@ export default function Activity() {
 
       <div className="cl-divider mb-6" />
 
-      {/* Loading */}
+      {/* Loading skeleton */}
       {loading && entries.length === 0 && (
-        <div className="text-center py-20">
-          <div
-            className="inline-block w-6 h-6 rounded-full border-2 animate-spin"
-            style={{
-              borderColor: "var(--cl-border-default)",
-              borderTopColor: "var(--cl-accent)",
-            }}
-          />
-        </div>
+        <ActivityFeedSkeleton />
       )}
 
       {/* Empty */}

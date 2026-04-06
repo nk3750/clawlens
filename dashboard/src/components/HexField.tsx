@@ -72,7 +72,6 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
   // Floating labels at hex edges
   const labels = useMemo(() => {
     const result: Array<{ x: number; y: number; text: string }> = [];
-    // Place context labels from nodes
     nodes.forEach((n) => {
       if (n.context) {
         const labelX = n.x * width + (n.x < 0.5 ? -70 : 70);
@@ -80,12 +79,17 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
         result.push({ x: labelX, y: labelY, text: n.context });
       }
     });
-    // Static label near center
     result.push({ x: cx, y: cy + 8, text: "OBSERVATORY" });
     return result;
   }, [nodes, width, height, cx, cy]);
 
   const hexRadii = [340, 250, 160, 75];
+
+  // Compute perimeters for stroke-dasharray draw-in
+  const hexPerimeters = hexRadii.map((r) => {
+    // Regular hexagon perimeter = 6 * side, side = r
+    return 6 * r;
+  });
 
   return (
     <svg
@@ -145,7 +149,7 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
       </defs>
 
       <g mask="url(#hex-mask)">
-        {/* ── Concentric hex wireframes ── */}
+        {/* ── Concentric hex wireframes (draw-in animation) ── */}
         {hexRadii.map((r, i) => (
           <polygon
             key={r}
@@ -153,8 +157,13 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
             fill="none"
             stroke="url(#hex-stroke-grad)"
             strokeWidth={i === 0 ? 1 : 0.5}
-            strokeDasharray={i > 1 ? "4 10" : "none"}
-            opacity={i === 0 ? 0.8 : 0.5}
+            className="hex-draw-in"
+            style={{
+              strokeDasharray: hexPerimeters[i],
+              strokeDashoffset: hexPerimeters[i],
+              animationDelay: `${(3 - i) * 0.15}s`,
+              opacity: i === 0 ? 0.8 : 0.5,
+            }}
           />
         ))}
 
@@ -169,26 +178,29 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
               stroke="url(#hex-stroke-grad)"
               strokeWidth="0.5"
               strokeDasharray="3 8"
-              opacity="0.4"
+              className="particle-fade"
+              style={{ "--particle-opacity": 0.4 } as React.CSSProperties}
             />
           );
         })}
 
-        {/* ── Scattered particles ── */}
+        {/* ── Scattered particles (fade-in delayed) ── */}
         {particles.map((p, i) => (
           <circle
             key={i}
             cx={p.x} cy={p.y} r={p.r}
             fill="#d4a574"
-            opacity={p.o}
+            className="particle-fade"
+            style={{ "--particle-opacity": p.o } as React.CSSProperties}
           />
         ))}
 
-        {/* ── Connection lines between nodes ── */}
+        {/* ── Connection lines between nodes (fade-in delayed) ── */}
         {nodes.map((a, i) =>
           nodes.slice(i + 1).map((b, j) => {
             const isHighlit =
               hoveredNodeId === a.id || hoveredNodeId === b.id;
+            const restingOpacity = 0.15;
             return (
               <line
                 key={`conn-${i}-${j}`}
@@ -197,20 +209,25 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
                 stroke={`url(#conn-${i}-${j})`}
                 strokeWidth={isHighlit ? 1 : 0.5}
                 strokeDasharray="4 8"
-                opacity={isHighlit ? 0.6 : 0.15}
-                style={{ transition: "opacity 0.4s ease, stroke-width 0.4s ease" }}
+                className={isHighlit ? "" : "conn-fade"}
+                opacity={isHighlit ? 0.6 : undefined}
+                style={{
+                  "--conn-opacity": restingOpacity,
+                  transition: "opacity 0.4s ease, stroke-width 0.4s ease",
+                } as React.CSSProperties}
               />
             );
           }),
         )}
 
-        {/* ── Node glow circles ── */}
+        {/* ── Node glow circles (pulse bright then settle) ── */}
         {nodes.map((n) => {
           const px = n.x * width;
           const py = n.y * height;
           const color = RISK_COLORS[n.riskPosture];
           const isHovered = hoveredNodeId === n.id;
           const isActive = n.status === "active";
+          const glowResting = isHovered ? 0.4 : 0.15;
 
           return (
             <g key={n.id}>
@@ -221,17 +238,24 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
                 fill="none"
                 stroke={color}
                 strokeWidth="1"
-                opacity={isHovered ? 0.4 : 0.15}
                 filter={`url(#glow-${n.id})`}
-                style={{ transition: "r 0.5s ease, opacity 0.4s ease" }}
+                className={isHovered ? "" : "node-glow-enter"}
+                opacity={isHovered ? 0.4 : undefined}
+                style={{
+                  "--glow-resting": glowResting,
+                  transition: "r 0.5s ease, opacity 0.4s ease",
+                } as React.CSSProperties}
               />
               {/* Inner glow dot */}
               <circle
                 cx={px} cy={py}
                 r={isHovered ? 6 : 4}
                 fill={color}
-                opacity={isActive ? 0.6 : 0.3}
-                style={{ transition: "r 0.3s ease, opacity 0.3s ease" }}
+                className="node-glow-enter"
+                style={{
+                  "--glow-resting": isActive ? 0.6 : 0.3,
+                  transition: "r 0.3s ease, opacity 0.3s ease",
+                } as React.CSSProperties}
               >
                 {isActive && (
                   <animate
@@ -253,7 +277,8 @@ export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 
             x={l.x} y={l.y}
             textAnchor="middle"
             fill="var(--cl-text-muted)"
-            opacity="0.35"
+            className="particle-fade"
+            style={{ "--particle-opacity": 0.35 } as React.CSSProperties}
             fontSize="9"
             fontFamily="'JetBrains Mono', monospace"
             letterSpacing="0.1em"
