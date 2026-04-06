@@ -3,6 +3,7 @@ import {
   computeEnhancedStats,
   getAgents,
   getAgentDetail,
+  getRecentEntries,
   getSessions,
   getSessionDetail,
 } from "../src/dashboard/api";
@@ -30,7 +31,7 @@ describe("computeEnhancedStats", () => {
     vi.useRealTimers();
   });
 
-  it("includes base stats fields", () => {
+  it("includes base stats fields and riskPosture", () => {
     const entries = [
       entry({ timestamp: "2026-03-29T10:00:00Z", decision: "allow" }),
     ];
@@ -42,6 +43,7 @@ describe("computeEnhancedStats", () => {
     expect(stats.peakRiskScore).toBeDefined();
     expect(stats.activeAgents).toBeDefined();
     expect(stats.activeSessions).toBeDefined();
+    expect(stats.riskPosture).toBeDefined();
   });
 
   it("computes risk breakdown from today entries", () => {
@@ -477,5 +479,542 @@ describe("getAgentDetail", () => {
     ];
     const result = getAgentDetail(entries, "bot-1");
     expect(result!.recentActivity).toHaveLength(1);
+  });
+
+  it("includes riskTrend sorted chronologically", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "read",
+        riskScore: 10,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 50,
+        timestamp: "2026-03-29T12:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "block",
+        toolName: "exec",
+        riskScore: 80,
+        timestamp: "2026-03-29T11:00:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result!.riskTrend).toHaveLength(3);
+    // Should be sorted chronologically (oldest first)
+    expect(result!.riskTrend[0].timestamp).toBe("2026-03-29T10:00:00Z");
+    expect(result!.riskTrend[1].timestamp).toBe("2026-03-29T11:00:00Z");
+    expect(result!.riskTrend[2].timestamp).toBe("2026-03-29T12:00:00Z");
+    expect(result!.riskTrend[0].score).toBe(10);
+    expect(result!.riskTrend[0].toolName).toBe("read");
+
+    vi.useRealTimers();
+  });
+
+  it("riskTrend uses LLM-adjusted scores when available", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "exec",
+        toolCallId: "tc_1",
+        riskScore: 70,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      // LLM eval entry that adjusts tc_1
+      entry({
+        agentId: "bot-1",
+        toolName: "exec",
+        refToolCallId: "tc_1",
+        llmEvaluation: {
+          adjustedScore: 25,
+          reasoning: "Health check",
+          tags: [],
+          confidence: "high",
+          patterns: [],
+        },
+        timestamp: "2026-03-29T10:00:05Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result!.riskTrend).toHaveLength(1);
+    expect(result!.riskTrend[0].score).toBe(25); // LLM-adjusted
+    vi.useRealTimers();
+  });
+
+  it("riskTrend caps at 200 entries", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = Array.from({ length: 250 }, (_, i) =>
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        riskScore: 10,
+        timestamp: `2026-03-29T${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}:00Z`,
+      }),
+    );
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result!.riskTrend.length).toBeLessThanOrEqual(200);
+    vi.useRealTimers();
+  });
+});
+
+// ── New v2 field tests ─────────────────────────────────
+
+describe("computeEnhancedStats — riskPosture", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns calm for low average risk", () => {
+    const entries = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        decision: "allow",
+        riskScore: 15,
+        riskTier: "low",
+      }),
+    ];
+    expect(computeEnhancedStats(entries).riskPosture).toBe("calm");
+  });
+
+  it("returns elevated for medium average risk", () => {
+    const entries = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        decision: "allow",
+        riskScore: 35,
+        riskTier: "medium",
+      }),
+    ];
+    expect(computeEnhancedStats(entries).riskPosture).toBe("elevated");
+  });
+
+  it("overrides to high when recent entry has riskScore > 75", () => {
+    const entries = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        decision: "allow",
+        riskScore: 10,
+        riskTier: "low",
+      }),
+      entry({
+        timestamp: "2026-03-29T13:30:00Z",
+        decision: "allow",
+        riskScore: 80,
+        riskTier: "critical",
+      }),
+    ];
+    // avg = 45, base posture = elevated, but override to high due to recent >75
+    const posture = computeEnhancedStats(entries).riskPosture;
+    expect(posture).toBe("high");
+  });
+
+  it("overrides to critical when recent block", () => {
+    const entries = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        decision: "allow",
+        riskScore: 10,
+        riskTier: "low",
+      }),
+      entry({
+        timestamp: "2026-03-29T13:45:00Z",
+        decision: "block",
+        riskScore: 90,
+        riskTier: "critical",
+      }),
+    ];
+    expect(computeEnhancedStats(entries).riskPosture).toBe("critical");
+  });
+});
+
+describe("getAgents — new fields", () => {
+  it("detects scheduled mode from cron session key", () => {
+    const entries = [
+      entry({
+        agentId: "scanner",
+        sessionKey: "agent:scanner:cron:health-check-001",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    const scanner = agents.find((a) => a.id === "scanner")!;
+    expect(scanner.mode).toBe("scheduled");
+  });
+
+  it("detects interactive mode from telegram session key", () => {
+    const entries = [
+      entry({
+        agentId: "main",
+        sessionKey: "agent:main:telegram:direct:1234",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].mode).toBe("interactive");
+  });
+
+  it("defaults to interactive when no cron sessions", () => {
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].mode).toBe("interactive");
+  });
+
+  it("provides currentContext from session key", () => {
+    const entries = [
+      entry({
+        agentId: "social",
+        sessionKey: "agent:social:cron:trend-scan-tweet-006",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].currentContext).toBe("Cron: Trend scan tweet");
+  });
+
+  it("computes activityBreakdown", () => {
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        toolName: "exec",
+        decision: "allow",
+        timestamp: "2026-03-29T10:02:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    const bot = agents[0];
+    expect(bot.activityBreakdown.exploring).toBe(67);
+    expect(bot.activityBreakdown.commands).toBe(33);
+  });
+
+  it("computes latestAction", () => {
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "read",
+        params: { path: "config.yaml" },
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "exec",
+        params: { command: "npm test" },
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].latestAction).toBe("Ran npm test");
+    expect(agents[0].latestActionTime).toBe("2026-03-29T10:01:00Z");
+  });
+
+  it("computes riskPosture per agent", () => {
+    const entries = [
+      entry({
+        agentId: "safe-bot",
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: 10,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].riskPosture).toBe("calm");
+  });
+
+  it("sets needsAttention when blocked recently", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "block",
+        toolName: "exec",
+        riskScore: 90,
+        timestamp: "2026-03-29T13:45:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].needsAttention).toBe(true);
+    expect(agents[0].attentionReason).toContain("Blocked");
+
+    vi.useRealTimers();
+  });
+
+  it("sets needsAttention when peak risk >= 75", () => {
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        riskScore: 80,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].needsAttention).toBe(true);
+    expect(agents[0].attentionReason).toBe("High risk activity detected");
+  });
+
+  it("needsAttention false when all is calm", () => {
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        riskScore: 10,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].needsAttention).toBe(false);
+    expect(agents[0].attentionReason).toBeUndefined();
+  });
+});
+
+describe("SessionInfo — new fields", () => {
+  it("includes activityBreakdown", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+    ];
+    const result = getSessions(entries);
+    const session = result.sessions[0];
+    expect(session.activityBreakdown).toBeDefined();
+    expect(session.activityBreakdown.exploring).toBe(50);
+    expect(session.activityBreakdown.commands).toBe(50);
+  });
+
+  it("includes blockedCount", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "block",
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "allow",
+        userResponse: "denied",
+        timestamp: "2026-03-29T10:02:00Z",
+      }),
+    ];
+    const result = getSessions(entries);
+    expect(result.sessions[0].blockedCount).toBe(2);
+  });
+
+  it("includes context from session key", () => {
+    const entries = [
+      entry({
+        sessionKey: "agent:social:cron:mention-monitor-007",
+        agentId: "social",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const result = getSessions(entries);
+    expect(result.sessions[0].context).toBe("Cron: Mention monitor");
+  });
+});
+
+describe("EntryResponse — category field", () => {
+  it("includes category on entries", () => {
+    const entries = [
+      entry({
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+    ];
+    const result = getRecentEntries(entries, 10, 0);
+    expect(result[0].category).toBe("commands"); // exec, most recent first
+    expect(result[1].category).toBe("exploring"); // read
+  });
+
+  it("includes category on session detail entries", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "write",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const result = getSessionDetail(entries, "s1");
+    expect(result!.entries[0].category).toBe("changes");
+  });
+});
+
+describe("getRecentEntries — filtering", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const testEntries = () => [
+    entry({
+      agentId: "bot-1",
+      decision: "allow",
+      toolName: "read",
+      riskTier: "low",
+      riskScore: 10,
+      timestamp: "2026-03-29T10:00:00Z",
+    }),
+    entry({
+      agentId: "bot-1",
+      decision: "block",
+      toolName: "exec",
+      riskTier: "high",
+      riskScore: 70,
+      timestamp: "2026-03-29T12:00:00Z",
+    }),
+    entry({
+      agentId: "bot-2",
+      decision: "allow",
+      toolName: "write",
+      riskTier: "medium",
+      riskScore: 35,
+      timestamp: "2026-03-29T13:00:00Z",
+    }),
+    entry({
+      agentId: "bot-2",
+      decision: "allow",
+      toolName: "web_search",
+      riskTier: "low",
+      riskScore: 5,
+      timestamp: "2026-03-29T13:30:00Z",
+    }),
+  ];
+
+  it("filters by agent", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, { agent: "bot-1" });
+    expect(result).toHaveLength(2);
+    result.forEach((e) => expect(e.agentId).toBe("bot-1"));
+  });
+
+  it("filters by category", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, {
+      category: "exploring",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].toolName).toBe("read");
+  });
+
+  it("filters by riskTier", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, {
+      riskTier: "high",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].toolName).toBe("exec");
+  });
+
+  it("filters by decision", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, {
+      decision: "block",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].toolName).toBe("exec");
+  });
+
+  it("filters by time window", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, { since: "6h" });
+    // Only entries within last 6h of 14:00 = since 08:00
+    expect(result.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("combines multiple filters", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, {
+      agent: "bot-2",
+      category: "web",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].toolName).toBe("web_search");
+  });
+
+  it("returns all when no filters", () => {
+    const result = getRecentEntries(testEntries(), 50, 0);
+    expect(result).toHaveLength(4);
+  });
+
+  it("returns all when since=all", () => {
+    const result = getRecentEntries(testEntries(), 50, 0, { since: "all" });
+    expect(result).toHaveLength(4);
   });
 });
