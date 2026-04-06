@@ -266,6 +266,22 @@
   100% { background-color: transparent; }
 }
 
+/* ── Hex node positioning ── */
+.hex-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  z-index: 2;
+}
+.hex-node:focus-within .hex-tooltip-target {
+  opacity: 1;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 /* ── Glow utilities ── */
 .cl-glow-low { filter: drop-shadow(0 0 6px rgba(74, 222, 128, 0.3)); }
 .cl-glow-medium { filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.3)); }

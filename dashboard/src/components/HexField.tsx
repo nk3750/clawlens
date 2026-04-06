@@ -1,21 +1,41 @@
-/**
- * HexField — SVG hexagonal grid background with connecting lines.
- * Creates the constellation/network visual behind agent cards.
- * Inspired by Hex.tech "Data Manager" visualization.
- */
+import { useMemo } from "react";
+
+export interface HexNodeData {
+  x: number;
+  y: number;
+  id: string;
+  riskScore: number;
+  riskPosture: "calm" | "elevated" | "high" | "critical";
+  status: "active" | "idle";
+  context?: string;
+}
 
 interface Props {
-  /** Agent positions (normalized 0-1) for drawing connection lines */
-  nodes?: Array<{ x: number; y: number }>;
+  nodes: HexNodeData[];
+  hoveredNodeId: string | null;
   width?: number;
   height?: number;
 }
 
-export default function HexField({ nodes = [], width = 1200, height = 700 }: Props) {
+const RISK_COLORS: Record<string, string> = {
+  calm: "#4ade80",
+  elevated: "#fbbf24",
+  high: "#f87171",
+  critical: "#ef4444",
+};
+
+const GLOW_RADIUS: Record<string, number> = {
+  calm: 8,
+  elevated: 12,
+  high: 16,
+  critical: 22,
+};
+
+export default function HexField({ nodes, hoveredNodeId, width = 1200, height = 800 }: Props) {
   const cx = width / 2;
   const cy = height / 2;
 
-  // Generate hex vertices at a given center and radius
+  // Hex vertex generator (flat-top orientation)
   function hexPoints(ox: number, oy: number, r: number): string {
     return Array.from({ length: 6 }, (_, i) => {
       const angle = (Math.PI / 3) * i - Math.PI / 6;
@@ -23,121 +43,223 @@ export default function HexField({ nodes = [], width = 1200, height = 700 }: Pro
     }).join(" ");
   }
 
-  // Scatter dots inside the hex area
-  const dots: Array<{ x: number; y: number; r: number; o: number }> = [];
-  for (let i = 0; i < 60; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * 280;
-    dots.push({
-      x: cx + Math.cos(angle) * dist,
-      y: cy + Math.sin(angle) * dist,
-      r: Math.random() * 1.5 + 0.5,
-      o: Math.random() * 0.25 + 0.05,
-    });
+  function hexVertex(ox: number, oy: number, r: number, i: number): [number, number] {
+    const angle = (Math.PI / 3) * i - Math.PI / 6;
+    return [ox + r * Math.cos(angle), oy + r * Math.sin(angle)];
   }
+
+  // Deterministic particles (stable across re-renders)
+  const particles = useMemo(() => {
+    const pts: Array<{ x: number; y: number; r: number; o: number }> = [];
+    let seed = 42;
+    const rand = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
+    for (let i = 0; i < 55; i++) {
+      const angle = rand() * Math.PI * 2;
+      const dist = rand() * 300 + 20;
+      pts.push({
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        r: rand() * 1.8 + 0.3,
+        o: rand() * 0.2 + 0.04,
+      });
+    }
+    return pts;
+  }, [cx, cy]);
+
+  // Floating labels at hex edges
+  const labels = useMemo(() => {
+    const result: Array<{ x: number; y: number; text: string }> = [];
+    // Place context labels from nodes
+    nodes.forEach((n) => {
+      if (n.context) {
+        const labelX = n.x * width + (n.x < 0.5 ? -70 : 70);
+        const labelY = n.y * height + (n.y < 0.5 ? -30 : 30);
+        result.push({ x: labelX, y: labelY, text: n.context });
+      }
+    });
+    // Static label near center
+    result.push({ x: cx, y: cy + 8, text: "OBSERVATORY" });
+    return result;
+  }, [nodes, width, height, cx, cy]);
+
+  const hexRadii = [340, 250, 160, 75];
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{ opacity: 0.6 }}
+      className="w-full h-full"
       preserveAspectRatio="xMidYMid meet"
     >
       <defs>
-        <linearGradient id="hex-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#d4a574" stopOpacity="0.08" />
-          <stop offset="50%" stopColor="#a78bfa" stopOpacity="0.06" />
-          <stop offset="100%" stopColor="#d4a574" stopOpacity="0.04" />
-        </linearGradient>
+        {/* Radial fade mask */}
         <radialGradient id="hex-fade">
           <stop offset="0%" stopColor="white" stopOpacity="1" />
-          <stop offset="70%" stopColor="white" stopOpacity="0.8" />
+          <stop offset="60%" stopColor="white" stopOpacity="0.9" />
           <stop offset="100%" stopColor="white" stopOpacity="0" />
         </radialGradient>
         <mask id="hex-mask">
           <rect width={width} height={height} fill="url(#hex-fade)" />
         </mask>
+
+        {/* Stroke gradients */}
+        <linearGradient id="hex-stroke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#d4a574" stopOpacity="0.12" />
+          <stop offset="50%" stopColor="#a78bfa" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#d4a574" stopOpacity="0.06" />
+        </linearGradient>
+
+        {/* Per-node glow filters */}
+        {nodes.map((n) => {
+          const color = RISK_COLORS[n.riskPosture];
+          const isHovered = hoveredNodeId === n.id;
+          const blur = GLOW_RADIUS[n.riskPosture] * (isHovered ? 1.6 : 1);
+          return (
+            <filter key={n.id} id={`glow-${n.id}`} x="-100%" y="-100%" width="300%" height="300%">
+              <feGaussianBlur stdDeviation={blur} result="blur" />
+              <feFlood floodColor={color} floodOpacity={isHovered ? 0.5 : 0.25} result="color" />
+              <feComposite in="color" in2="blur" operator="in" result="glow" />
+              <feMerge>
+                <feMergeNode in="glow" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          );
+        })}
+
+        {/* Connection line gradient between two nodes */}
+        {nodes.map((a, i) =>
+          nodes.slice(i + 1).map((b, j) => (
+            <linearGradient
+              key={`grad-${i}-${j}`}
+              id={`conn-${i}-${j}`}
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+            >
+              <stop offset="0%" stopColor={RISK_COLORS[a.riskPosture]} stopOpacity="0.25" />
+              <stop offset="100%" stopColor={RISK_COLORS[b.riskPosture]} stopOpacity="0.25" />
+            </linearGradient>
+          )),
+        )}
       </defs>
 
       <g mask="url(#hex-mask)">
-        {/* Concentric hexagonal wireframes */}
-        {[320, 240, 160, 80].map((r, i) => (
+        {/* ── Concentric hex wireframes ── */}
+        {hexRadii.map((r, i) => (
           <polygon
             key={r}
             points={hexPoints(cx, cy, r)}
             fill="none"
-            stroke="url(#hex-stroke)"
+            stroke="url(#hex-stroke-grad)"
             strokeWidth={i === 0 ? 1 : 0.5}
-            strokeDasharray={i > 1 ? "4 8" : "none"}
+            strokeDasharray={i > 1 ? "4 10" : "none"}
+            opacity={i === 0 ? 0.8 : 0.5}
           />
         ))}
 
-        {/* Cross lines through hex center */}
+        {/* ── Cross lines through hex center ── */}
         {[0, 60, 120].map((deg) => {
-          const rad = (deg * Math.PI) / 180 - Math.PI / 6;
-          const r = 320;
+          const [x1, y1] = hexVertex(cx, cy, hexRadii[0], deg / 60);
+          const [x2, y2] = hexVertex(cx, cy, hexRadii[0], deg / 60 + 3);
           return (
             <line
               key={deg}
-              x1={cx + r * Math.cos(rad)}
-              y1={cy + r * Math.sin(rad)}
-              x2={cx - r * Math.cos(rad)}
-              y2={cy - r * Math.sin(rad)}
-              stroke="url(#hex-stroke)"
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke="url(#hex-stroke-grad)"
               strokeWidth="0.5"
-              strokeDasharray="2 6"
+              strokeDasharray="3 8"
+              opacity="0.4"
             />
           );
         })}
 
-        {/* Scattered particles */}
-        {dots.map((d, i) => (
+        {/* ── Scattered particles ── */}
+        {particles.map((p, i) => (
           <circle
             key={i}
-            cx={d.x}
-            cy={d.y}
-            r={d.r}
+            cx={p.x} cy={p.y} r={p.r}
             fill="#d4a574"
-            opacity={d.o}
+            opacity={p.o}
           />
         ))}
 
-        {/* Connection lines between agent nodes */}
-        {nodes.length > 1 &&
-          nodes.map((a, i) =>
-            nodes.slice(i + 1).map((b, j) => (
+        {/* ── Connection lines between nodes ── */}
+        {nodes.map((a, i) =>
+          nodes.slice(i + 1).map((b, j) => {
+            const isHighlit =
+              hoveredNodeId === a.id || hoveredNodeId === b.id;
+            return (
               <line
-                key={`${i}-${j}`}
-                x1={a.x * width}
-                y1={a.y * height}
-                x2={b.x * width}
-                y2={b.y * height}
-                stroke="#d4a574"
-                strokeWidth="0.5"
-                strokeOpacity="0.1"
-                strokeDasharray="3 6"
+                key={`conn-${i}-${j}`}
+                x1={a.x * width} y1={a.y * height}
+                x2={b.x * width} y2={b.y * height}
+                stroke={`url(#conn-${i}-${j})`}
+                strokeWidth={isHighlit ? 1 : 0.5}
+                strokeDasharray="4 8"
+                opacity={isHighlit ? 0.6 : 0.15}
+                style={{ transition: "opacity 0.4s ease, stroke-width 0.4s ease" }}
               />
-            )),
-          )}
+            );
+          }),
+        )}
 
-        {/* Glowing dots at node positions */}
-        {nodes.map((n, i) => (
-          <g key={i}>
-            <circle
-              cx={n.x * width}
-              cy={n.y * height}
-              r="4"
-              fill="#d4a574"
-              opacity="0.15"
-            />
-            <circle
-              cx={n.x * width}
-              cy={n.y * height}
-              r="2"
-              fill="#d4a574"
-              opacity="0.3"
-            />
-          </g>
+        {/* ── Node glow circles ── */}
+        {nodes.map((n) => {
+          const px = n.x * width;
+          const py = n.y * height;
+          const color = RISK_COLORS[n.riskPosture];
+          const isHovered = hoveredNodeId === n.id;
+          const isActive = n.status === "active";
+
+          return (
+            <g key={n.id}>
+              {/* Outer glow ring */}
+              <circle
+                cx={px} cy={py}
+                r={isHovered ? 35 : 28}
+                fill="none"
+                stroke={color}
+                strokeWidth="1"
+                opacity={isHovered ? 0.4 : 0.15}
+                filter={`url(#glow-${n.id})`}
+                style={{ transition: "r 0.5s ease, opacity 0.4s ease" }}
+              />
+              {/* Inner glow dot */}
+              <circle
+                cx={px} cy={py}
+                r={isHovered ? 6 : 4}
+                fill={color}
+                opacity={isActive ? 0.6 : 0.3}
+                style={{ transition: "r 0.3s ease, opacity 0.3s ease" }}
+              >
+                {isActive && (
+                  <animate
+                    attributeName="opacity"
+                    values="0.6;0.2;0.6"
+                    dur="2s"
+                    repeatCount="indefinite"
+                  />
+                )}
+              </circle>
+            </g>
+          );
+        })}
+
+        {/* ── Floating labels ── */}
+        {labels.map((l, i) => (
+          <text
+            key={i}
+            x={l.x} y={l.y}
+            textAnchor="middle"
+            fill="var(--cl-text-muted)"
+            opacity="0.35"
+            fontSize="9"
+            fontFamily="'JetBrains Mono', monospace"
+            letterSpacing="0.1em"
+          >
+            {l.text.toUpperCase()}
+          </text>
         ))}
       </g>
     </svg>
