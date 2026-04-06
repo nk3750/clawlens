@@ -15,91 +15,90 @@ export default function AgentCard({ agent }: Props) {
   return (
     <Link
       to={`/agent/${encodeURIComponent(agent.id)}`}
-      className="cl-card block relative cursor-pointer p-7"
+      className="cl-card block cursor-pointer"
+      style={{ padding: "clamp(24px, 3vw, 36px)" }}
     >
-      {/* Hover glow overlay — appears on hover */}
+      {/* Radial tier glow (visible on hover via CSS) */}
       <div
-        className="absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-500 pointer-events-none"
+        className="absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-700 pointer-events-none"
         style={{
-          background: `radial-gradient(ellipse at 50% 0%, ${tierColor}08 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse 70% 50% at 50% 0%, ${tierColor}06 0%, transparent 70%)`,
         }}
       />
 
       {/* Attention indicator */}
       {agent.needsAttention && (
-        <div
-          className="absolute -top-1 -right-1 z-10"
-          title={agent.attentionReason}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
+        <div className="absolute -top-2 -right-2 z-10" title={agent.attentionReason}>
+          <div
+            className="w-5 h-5 rounded-full flex items-center justify-center"
+            style={{
+              backgroundColor: "rgba(251, 191, 36, 0.15)",
+              border: "1px solid rgba(251, 191, 36, 0.3)",
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2.5">
+              <path d="M12 9v4M12 17h.01" strokeLinecap="round" />
+            </svg>
+          </div>
         </div>
       )}
 
-      {/* Header: avatar + name + status */}
-      <div className="flex items-center gap-4 mb-4">
+      {/* ── Top: Avatar + Identity ── */}
+      <div className="flex items-start gap-4 mb-6">
         <GradientAvatar agentId={agent.id} size="md" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pt-0.5">
           <h3
-            className="font-display font-bold text-[15px] truncate"
-            style={{ color: "var(--cl-text-primary)" }}
+            className="font-display font-bold truncate"
+            style={{
+              color: "var(--cl-text-primary)",
+              fontSize: "clamp(15px, 1.2vw, 18px)",
+            }}
           >
             {agent.name}
           </h3>
-          <StatusIndicator agent={agent} />
+          <StatusLine agent={agent} />
         </div>
       </div>
 
-      {/* Context line */}
+      {/* ── Context (if present) ── */}
       {agent.currentContext && (
         <p
-          className="text-[13px] italic mb-5 truncate"
-          style={{ color: "var(--cl-text-secondary)" }}
+          className="text-[13px] italic mb-6 leading-relaxed"
+          style={{ color: "var(--cl-text-muted)" }}
         >
           &ldquo;{agent.currentContext}&rdquo;
         </p>
       )}
 
-      {/* Risk Arc — with tier-colored glow on card hover */}
-      <div className="mb-5">
-        <RiskArc score={agent.avgRiskScore} />
+      {/* ── Risk Arc — the hero visual ── */}
+      <div className="mb-6">
+        <RiskArc score={agent.avgRiskScore} size={90} />
       </div>
 
-      {/* Activity bar */}
-      <div className="mb-5">
+      {/* ── Activity fingerprint ── */}
+      <div className="mb-6">
         <ActivityBar breakdown={agent.activityBreakdown} />
       </div>
 
-      {/* Footer: latest action + count */}
-      <div
-        className="flex items-center justify-between gap-2 pt-4"
-        style={{ borderTop: "1px solid var(--cl-border-subtle)" }}
-      >
+      {/* ── Footer — separated by gradient divider ── */}
+      <div className="cl-divider mb-4" />
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           {agent.latestAction && (
             <p
-              className="text-[13px] truncate"
+              className="text-[13px] truncate leading-snug"
               style={{ color: "var(--cl-text-primary)" }}
             >
               {agent.latestAction}
             </p>
           )}
           {agent.latestActionTime && (
-            <span
-              className="font-mono text-xs"
-              style={{ color: "var(--cl-text-secondary)" }}
-            >
+            <span className="font-mono text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
               {relTime(agent.latestActionTime)}
             </span>
           )}
         </div>
-        <span
-          className="label-mono shrink-0"
-          style={{ color: "var(--cl-text-muted)" }}
-        >
+        <span className="label-mono shrink-0" style={{ color: "var(--cl-text-muted)" }}>
           {agent.todayToolCalls} actions
         </span>
       </div>
@@ -107,15 +106,15 @@ export default function AgentCard({ agent }: Props) {
   );
 }
 
-function StatusIndicator({ agent }: { agent: AgentInfo }) {
+function StatusLine({ agent }: { agent: AgentInfo }) {
   if (agent.mode === "scheduled") {
     return (
-      <span className="flex items-center gap-1.5">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--cl-cat-commands)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M23 4v6h-6M1 20v-6h6" />
-          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+      <span className="flex items-center gap-1.5 mt-1">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
         </svg>
-        <span style={{ color: "var(--cl-cat-commands)" }} className="font-mono text-[11px]">
+        <span className="font-mono text-[11px]" style={{ color: "#a78bfa" }}>
           {agent.schedule ?? "scheduled"}
         </span>
       </span>
@@ -124,25 +123,23 @@ function StatusIndicator({ agent }: { agent: AgentInfo }) {
 
   if (agent.status === "active") {
     return (
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5 mt-1">
         <span
-          className="inline-block w-[6px] h-[6px] rounded-full"
+          className="inline-block w-[5px] h-[5px] rounded-full"
           style={{
             backgroundColor: "var(--cl-risk-low)",
             boxShadow: "0 0 6px rgba(74, 222, 128, 0.5)",
             animation: "pulse 2s ease-in-out infinite",
           }}
         />
-        <span style={{ color: "var(--cl-risk-low)" }} className="font-mono text-[11px]">
-          Active
-        </span>
-        <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.5 } }`}</style>
+        <span className="font-mono text-[11px]" style={{ color: "var(--cl-risk-low)" }}>Active</span>
+        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
       </span>
     );
   }
 
   return (
-    <span className="font-mono text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+    <span className="font-mono text-[11px] mt-1 inline-block" style={{ color: "var(--cl-text-muted)" }}>
       {agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "idle"}
     </span>
   );

@@ -26,6 +26,7 @@ export default {
         },
       },
       fontFamily: {
+        brand: ['"Syne"', "sans-serif"],
         display: ['"Bricolage Grotesque"', "sans-serif"],
         body: ['"DM Sans"', "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],

@@ -10,21 +10,37 @@ export default function Nav() {
 
   return (
     <nav className="sticky top-0 z-50 cl-glass-nav">
-      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-        {/* Brand */}
-        <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
+      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        {/* Brand — Syne font, gradient text, glow */}
+        <Link to="/" className="flex items-center gap-3 shrink-0 group">
+          {/* Hexagonal brand mark */}
+          <svg width="28" height="28" viewBox="0 0 28 28" className="shrink-0">
+            <defs>
+              <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#d4a574" />
+                <stop offset="100%" stopColor="#a78bfa" />
+              </linearGradient>
+            </defs>
+            <polygon
+              points="14,1 25.5,7.5 25.5,20.5 14,27 2.5,20.5 2.5,7.5"
+              fill="none"
+              stroke="url(#brand-grad)"
+              strokeWidth="1.5"
+              className="transition-all duration-500 group-hover:[filter:drop-shadow(0_0_8px_rgba(212,165,116,0.5))]"
+            />
+            <circle cx="14" cy="14" r="3" fill="url(#brand-grad)" opacity="0.8" />
+          </svg>
           <span
-            className="inline-block w-2.5 h-2.5 rounded-full transition-shadow duration-300"
+            className="text-[18px] font-bold tracking-wide"
             style={{
-              backgroundColor: "var(--cl-accent)",
-              boxShadow: "0 0 8px rgba(212, 165, 116, 0.4)",
+              fontFamily: "'Syne', sans-serif",
+              background: "linear-gradient(135deg, #ede9e3 30%, #d4a574 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
             }}
-          />
-          <span
-            className="font-display font-bold text-[15px] tracking-tight"
-            style={{ color: "var(--cl-text-primary)" }}
           >
-            ClawLens
+            CLAWLENS
           </span>
         </Link>
 
@@ -42,18 +58,19 @@ function NavLink({ to, active, children }: { to: string; active: boolean; childr
   return (
     <Link
       to={to}
-      className="relative px-3 py-1.5 text-sm font-medium transition-colors duration-200"
+      className="relative px-4 py-2 text-[13px] font-medium transition-colors duration-200"
       style={{
+        fontFamily: "'DM Sans', sans-serif",
         color: active ? "var(--cl-text-primary)" : "var(--cl-text-muted)",
       }}
     >
       {children}
       {active && (
         <span
-          className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full"
+          className="absolute bottom-1 left-4 right-4 h-[2px] rounded-full"
           style={{
             backgroundColor: "var(--cl-accent)",
-            boxShadow: "0 0 6px rgba(212, 165, 116, 0.3)",
+            boxShadow: "0 0 8px rgba(212, 165, 116, 0.4)",
           }}
         />
       )}
