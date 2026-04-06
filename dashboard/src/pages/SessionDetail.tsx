@@ -1,9 +1,9 @@
 import { useParams, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import type { SessionDetailResponse } from "../lib/types";
-import { formatDuration, relTime } from "../lib/utils";
-import GradientAvatar from "../components/GradientAvatar";
-import DecisionBadge from "../components/DecisionBadge";
+import SessionHeader from "../components/SessionHeader";
+import RiskTimeline from "../components/RiskTimeline";
+import ToolCallTimeline from "../components/ToolCallTimeline";
 
 export default function SessionDetail() {
   const { sessionKey } = useParams<{ sessionKey: string }>();
@@ -13,11 +13,18 @@ export default function SessionDetail() {
 
   if (loading) {
     return (
-      <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
-        Loading...
+      <div className="text-center py-20">
+        <div
+          className="inline-block w-6 h-6 rounded-full border-2 animate-spin"
+          style={{
+            borderColor: "var(--cl-border-default)",
+            borderTopColor: "var(--cl-accent)",
+          }}
+        />
       </div>
     );
   }
+
   if (error || !data) {
     return (
       <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
@@ -33,109 +40,34 @@ export default function SessionDetail() {
   const { session, entries } = data;
 
   return (
-    <div>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-sm mb-6" style={{ color: "var(--cl-text-muted)" }}>
-        <Link to="/" className="hover:underline">Agents</Link>
-        <span>&rsaquo;</span>
-        <Link to={`/agent/${encodeURIComponent(session.agentId)}`} className="hover:underline">
-          {session.agentId}
-        </Link>
-        <span>&rsaquo;</span>
-        <span style={{ color: "var(--cl-text-secondary)" }}>Session</span>
-      </div>
+    <div className="stagger">
+      <SessionHeader session={session} />
 
-      {/* Session header */}
-      <div
-        className="rounded-xl border p-6 mb-8"
-        style={{
-          backgroundColor: "var(--cl-surface)",
-          borderColor: "var(--cl-border-default)",
-        }}
-      >
-        <div className="flex items-center gap-4 mb-4">
-          <GradientAvatar agentId={session.agentId} />
-          <div>
-            <h1
-              className="font-display font-bold text-lg"
-              style={{ color: "var(--cl-text-primary)" }}
-            >
-              Session by {session.agentId}
-            </h1>
-            <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-              {new Date(session.startTime).toLocaleString()}
-            </span>
-          </div>
+      {/* Risk Timeline chart — the session risk hero */}
+      <section className="mb-10">
+        <h2 className="label-mono mb-5" style={{ color: "var(--cl-text-muted)" }}>
+          RISK TIMELINE
+        </h2>
+        <div
+          className="cl-card p-5 overflow-hidden"
+        >
+          <RiskTimeline
+            entries={entries}
+            sessionStart={session.startTime}
+            sessionEnd={session.endTime}
+          />
         </div>
+      </section>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <StatCard label="Actions" value={String(session.toolCallCount)} />
-          <StatCard label="Duration" value={formatDuration(session.duration)} />
-          <StatCard label="Peak Risk" value={String(session.peakRisk)} />
-        </div>
-      </div>
+      <div className="cl-divider mb-10" />
 
-      {/* Timeline */}
-      <h2
-        className="label-mono mb-4"
-        style={{ color: "var(--cl-text-muted)" }}
-      >
-        TIMELINE ({entries.length} actions)
-      </h2>
-      <div
-        className="rounded-xl border divide-y overflow-hidden"
-        style={{
-          backgroundColor: "var(--cl-surface)",
-          borderColor: "var(--cl-border-subtle)",
-        }}
-      >
-        {entries.length === 0 ? (
-          <p className="p-6 text-center" style={{ color: "var(--cl-text-muted)" }}>
-            No actions in this session
-          </p>
-        ) : (
-          entries.map((entry, i) => (
-            <div
-              key={entry.toolCallId || i}
-              className="flex items-center justify-between px-4 py-3"
-            >
-              <div className="min-w-0 flex-1">
-                <span className="text-sm" style={{ color: "var(--cl-text-primary)" }}>
-                  {entry.toolName}
-                </span>
-                <span className="font-mono text-xs ml-2" style={{ color: "var(--cl-text-secondary)" }}>
-                  {relTime(entry.timestamp)}
-                </span>
-              </div>
-              {entry.effectiveDecision && entry.effectiveDecision !== "allow" && (
-                <DecisionBadge decision={entry.effectiveDecision} />
-              )}
-              {entry.riskScore != null && (
-                <span className="font-mono text-xs ml-3" style={{ color: "var(--cl-text-secondary)" }}>
-                  risk: {entry.riskScore}
-                </span>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="rounded-lg p-3"
-      style={{ backgroundColor: "var(--cl-elevated)" }}
-    >
-      <div className="label-mono mb-1" style={{ color: "var(--cl-text-muted)" }}>
-        {label}
-      </div>
-      <div className="font-mono text-sm" style={{ color: "var(--cl-text-primary)" }}>
-        {value}
-      </div>
+      {/* Tool call timeline — granular forensics view */}
+      <section>
+        <h2 className="label-mono mb-5" style={{ color: "var(--cl-text-muted)" }}>
+          TOOL CALLS ({entries.length})
+        </h2>
+        <ToolCallTimeline entries={entries} sessionStart={session.startTime} />
+      </section>
     </div>
   );
 }

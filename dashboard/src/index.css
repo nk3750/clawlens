@@ -266,6 +266,18 @@
   100% { background-color: transparent; }
 }
 
+/* ── Slide-in for new SSE entries ── */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Focus ring for filter selects ── */
+select:focus {
+  border-color: var(--cl-accent) !important;
+  box-shadow: 0 0 0 2px rgba(212, 165, 116, 0.2);
+}
+
 /* ── Hex node positioning ── */
 .hex-node {
   position: absolute;
