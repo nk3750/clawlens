@@ -509,6 +509,16 @@ export function generateMockSessions(entries: EntryResponse[], agentId?: string)
     const startMs = new Date(sorted[0].timestamp).getTime();
     const endMs = new Date(sorted[sorted.length - 1].timestamp).getTime();
 
+    const blockedCount = sEntries.filter(
+      (e) => e.effectiveDecision === "block" || e.effectiveDecision === "denied",
+    ).length;
+
+    // Parse context from session key
+    const parts = key.split(":");
+    let context: string | undefined;
+    if (parts[2] === "cron") context = parts.slice(3).join(" ").replace(/-/g, " ") || "Scheduled task";
+    else if (parts.length >= 4) context = parts.slice(3).join(" ").replace(/-/g, " ");
+
     return {
       sessionKey: key,
       agentId: sEntries[0].agentId ?? "default",
@@ -518,9 +528,34 @@ export function generateMockSessions(entries: EntryResponse[], agentId?: string)
       toolCallCount: sEntries.filter((e) => e.decision).length,
       avgRisk: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
       peakRisk: scores.length ? Math.max(...scores) : 0,
+      activityBreakdown: computeBreakdown(sEntries),
+      blockedCount,
+      context,
     };
   });
 
   sessions.sort((a, b) => b.startTime.localeCompare(a.startTime));
   return sessions;
+}
+
+/** Generate 24h risk trend for an agent from their entries. */
+export function generateRiskTrend(
+  entries: EntryResponse[],
+  agentId: string,
+): Array<{ timestamp: string; score: number; toolName: string }> {
+  const cutoff = Date.now() - 24 * 60 * 60_000;
+  return entries
+    .filter(
+      (e) =>
+        e.agentId === agentId &&
+        e.riskScore != null &&
+        new Date(e.timestamp).getTime() >= cutoff,
+    )
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    .slice(0, 200)
+    .map((e) => ({
+      timestamp: e.timestamp,
+      score: e.llmEvaluation?.adjustedScore ?? e.riskScore!,
+      toolName: e.toolName,
+    }));
 }

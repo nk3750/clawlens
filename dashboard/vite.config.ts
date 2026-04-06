@@ -5,6 +5,7 @@ import {
   generateMockAgents,
   generateMockStats,
   generateMockSessions,
+  generateRiskTrend,
 } from "./mock-data";
 
 /** Vite plugin that mocks the ClawLens API during local development. */
@@ -61,12 +62,14 @@ function mockApiPlugin(): Plugin {
           }
           const agentEntries = entries.filter((e) => e.agentId === agentId);
           const sessions = generateMockSessions(entries, agentId);
+          const riskTrend = generateRiskTrend(entries, agentId);
           res.end(
             JSON.stringify({
               agent,
               recentActivity: agentEntries.slice(0, 20),
               sessions: sessions.slice(0, 10),
               totalSessions: sessions.length,
+              riskTrend,
             }),
           );
           return;

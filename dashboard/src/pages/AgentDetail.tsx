@@ -1,158 +1,136 @@
 import { useParams, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
-import type { AgentDetailResponse } from "../lib/types";
-import { relTime } from "../lib/utils";
-import GradientAvatar from "../components/GradientAvatar";
-import RiskArc from "../components/RiskArc";
-import ActivityBar from "../components/ActivityBar";
-import DecisionBadge from "../components/DecisionBadge";
+import type { AgentDetailResponse, AgentInfo } from "../lib/types";
+import AgentHeader from "../components/AgentHeader";
+import RiskPanel from "../components/RiskPanel";
+import ActivityProfile from "../components/ActivityProfile";
+import ActivityStream from "../components/ActivityStream";
+import SessionCard from "../components/SessionCard";
 
 export default function AgentDetail() {
   const { agentId } = useParams<{ agentId: string }>();
   const { data, loading, error } = useApi<AgentDetailResponse>(
     `api/agent/${encodeURIComponent(agentId || "")}`,
   );
+  const { data: allAgents } = useApi<AgentInfo[]>("api/agents");
 
   if (loading) {
     return (
       <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
-        Loading...
+        <div
+          className="inline-block w-6 h-6 rounded-full border-2 animate-spin"
+          style={{
+            borderColor: "var(--cl-border-default)",
+            borderTopColor: "var(--cl-accent)",
+          }}
+        />
       </div>
     );
   }
+
   if (error || !data) {
     return (
       <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
         {error ? `Error: ${error}` : "Agent not found"}
         <br />
-        <Link to="/" className="text-sm mt-2 inline-block" style={{ color: "var(--cl-accent)" }}>
+        <Link
+          to="/"
+          className="text-sm mt-2 inline-block"
+          style={{ color: "var(--cl-accent)" }}
+        >
           &larr; Back to Agents
         </Link>
       </div>
     );
   }
 
-  const { agent, recentActivity, sessions } = data;
+  const { agent, recentActivity, sessions, riskTrend } = data;
+
+  // Session stats from current session entries
+  const currentSessionKey = agent.currentSession?.sessionKey;
+  const sessionEntries = currentSessionKey
+    ? recentActivity.filter((e) => e.sessionKey === currentSessionKey)
+    : recentActivity;
+  const scores = sessionEntries
+    .filter((e) => e.riskScore != null)
+    .map((e) => e.riskScore!);
+  const sessionStats = scores.length > 0
+    ? {
+        avg: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+        peak: Math.max(...scores),
+        count: sessionEntries.length,
+      }
+    : undefined;
 
   return (
-    <div>
-      {/* Back link */}
-      <Link
-        to="/"
-        className="text-sm mb-6 inline-block"
-        style={{ color: "var(--cl-text-muted)" }}
-      >
-        &larr; Back to Agents
-      </Link>
+    <div className="stagger">
+      {/* Hero header */}
+      <AgentHeader agent={agent} />
 
-      {/* Agent header */}
-      <div
-        className="rounded-xl border p-6 mb-8"
-        style={{
-          backgroundColor: "var(--cl-surface)",
-          borderColor: "var(--cl-border-default)",
-        }}
-      >
-        <div className="flex items-center gap-4 mb-4">
-          <GradientAvatar agentId={agent.id} size="lg" />
-          <div>
-            <h1
-              className="font-display font-bold text-xl"
-              style={{ color: "var(--cl-text-primary)" }}
-            >
-              {agent.name}
-            </h1>
-            <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-              {agent.status === "active" ? "Active" : "Idle"}
-              {agent.lastActiveTimestamp && ` \u00b7 ${relTime(agent.lastActiveTimestamp)}`}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-8">
-          <RiskArc score={agent.avgRiskScore} size={100} />
-          {agent.activityBreakdown && (
-            <div className="flex-1">
-              <ActivityBar breakdown={agent.activityBreakdown} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Recent activity */}
-      <h2
-        className="label-mono mb-4"
-        style={{ color: "var(--cl-text-muted)" }}
-      >
-        RECENT ACTIVITY
-      </h2>
-      <div
-        className="rounded-xl border divide-y overflow-hidden mb-8"
-        style={{
-          backgroundColor: "var(--cl-surface)",
-          borderColor: "var(--cl-border-subtle)",
-        }}
-      >
-        {recentActivity.length === 0 ? (
-          <p className="p-6 text-center" style={{ color: "var(--cl-text-muted)" }}>
-            No activity yet
-          </p>
-        ) : (
-          recentActivity.map((entry, i) => (
-            <div
-              key={entry.toolCallId || i}
-              className="flex items-center justify-between px-4 py-3"
-            >
-              <div className="min-w-0 flex-1">
-                <span className="text-sm" style={{ color: "var(--cl-text-primary)" }}>
-                  {entry.toolName}
-                </span>
-                <span className="font-mono text-xs ml-2" style={{ color: "var(--cl-text-secondary)" }}>
-                  {relTime(entry.timestamp)}
-                </span>
-              </div>
-              {entry.effectiveDecision && entry.effectiveDecision !== "allow" && (
-                <DecisionBadge decision={entry.effectiveDecision} />
-              )}
-              {entry.riskScore != null && (
-                <span className="font-mono text-xs ml-3" style={{ color: "var(--cl-text-secondary)" }}>
-                  risk: {entry.riskScore}
-                </span>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Sessions */}
-      <h2
-        className="label-mono mb-4"
-        style={{ color: "var(--cl-text-muted)" }}
-      >
-        SESSIONS ({sessions.length})
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sessions.map((s) => (
-          <Link
-            key={s.sessionKey}
-            to={`/session/${encodeURIComponent(s.sessionKey)}`}
-            className="rounded-xl border p-4 transition-colors"
-            style={{
-              backgroundColor: "var(--cl-surface)",
-              borderColor: "var(--cl-border-subtle)",
-            }}
+      {/* Two-column layout: Risk Panel (left) + Activity Profile (right) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-10">
+        {/* Left: Risk intelligence */}
+        <div className="cl-card p-6">
+          <h2
+            className="label-mono mb-5"
+            style={{ color: "var(--cl-text-muted)" }}
           >
-            <div className="font-mono text-xs mb-1" style={{ color: "var(--cl-text-secondary)" }}>
-              {new Date(s.startTime).toLocaleString()}
-            </div>
-            <div className="text-sm" style={{ color: "var(--cl-text-primary)" }}>
-              {s.toolCallCount} actions
-            </div>
-            <div className="font-mono text-xs" style={{ color: "var(--cl-text-muted)" }}>
-              avg risk: {s.avgRisk}
-            </div>
-          </Link>
-        ))}
+            RISK INTELLIGENCE
+          </h2>
+          <RiskPanel
+            agent={agent}
+            riskTrend={riskTrend}
+            allAgents={allAgents ?? undefined}
+            sessionStats={sessionStats}
+          />
+        </div>
+
+        {/* Right: Activity profile */}
+        <div className="cl-card p-6">
+          <h2
+            className="label-mono mb-5"
+            style={{ color: "var(--cl-text-muted)" }}
+          >
+            ACTIVITY PROFILE
+          </h2>
+          <ActivityProfile
+            breakdown={agent.activityBreakdown}
+            sessionActions={agent.currentSession?.toolCallCount}
+            todayActions={agent.todayToolCalls}
+          />
+        </div>
       </div>
+
+      <div className="cl-divider mb-10" />
+
+      {/* Activity stream */}
+      <section className="mb-10">
+        <h2
+          className="label-mono mb-5"
+          style={{ color: "var(--cl-text-muted)" }}
+        >
+          CURRENT SESSION
+        </h2>
+        <ActivityStream entries={recentActivity} />
+      </section>
+
+      {/* Past sessions */}
+      {sessions.length > 0 && (
+        <section>
+          <div className="cl-divider mb-10" />
+          <h2
+            className="label-mono mb-5"
+            style={{ color: "var(--cl-text-muted)" }}
+          >
+            PAST SESSIONS ({sessions.length})
+          </h2>
+          <div className="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+            {sessions.map((s) => (
+              <SessionCard key={s.sessionKey} session={s} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

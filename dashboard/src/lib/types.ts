@@ -89,6 +89,15 @@ export interface SessionInfo {
   toolCallCount: number;
   avgRisk: number;
   peakRisk: number;
+  activityBreakdown: Record<ActivityCategory, number>;
+  blockedCount: number;
+  context?: string;
+}
+
+export interface RiskTrendPoint {
+  timestamp: string;
+  score: number;
+  toolName: string;
 }
 
 export interface AgentDetailResponse {
@@ -96,6 +105,7 @@ export interface AgentDetailResponse {
   recentActivity: EntryResponse[];
   sessions: SessionInfo[];
   totalSessions: number;
+  riskTrend: RiskTrendPoint[];
 }
 
 export interface SessionDetailResponse {

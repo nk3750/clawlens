@@ -1,0 +1,94 @@
+import type { ActivityCategory } from "../lib/types";
+import { CATEGORY_META } from "../lib/utils";
+
+interface Props {
+  breakdown: Record<ActivityCategory, number>;
+  sessionActions?: number;
+  todayActions?: number;
+}
+
+const ORDERED: ActivityCategory[] = [
+  "exploring", "changes", "commands", "web", "comms", "data",
+];
+
+export default function ActivityProfile({ breakdown, sessionActions, todayActions }: Props) {
+  const active = ORDERED.filter((cat) => breakdown[cat] > 0).sort(
+    (a, b) => breakdown[b] - breakdown[a],
+  );
+
+  if (active.length === 0) {
+    return (
+      <div className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+        No activity data
+      </div>
+    );
+  }
+
+  const maxPct = Math.max(...active.map((c) => breakdown[c]));
+
+  return (
+    <div>
+      <div className="space-y-3">
+        {active.map((cat) => {
+          const meta = CATEGORY_META[cat];
+          const pct = breakdown[cat];
+          return (
+            <div key={cat} className="flex items-center gap-3">
+              {/* SVG icon */}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={meta.color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="shrink-0"
+              >
+                <path d={meta.iconPath} />
+              </svg>
+
+              {/* Label */}
+              <span
+                className="label-mono shrink-0"
+                style={{ color: "var(--cl-text-secondary)", minWidth: "7em" }}
+              >
+                {meta.label}
+              </span>
+
+              {/* Bar */}
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--cl-elevated)" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${(pct / maxPct) * 100}%`,
+                    backgroundColor: meta.color,
+                    boxShadow: `0 0 8px ${meta.color}40`,
+                  }}
+                />
+              </div>
+
+              {/* Percentage */}
+              <span
+                className="label-mono shrink-0 text-right"
+                style={{ color: "var(--cl-text-secondary)", minWidth: "3em" }}
+              >
+                {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Action counts footer */}
+      {(sessionActions != null || todayActions != null) && (
+        <p className="label-mono mt-5" style={{ color: "var(--cl-text-muted)" }}>
+          {sessionActions != null && <>{sessionActions} actions this session</>}
+          {sessionActions != null && todayActions != null && " \u00b7 "}
+          {todayActions != null && <>{todayActions} actions today</>}
+        </p>
+      )}
+    </div>
+  );
+}
