@@ -1,10 +1,9 @@
 import { useParams, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import type { SessionDetailResponse } from "../lib/types";
-import { formatDuration, agentColor } from "../lib/utils";
-import AgentAvatar from "../components/AgentAvatar";
-import RiskBar from "../components/RiskBar";
-import EntryRow from "../components/EntryRow";
+import { formatDuration, relTime } from "../lib/utils";
+import GradientAvatar from "../components/GradientAvatar";
+import DecisionBadge from "../components/DecisionBadge";
 
 export default function SessionDetail() {
   const { sessionKey } = useParams<{ sessionKey: string }>();
@@ -14,103 +13,129 @@ export default function SessionDetail() {
 
   if (loading) {
     return (
-      <div className="text-center py-20 text-muted">
-        <div className="inline-block w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin mb-3" />
-        <p className="text-sm">Loading\u2026</p>
+      <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
+        Loading...
       </div>
     );
   }
-  if (error) return <div className="text-center py-20 text-risk-high text-sm">Error: {error}</div>;
-  if (!data) return <div className="text-center py-20 text-muted text-sm">Session not found</div>;
-
-  const { session, entries } = data;
-  const color = agentColor(session.agentId);
-
-  // Action breakdown
-  const toolCounts = new Map<string, number>();
-  for (const e of entries) {
-    toolCounts.set(e.toolName, (toolCounts.get(e.toolName) || 0) + 1);
+  if (error || !data) {
+    return (
+      <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
+        {error ? `Error: ${error}` : "Session not found"}
+        <br />
+        <Link to="/" className="text-sm mt-2 inline-block" style={{ color: "var(--cl-accent)" }}>
+          &larr; Back to Agents
+        </Link>
+      </div>
+    );
   }
 
+  const { session, entries } = data;
+
   return (
-    <div className="max-w-3xl mx-auto">
+    <div>
       {/* Breadcrumb */}
-      <div className="text-[11px] text-muted/50 mb-6 flex items-center gap-1.5 flex-wrap">
-        <Link to="/" className="hover:text-secondary transition-colors">ClawLens</Link>
-        <span>{"\u203a"}</span>
-        <Link to={`/agent/${encodeURIComponent(session.agentId)}`} className="hover:text-secondary transition-colors">
+      <div className="flex items-center gap-1.5 text-sm mb-6" style={{ color: "var(--cl-text-muted)" }}>
+        <Link to="/" className="hover:underline">Agents</Link>
+        <span>&rsaquo;</span>
+        <Link to={`/agent/${encodeURIComponent(session.agentId)}`} className="hover:underline">
           {session.agentId}
         </Link>
-        <span>{"\u203a"}</span>
-        <span className="text-secondary">Session</span>
+        <span>&rsaquo;</span>
+        <span style={{ color: "var(--cl-text-secondary)" }}>Session</span>
       </div>
 
       {/* Session header */}
       <div
-        className="bg-card border border-border rounded-2xl p-6 mb-6 animate-fade-in"
-        style={{ borderLeftColor: color, borderLeftWidth: "3px" }}
+        className="rounded-xl border p-6 mb-8"
+        style={{
+          backgroundColor: "var(--cl-surface)",
+          borderColor: "var(--cl-border-default)",
+        }}
       >
         <div className="flex items-center gap-4 mb-4">
-          <AgentAvatar agentId={session.agentId} size="lg" />
-          <div className="flex-1 min-w-0">
-            <h1 className="font-display font-bold text-primary text-lg">
+          <GradientAvatar agentId={session.agentId} />
+          <div>
+            <h1
+              className="font-display font-bold text-lg"
+              style={{ color: "var(--cl-text-primary)" }}
+            >
               Session by {session.agentId}
             </h1>
-            <div className="font-mono text-[10px] text-muted/40 truncate mt-0.5">
-              {session.sessionKey}
-            </div>
-          </div>
-          <div className="shrink-0">
-            <RiskBar score={session.peakRisk || 0} />
+            <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
+              {new Date(session.startTime).toLocaleString()}
+            </span>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 border-t border-border/30 pt-3">
-          <div>
-            <div className="text-[10px] text-muted/40 uppercase tracking-wider">Duration</div>
-            <div className="text-sm text-secondary font-mono">{formatDuration(session.duration)}</div>
-          </div>
-          <div>
-            <div className="text-[10px] text-muted/40 uppercase tracking-wider">Actions</div>
-            <div className="text-sm text-secondary font-mono">{session.toolCallCount}</div>
-          </div>
-          <div>
-            <div className="text-[10px] text-muted/40 uppercase tracking-wider">Started</div>
-            <div className="text-sm text-secondary">{new Date(session.startTime).toLocaleTimeString()}</div>
-          </div>
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Actions" value={String(session.toolCallCount)} />
+          <StatCard label="Duration" value={formatDuration(session.duration)} />
+          <StatCard label="Peak Risk" value={String(session.peakRisk)} />
         </div>
-
-        {/* Action type pills */}
-        {toolCounts.size > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {[...toolCounts.entries()].map(([tool, count]) => (
-              <span key={tool} className="px-2 py-0.5 rounded-lg text-[11px] bg-surface text-muted border border-border/30">
-                {tool} <span className="text-secondary font-mono">{count}</span>
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Timeline */}
-      <div className="flex items-center mb-2 px-1">
-        <span className="text-[10px] text-muted/50 font-display font-semibold uppercase tracking-widest">
-          Timeline ({entries.length} actions)
-        </span>
+      <h2
+        className="label-mono mb-4"
+        style={{ color: "var(--cl-text-muted)" }}
+      >
+        TIMELINE ({entries.length} actions)
+      </h2>
+      <div
+        className="rounded-xl border divide-y overflow-hidden"
+        style={{
+          backgroundColor: "var(--cl-surface)",
+          borderColor: "var(--cl-border-subtle)",
+        }}
+      >
+        {entries.length === 0 ? (
+          <p className="p-6 text-center" style={{ color: "var(--cl-text-muted)" }}>
+            No actions in this session
+          </p>
+        ) : (
+          entries.map((entry, i) => (
+            <div
+              key={entry.toolCallId || i}
+              className="flex items-center justify-between px-4 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                <span className="text-sm" style={{ color: "var(--cl-text-primary)" }}>
+                  {entry.toolName}
+                </span>
+                <span className="font-mono text-xs ml-2" style={{ color: "var(--cl-text-secondary)" }}>
+                  {relTime(entry.timestamp)}
+                </span>
+              </div>
+              {entry.effectiveDecision && entry.effectiveDecision !== "allow" && (
+                <DecisionBadge decision={entry.effectiveDecision} />
+              )}
+              {entry.riskScore != null && (
+                <span className="font-mono text-xs ml-3" style={{ color: "var(--cl-text-secondary)" }}>
+                  risk: {entry.riskScore}
+                </span>
+              )}
+            </div>
+          ))
+        )}
       </div>
+    </div>
+  );
+}
 
-      {entries.length === 0 ? (
-        <div className="text-center py-12 text-muted text-sm bg-card/40 border border-border/40 rounded-2xl">
-          No actions in this session
-        </div>
-      ) : (
-        <div className="bg-card/40 border border-border/40 rounded-2xl divide-y divide-border/20 overflow-hidden">
-          {entries.map((entry, i) => (
-            <EntryRow key={entry.toolCallId || i} entry={entry} index={i} showAgent={false} />
-          ))}
-        </div>
-      )}
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      className="rounded-lg p-3"
+      style={{ backgroundColor: "var(--cl-elevated)" }}
+    >
+      <div className="label-mono mb-1" style={{ color: "var(--cl-text-muted)" }}>
+        {label}
+      </div>
+      <div className="font-mono text-sm" style={{ color: "var(--cl-text-primary)" }}>
+        {value}
+      </div>
     </div>
   );
 }

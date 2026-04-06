@@ -1,3 +1,14 @@
+export type ActivityCategory =
+  | "exploring"
+  | "changes"
+  | "commands"
+  | "web"
+  | "comms"
+  | "data";
+
+export type RiskTier = "low" | "medium" | "high" | "critical";
+export type RiskPosture = "calm" | "elevated" | "high" | "critical";
+
 export interface StatsResponse {
   total: number;
   allowed: number;
@@ -15,6 +26,7 @@ export interface StatsResponse {
   peakRiskScore: number;
   activeAgents: number;
   activeSessions: number;
+  riskPosture: RiskPosture;
 }
 
 export interface EntryResponse {
@@ -41,6 +53,7 @@ export interface EntryResponse {
   };
   agentId?: string;
   sessionKey?: string;
+  category: ActivityCategory;
 }
 
 export interface AgentInfo {
@@ -56,6 +69,15 @@ export interface AgentInfo {
     startTime: string;
     toolCallCount: number;
   };
+  mode: "interactive" | "scheduled";
+  schedule?: string;
+  currentContext?: string;
+  riskPosture: RiskPosture;
+  activityBreakdown: Record<ActivityCategory, number>;
+  latestAction?: string;
+  latestActionTime?: string;
+  needsAttention: boolean;
+  attentionReason?: string;
 }
 
 export interface SessionInfo {
@@ -80,5 +102,3 @@ export interface SessionDetailResponse {
   session: SessionInfo;
   entries: EntryResponse[];
 }
-
-export type RiskTier = "low" | "medium" | "high" | "critical";

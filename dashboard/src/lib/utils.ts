@@ -1,3 +1,5 @@
+import type { ActivityCategory, RiskTier, RiskPosture } from "./types";
+
 export function relTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const s = Math.floor(diff / 1000);
@@ -23,119 +25,108 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${h}h ${m % 60}m`;
 }
 
-export function riskTierFromScore(score: number): string {
-  if (score > 80) return "critical";
-  if (score > 60) return "high";
-  if (score > 30) return "medium";
+export function riskTierFromScore(score: number): RiskTier {
+  if (score > 75) return "critical";
+  if (score > 50) return "high";
+  if (score > 25) return "medium";
   return "low";
 }
 
-// ── Agent identity ──────────────────────────────
+// ── Agent identity (deterministic from ID hash) ──
 
-const AGENT_COLORS = [
-  "#6366f1", // indigo
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#f97316", // orange
-  "#14b8a6", // teal
-  "#06b6d4", // cyan
-  "#84cc16", // lime
-  "#f43f5e", // rose
-];
-
-export function agentColor(agentId: string): string {
+function hashCode(str: string): number {
   let hash = 0;
-  for (let i = 0; i < agentId.length; i++) {
-    hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length];
+  return hash;
 }
 
-export function agentInitial(agentId: string): string {
-  return agentId.charAt(0).toUpperCase();
+export function agentGradient(agentId: string): [string, string] {
+  const PALETTE = [
+    "#6366f1", "#8b5cf6", "#ec4899", "#f97316",
+    "#14b8a6", "#06b6d4", "#84cc16", "#f43f5e",
+    "#d4a574", "#60a5fa",
+  ];
+  const h = Math.abs(hashCode(agentId));
+  const c1 = PALETTE[h % PALETTE.length];
+  const c2 = PALETTE[(h * 7 + 3) % PALETTE.length];
+  return [c1, c2 === c1 ? PALETTE[(h + 1) % PALETTE.length] : c2];
 }
 
-// ── Action descriptions (narrative) ─────────────
+// ── Risk tier color mapping ──
 
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max) + "\u2026" : str;
-}
-
-export function describeAction(entry: {
-  toolName: string;
-  params: Record<string, unknown>;
-}): string {
-  const { toolName, params } = entry;
-  switch (toolName) {
-    case "read":
-      return params.path ? `Read ${truncate(String(params.path), 40)}` : "Read file";
-    case "write":
-      return params.path ? `Write to ${truncate(String(params.path), 40)}` : "Write file";
-    case "exec":
-      return params.command
-        ? `Run \`${truncate(String(params.command), 35)}\``
-        : "Execute command";
-    case "message":
-      if (params.to && params.subject)
-        return `Email "${truncate(String(params.subject), 25)}" to ${params.to}`;
-      if (params.to) return `Message to ${params.to}`;
-      return "Send message";
-    case "search":
-      return params.query
-        ? `Search "${truncate(String(params.query), 30)}"`
-        : "Search";
-    case "fetch_url":
-      return params.url
-        ? `Fetch ${truncate(String(params.url), 40)}`
-        : "Fetch URL";
-    default:
-      return toolName;
+export function riskColor(tier: RiskTier | string | undefined): string {
+  switch (tier) {
+    case "critical": return "var(--cl-risk-critical)";
+    case "high": return "var(--cl-risk-high)";
+    case "medium": return "var(--cl-risk-medium)";
+    default: return "var(--cl-risk-low)";
   }
 }
 
-// ── Session context parsing ─────────────────
-
-/**
- * Parse a session key like "agent:main:telegram:direct:7928586762"
- * into a human-readable label: "via Telegram" or "Cron: daily-audit"
- */
-export function parseSessionContext(sessionKey: string): {
-  channel: string;
-  trigger: string;
-  label: string;
-} {
-  const parts = sessionKey.split(":");
-  // Format: agent:<agentId>:<channel>:<trigger>:<...>
-  const channel = parts[2] || "unknown";
-  const trigger = parts[3] || "";
-
-  if (channel === "cron") {
-    const cronName = parts.slice(3).join(":") || "scheduled";
-    return { channel: "cron", trigger: "cron", label: `Cron: ${cronName}` };
+export function riskColorRaw(tier: RiskTier | string | undefined): string {
+  switch (tier) {
+    case "critical": return "#ef4444";
+    case "high": return "#f87171";
+    case "medium": return "#fbbf24";
+    default: return "#4ade80";
   }
-  if (channel === "telegram") {
-    return { channel: "telegram", trigger: trigger || "direct", label: "via Telegram" };
-  }
-  if (channel === "web") {
-    return { channel: "web", trigger: trigger || "session", label: "via Web" };
-  }
-  if (channel === "api") {
-    return { channel: "api", trigger: trigger || "call", label: "via API" };
-  }
-  return { channel, trigger, label: `via ${channel}` };
 }
 
-/** Decision label in plain language */
-export function decisionLabel(d: string): string {
-  const map: Record<string, string> = {
-    allow: "allowed",
-    block: "blocked",
-    approved: "approved",
-    denied: "denied",
-    timeout: "timed out",
-    pending: "awaiting approval",
-    success: "succeeded",
-    failure: "failed",
-  };
-  return map[d] || d;
+export function postureLabel(posture: RiskPosture): string {
+  switch (posture) {
+    case "calm": return "Calm";
+    case "elevated": return "Elevated";
+    case "high": return "High";
+    case "critical": return "Critical";
+  }
+}
+
+// ── Category metadata with SVG icon paths ──
+
+export const CATEGORY_META: Record<
+  ActivityCategory,
+  { label: string; color: string; iconPath: string }
+> = {
+  exploring: {
+    label: "Exploring",
+    color: "var(--cl-cat-exploring)",
+    // Eye icon (Lucide)
+    iconPath: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 9a3 3 0 100 6 3 3 0 000-6z",
+  },
+  changes: {
+    label: "Making changes",
+    color: "var(--cl-cat-changes)",
+    // Pencil icon
+    iconPath: "M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z",
+  },
+  commands: {
+    label: "Running commands",
+    color: "var(--cl-cat-commands)",
+    // Terminal icon
+    iconPath: "M4 17l6-5-6-5 M12 19h8",
+  },
+  web: {
+    label: "Web & APIs",
+    color: "var(--cl-cat-web)",
+    // Globe icon
+    iconPath: "M12 2a10 10 0 100 20 10 10 0 000-20z M2 12h20 M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z",
+  },
+  comms: {
+    label: "Communicating",
+    color: "var(--cl-cat-comms)",
+    // MessageSquare icon
+    iconPath: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
+  },
+  data: {
+    label: "Data & Storage",
+    color: "var(--cl-cat-data)",
+    // Database icon
+    iconPath: "M12 2C6.48 2 2 3.79 2 6v12c0 2.21 4.48 4 10 4s10-1.79 10-4V6c0-2.21-4.48-4-10-4z M2 6c0 2.21 4.48 4 10 4s10-1.79 10-4 M2 12c0 2.21 4.48 4 10 4s10-1.79 10-4",
+  },
+};
+
+export function categoryColor(cat: ActivityCategory): string {
+  return CATEGORY_META[cat]?.color ?? "var(--cl-text-muted)";
 }

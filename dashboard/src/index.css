@@ -3,6 +3,73 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* ── Base palette (warm dark, Hex-inspired) ── */
+    --cl-bg: #0d0f15;
+    --cl-surface: #14141c;
+    --cl-elevated: #1d1d29;
+    --cl-glass: rgba(20, 20, 28, 0.7);
+
+    /* ── Borders — tinted with accent via color-mix() ── */
+    --cl-border-subtle: color-mix(in srgb, #d4a574 6%, transparent);
+    --cl-border-default: color-mix(in srgb, #d4a574 12%, transparent);
+    --cl-border-hover: color-mix(in srgb, #d4a574 22%, transparent);
+
+    /* ── Text — warm whites and grays ── */
+    --cl-text-primary: #ede9e3;
+    --cl-text-secondary: #948e85;
+    --cl-text-muted: #5c574f;
+
+    /* ── Accent — amber/gold ("watchful") ── */
+    --cl-accent: #d4a574;
+    --cl-accent-7: rgba(212, 165, 116, 0.07);
+    --cl-accent-15: rgba(212, 165, 116, 0.15);
+    --cl-accent-30: rgba(212, 165, 116, 0.30);
+
+    /* ── Risk tier colors ── */
+    --cl-risk-low: #4ade80;
+    --cl-risk-medium: #fbbf24;
+    --cl-risk-high: #f87171;
+    --cl-risk-critical: #ef4444;
+
+    /* ── Category colors ── */
+    --cl-cat-exploring: #60a5fa;
+    --cl-cat-changes: #fbbf24;
+    --cl-cat-commands: #a78bfa;
+    --cl-cat-web: #22d3ee;
+    --cl-cat-comms: #4ade80;
+    --cl-cat-data: #fb923c;
+
+    /* ── Multi-layer card shadows (Hex-style 5-layer) ── */
+    --cl-shadow-card:
+      0 0 0 1px var(--cl-border-default),
+      inset 0 0 20px 0 rgba(0, 0, 0, 0.12),
+      0 1px 2px 0 rgba(0, 0, 0, 0.20),
+      0 4px 8px -2px rgba(0, 0, 0, 0.16),
+      0 12px 24px -4px rgba(0, 0, 0, 0.10),
+      0 24px 48px -8px rgba(0, 0, 0, 0.06);
+
+    --cl-shadow-card-hover:
+      0 0 0 1px var(--cl-border-hover),
+      inset 0 0 30px 0 rgba(212, 165, 116, 0.03),
+      0 2px 4px 0 rgba(0, 0, 0, 0.24),
+      0 8px 16px -2px rgba(0, 0, 0, 0.20),
+      0 20px 40px -4px rgba(0, 0, 0, 0.14),
+      0 40px 64px -8px rgba(0, 0, 0, 0.08);
+
+    /* ── Spring easing ── */
+    --cl-spring: linear(
+      0, 0.0007 0.36%, 0.0058 1.08%, 0.0217, 0.0454 3.23%,
+      0.086 4.66%, 0.1594 6.81%, 0.4654 15.05%, 0.5681 18.28%,
+      0.6468 21.15%, 0.7212, 0.782 27.6%, 0.8355, 0.8769 34.77%,
+      0.8968, 0.9137, 0.928 41.22%, 0.9419, 0.9531 46.24%,
+      0.9635 49.1%, 0.9786 55.2%, 0.9888 62.36%, 0.9949 70.97%,
+      0.9982 82.44%, 0.9997 100%
+    );
+    --cl-spring-duration: 0.75s;
+    --cl-transition: 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
   *,
   *::before,
   *::after {
@@ -11,20 +78,77 @@
     box-sizing: border-box;
   }
 
+  html {
+    background-color: var(--cl-bg);
+  }
+
   body {
-    background-color: #06070b;
-    background-image:
-      radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.018) 1px, transparent 0),
-      radial-gradient(ellipse at 15% 80%, rgba(99, 102, 241, 0.04) 0%, transparent 50%),
-      radial-gradient(ellipse at 85% 20%, rgba(255, 92, 92, 0.03) 0%, transparent 50%);
-    background-size: 32px 32px, 100% 100%, 100% 100%;
-    color: #9395a1;
+    color: var(--cl-text-secondary);
     font-family: "DM Sans", sans-serif;
     font-size: 14px;
     line-height: 1.55;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+
+    /* ── Atmospheric gradient background (Hex-style) ── */
+    background-color: var(--cl-bg);
+    background-image:
+      radial-gradient(ellipse 80% 60% at 10% 0%, rgba(212, 165, 116, 0.04) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 50% at 90% 10%, rgba(167, 139, 250, 0.03) 0%, transparent 50%),
+      radial-gradient(ellipse 50% 40% at 50% 100%, rgba(212, 165, 116, 0.02) 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+
+  /* ── Noise texture overlay (Hex-style grain) ── */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 200px 200px;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,1));
+  }
+
+  /* ── Ambient glow blobs (atmospheric depth) ── */
+  #root {
+    position: relative;
+  }
+  #root::before,
+  #root::after {
+    content: "";
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: -1;
+    filter: blur(80px);
+    animation: blobDrift 20s ease-in-out infinite alternate;
+  }
+  #root::before {
+    width: 500px;
+    height: 400px;
+    top: -100px;
+    left: -100px;
+    background: radial-gradient(circle, rgba(212, 165, 116, 0.06) 0%, transparent 70%);
+  }
+  #root::after {
+    width: 400px;
+    height: 350px;
+    bottom: 10%;
+    right: -50px;
+    background: radial-gradient(circle, rgba(167, 139, 250, 0.04) 0%, transparent 70%);
+    animation-delay: -10s;
+    animation-direction: alternate-reverse;
+  }
+
+  @keyframes blobDrift {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(30px, 20px) scale(1.05); }
+    100% { transform: translate(-20px, 30px) scale(0.95); }
   }
 
   ::-webkit-scrollbar {
@@ -34,40 +158,107 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e2130;
+    background: var(--cl-border-default);
     border-radius: 3px;
   }
+}
 
-  /* Agent-specific accent glow on active cards */
-  .agent-glow {
-    box-shadow: 0 0 0 1px var(--agent-color, #34d399) inset,
-      0 0 20px -5px color-mix(in srgb, var(--agent-color, #34d399) 15%, transparent);
-  }
+/* ── Card component base ── */
+.cl-card {
+  position: relative;
+  background: var(--cl-surface);
+  border: 1px solid var(--cl-border-default);
+  border-radius: 16px;
+  box-shadow: var(--cl-shadow-card);
+  overflow: hidden;
+  transition:
+    transform var(--cl-spring-duration) var(--cl-spring),
+    box-shadow var(--cl-spring-duration) var(--cl-spring),
+    border-color var(--cl-spring-duration) var(--cl-spring);
+}
 
-  /* Stagger animation helper */
-  .stagger > * {
-    animation: fadeUp 0.5s ease-out both;
-  }
-  .stagger > *:nth-child(1) { animation-delay: 0ms; }
-  .stagger > *:nth-child(2) { animation-delay: 60ms; }
-  .stagger > *:nth-child(3) { animation-delay: 120ms; }
-  .stagger > *:nth-child(4) { animation-delay: 180ms; }
-  .stagger > *:nth-child(5) { animation-delay: 240ms; }
-  .stagger > *:nth-child(6) { animation-delay: 300ms; }
-  .stagger > *:nth-child(7) { animation-delay: 360ms; }
-  .stagger > *:nth-child(8) { animation-delay: 420ms; }
+/* Card inner gradient overlay — creates Hex-style warm sheen */
+.cl-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    175deg,
+    rgba(212, 165, 116, 0.02) 0%,
+    rgba(0, 0, 0, 0.15) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
 
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+.cl-card:hover {
+  transform: scale(1.03);
+  box-shadow: var(--cl-shadow-card-hover);
+  border-color: var(--cl-border-hover);
+}
 
-  /* New entry flash — used when SSE pushes a new action */
-  .entry-flash {
-    animation: flash 0.6s ease-out;
-  }
-  @keyframes flash {
-    0% { background-color: rgba(255, 255, 255, 0.06); }
-    100% { background-color: transparent; }
+/* Card content above the gradient overlay */
+.cl-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Glass nav ── */
+.cl-glass-nav {
+  background: rgba(13, 15, 21, 0.75);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  border-bottom: 1px solid var(--cl-border-subtle);
+}
+
+/* ── Stagger animation for child elements ── */
+.stagger > * {
+  animation: fadeUp 0.6s var(--cl-spring) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+.stagger > *:nth-child(6) { animation-delay: 300ms; }
+.stagger > *:nth-child(7) { animation-delay: 360ms; }
+.stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Entry flash for new SSE entries ── */
+.entry-flash {
+  animation: flash 1.2s ease-out;
+}
+@keyframes flash {
+  0% { background-color: rgba(212, 165, 116, 0.06); }
+  100% { background-color: transparent; }
+}
+
+/* ── Monospace label style ── */
+.label-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 400;
+}
+
+/* ── Glow ring for attention/risk ── */
+.cl-glow-low { filter: drop-shadow(0 0 6px rgba(74, 222, 128, 0.35)); }
+.cl-glow-medium { filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.35)); }
+.cl-glow-high { filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.4)); }
+.cl-glow-critical { filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.5)); }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

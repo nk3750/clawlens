@@ -14,12 +14,10 @@ function mockApiPlugin(): Plugin {
   return {
     name: "clawlens-mock-api",
     configureServer(server) {
-      // Intercept API requests before Vite handles them
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url || "/", "http://localhost");
         const path = url.pathname;
 
-        // Only handle API routes under the base path
         if (!path.startsWith("/plugins/clawlens/api/")) {
           return next();
         }
@@ -121,14 +119,13 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
-        // GET /api/stream (SSE) — send a new mock entry every 3-8 seconds
+        // GET /api/stream (SSE)
         if (apiPath === "stream") {
           res.setHeader("Content-Type", "text/event-stream");
           res.setHeader("Connection", "keep-alive");
 
           const interval = setInterval(() => {
-            const entry =
-              entries[Math.floor(Math.random() * entries.length)];
+            const entry = entries[Math.floor(Math.random() * entries.length)];
             const fresh = {
               ...entry,
               timestamp: new Date().toISOString(),
@@ -141,7 +138,6 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
-        // Unknown API route
         res.statusCode = 404;
         res.end(JSON.stringify({ error: "Not found" }));
       });

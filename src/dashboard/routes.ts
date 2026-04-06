@@ -13,9 +13,7 @@ import {
   getAgentDetail,
   getSessions,
   getSessionDetail,
-  type EntryFilters,
 } from "./api";
-import type { ActivityCategory } from "./categories";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 
@@ -80,24 +78,8 @@ export function registerDashboardRoutes(
           Infinity,
           0,
         );
-        const filters: EntryFilters = {};
-        const agent = url.searchParams.get("agent");
-        if (agent) filters.agent = agent;
-        const category = url.searchParams.get("category");
-        if (category) filters.category = category as ActivityCategory;
-        const riskTier = url.searchParams.get("riskTier");
-        if (riskTier)
-          filters.riskTier = riskTier as EntryFilters["riskTier"];
-        const decision = url.searchParams.get("decision");
-        if (decision) filters.decision = decision;
-        const since = url.searchParams.get("since");
-        if (since) filters.since = since as EntryFilters["since"];
-
         const entries = deps.auditLogger.readEntries();
-        sendJson(
-          res,
-          getRecentEntries(entries, limit, offset, filters),
-        );
+        sendJson(res, getRecentEntries(entries, limit, offset));
         return true;
       }
 

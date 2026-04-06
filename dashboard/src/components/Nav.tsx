@@ -1,14 +1,7 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useApi } from "../hooks/useApi";
-import type { AgentInfo } from "../lib/types";
-import AgentAvatar from "./AgentAvatar";
+import { Link, useLocation } from "react-router-dom";
 
 export default function Nav() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { data: agents } = useApi<AgentInfo[]>("api/agents");
-
-  const activeCount = agents?.filter((a) => a.status === "active").length || 0;
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/" || location.pathname === "";
@@ -16,42 +9,30 @@ export default function Nav() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-border/60 bg-deep/70 backdrop-blur-2xl">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-5">
+    <nav className="sticky top-0 z-50 cl-glass-nav">
+      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* Brand */}
         <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
-          <div className="w-2 h-2 rounded-full bg-accent group-hover:shadow-[0_0_10px_rgba(255,92,92,0.6)] transition-shadow duration-300" />
-          <span className="font-display font-bold text-primary text-[15px] tracking-tight">
+          <span
+            className="inline-block w-2.5 h-2.5 rounded-full transition-shadow duration-300"
+            style={{
+              backgroundColor: "var(--cl-accent)",
+              boxShadow: "0 0 8px rgba(212, 165, 116, 0.4)",
+            }}
+          />
+          <span
+            className="font-display font-bold text-[15px] tracking-tight"
+            style={{ color: "var(--cl-text-primary)" }}
+          >
             ClawLens
           </span>
-          {activeCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-status-active/10 text-status-active font-medium">
-              {activeCount} live
-            </span>
-          )}
         </Link>
 
-        {/* Nav links */}
+        {/* Page links */}
         <div className="flex items-center gap-1">
-          <NavLink to="/" active={isActive("/")}>Overview</NavLink>
+          <NavLink to="/" active={isActive("/")}>Agents</NavLink>
           <NavLink to="/activity" active={isActive("/activity")}>Activity</NavLink>
         </div>
-
-        {/* Agent jump */}
-        {agents && agents.length > 1 && (
-          <div className="ml-auto hidden sm:flex items-center gap-2">
-            {agents.slice(0, 4).map((a) => (
-              <button
-                key={a.id}
-                onClick={() => navigate(`/agent/${encodeURIComponent(a.id)}`)}
-                className="opacity-60 hover:opacity-100 transition-opacity"
-                title={a.name}
-              >
-                <AgentAvatar agentId={a.id} size="sm" showPulse={a.status === "active"} />
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </nav>
   );
@@ -61,13 +42,21 @@ function NavLink({ to, active, children }: { to: string; active: boolean; childr
   return (
     <Link
       to={to}
-      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-        active
-          ? "bg-elevated text-primary shadow-sm"
-          : "text-muted hover:text-secondary hover:bg-surface/60"
-      }`}
+      className="relative px-3 py-1.5 text-sm font-medium transition-colors duration-200"
+      style={{
+        color: active ? "var(--cl-text-primary)" : "var(--cl-text-muted)",
+      }}
     >
       {children}
+      {active && (
+        <span
+          className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full"
+          style={{
+            backgroundColor: "var(--cl-accent)",
+            boxShadow: "0 0 6px rgba(212, 165, 116, 0.3)",
+          }}
+        />
+      )}
     </Link>
   );
 }

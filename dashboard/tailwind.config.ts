@@ -5,25 +5,24 @@ export default {
   theme: {
     extend: {
       colors: {
-        deep: "#06070b",
-        surface: "#0f1117",
-        card: "#141620",
-        elevated: "#1a1d28",
-        border: "#1e2130",
-        "border-hover": "#2d3148",
-        primary: "#eeeef0",
-        secondary: "#9395a1",
-        muted: "#55576a",
-        accent: "#ff5c5c",
-        risk: {
-          low: "#34d399",
-          medium: "#fbbf24",
-          high: "#f87171",
-          critical: "#ff4040",
-        },
-        status: {
-          active: "#34d399",
-          idle: "#55576a",
+        cl: {
+          bg: "#0d0f15",
+          surface: "#14141c",
+          elevated: "#1d1d29",
+          "text-primary": "#ede9e3",
+          "text-secondary": "#948e85",
+          "text-muted": "#5c574f",
+          accent: "#d4a574",
+          "risk-low": "#4ade80",
+          "risk-medium": "#fbbf24",
+          "risk-high": "#f87171",
+          "risk-critical": "#ef4444",
+          "cat-exploring": "#60a5fa",
+          "cat-changes": "#fbbf24",
+          "cat-commands": "#a78bfa",
+          "cat-web": "#22d3ee",
+          "cat-comms": "#4ade80",
+          "cat-data": "#fb923c",
         },
       },
       fontFamily: {
@@ -31,29 +30,8 @@ export default {
         body: ['"DM Sans"', "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
       },
-      animation: {
-        "fade-in": "fadeIn 0.4s ease-out both",
-        "slide-in": "slideIn 0.3s ease-out both",
-        "pulse-critical": "pulseCritical 2s ease-in-out infinite",
-        "status-pulse": "statusPulse 2s ease-in-out infinite",
-      },
-      keyframes: {
-        fadeIn: {
-          from: { opacity: "0", transform: "translateY(8px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-        slideIn: {
-          from: { opacity: "0", transform: "translateY(-12px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-        pulseCritical: {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.6" },
-        },
-        statusPulse: {
-          "0%, 100%": { boxShadow: "0 0 0 0 rgba(52, 211, 153, 0.4)" },
-          "50%": { boxShadow: "0 0 0 4px rgba(52, 211, 153, 0)" },
-        },
+      borderRadius: {
+        card: "16px",
       },
     },
   },

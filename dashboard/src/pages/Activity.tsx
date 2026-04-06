@@ -1,25 +1,19 @@
 import { useState, useCallback, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
-import type { EntryResponse, AgentInfo, StatsResponse } from "../lib/types";
-import EntryRow from "../components/EntryRow";
-import Filters from "../components/Filters";
+import type { EntryResponse, StatsResponse } from "../lib/types";
+import { relTime } from "../lib/utils";
+import GradientAvatar from "../components/GradientAvatar";
+import DecisionBadge from "../components/DecisionBadge";
 
 export default function Activity() {
-  const [searchParams] = useSearchParams();
-  const initialAgent = searchParams.get("agent") || "";
-
   const [entries, setEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState(initialAgent);
-  const [selectedRisk, setSelectedRisk] = useState("");
-  const [selectedTime, setSelectedTime] = useState("24h");
 
-  const { data: agents } = useApi<AgentInfo[]>("api/agents");
   const { data: stats } = useApi<StatsResponse>("api/stats");
   const { data: initialEntries, loading } = useApi<EntryResponse[]>(
     "api/entries?limit=50&offset=0",
@@ -33,7 +27,6 @@ export default function Activity() {
     }
   }, [initialEntries]);
 
-  // SSE for live updates
   useSSE<EntryResponse>(
     "api/stream",
     useCallback((raw: EntryResponse) => {
@@ -67,114 +60,119 @@ export default function Activity() {
     }
   };
 
-  const filtered = entries.filter((e) => {
-    if (selectedAgent && e.agentId !== selectedAgent) return false;
-    if (selectedRisk && e.riskTier !== selectedRisk) return false;
-    if (selectedTime) {
-      const cutoff = getTimeCutoff(selectedTime);
-      if (cutoff && new Date(e.timestamp).getTime() < cutoff) return false;
-    }
-    return true;
-  });
-
   return (
-    <div className="max-w-3xl mx-auto">
+    <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-6 animate-fade-in">
+      <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="font-display font-bold text-primary text-2xl tracking-tight">
+            <h1
+              className="font-display font-bold text-2xl"
+              style={{ color: "var(--cl-text-primary)" }}
+            >
               Activity
             </h1>
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-status-active/8">
-              <div className="w-1.5 h-1.5 rounded-full bg-status-active animate-pulse" />
-              <span className="text-[10px] text-status-active font-medium">live</span>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(74, 222, 128, 0.08)" }}>
+              <span
+                className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+                style={{ backgroundColor: "var(--cl-status-active)" }}
+              />
+              <span className="label-mono" style={{ color: "var(--cl-status-active)" }}>
+                LIVE
+              </span>
             </div>
           </div>
-          <p className="text-[13px] text-muted/60">
-            What your agents are doing, as it happens
-          </p>
         </div>
         {stats && (
-          <div className="text-right hidden sm:block">
-            <div className="text-xl font-bold font-mono text-primary tabular-nums">
-              {stats.total}
-            </div>
-            <div className="text-[10px] text-muted/40">today</div>
-          </div>
+          <span className="font-mono text-sm" style={{ color: "var(--cl-text-secondary)" }}>
+            {stats.total} actions today
+          </span>
         )}
       </div>
 
-      {/* Filters */}
-      <Filters
-        agents={agents || []}
-        selectedAgent={selectedAgent}
-        onAgentChange={setSelectedAgent}
-        selectedRisk={selectedRisk}
-        onRiskChange={setSelectedRisk}
-        selectedTime={selectedTime}
-        onTimeChange={setSelectedTime}
-      />
-
       {/* Loading */}
       {loading && entries.length === 0 && (
-        <div className="text-center py-20 text-muted animate-fade-in">
-          <div className="inline-block w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin mb-3" />
-          <p className="text-sm">Loading\u2026</p>
+        <div className="text-center py-20" style={{ color: "var(--cl-text-muted)" }}>
+          Loading...
         </div>
       )}
 
       {/* Empty */}
-      {!loading && filtered.length === 0 && (
-        <div className="text-center py-20 text-muted animate-fade-in">
-          <div className="w-14 h-14 rounded-2xl bg-surface border border-border flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-muted/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <p className="font-display font-semibold text-secondary mb-1">Waiting for actions</p>
-          <p className="text-xs max-w-[260px] mx-auto leading-relaxed">
-            New actions will appear here in real-time as your agents work.
-          </p>
-        </div>
+      {!loading && entries.length === 0 && (
+        <p
+          className="text-center py-20"
+          style={{ color: "var(--cl-text-muted)" }}
+        >
+          No activity yet
+        </p>
       )}
 
       {/* Feed */}
-      {filtered.length > 0 && (
-        <div className="bg-card/40 border border-border/40 rounded-2xl divide-y divide-border/20 overflow-hidden">
-          {filtered.map((entry, i) => (
-            <EntryRow
+      {entries.length > 0 && (
+        <div
+          className="rounded-xl border divide-y overflow-hidden"
+          style={{
+            backgroundColor: "var(--cl-surface)",
+            borderColor: "var(--cl-border-subtle)",
+          }}
+        >
+          {entries.map((entry, i) => (
+            <div
               key={entry.toolCallId || `${entry.timestamp}-${i}`}
-              entry={entry}
-              index={i}
-              isNew={newIds.has(entry.toolCallId || entry.timestamp)}
-            />
+              className={`flex items-center gap-3 px-4 py-3 ${
+                newIds.has(entry.toolCallId || entry.timestamp) ? "entry-flash" : ""
+              }`}
+            >
+              {entry.agentId && (
+                <Link to={`/agent/${encodeURIComponent(entry.agentId)}`}>
+                  <GradientAvatar agentId={entry.agentId} size="sm" />
+                </Link>
+              )}
+              <div className="min-w-0 flex-1">
+                {entry.agentId && (
+                  <Link
+                    to={`/agent/${encodeURIComponent(entry.agentId)}`}
+                    className="text-xs font-medium mr-2"
+                    style={{ color: "var(--cl-text-primary)" }}
+                  >
+                    {entry.agentId}
+                  </Link>
+                )}
+                <span className="text-sm" style={{ color: "var(--cl-text-secondary)" }}>
+                  {entry.toolName}
+                </span>
+              </div>
+              {entry.effectiveDecision && entry.effectiveDecision !== "allow" && (
+                <DecisionBadge decision={entry.effectiveDecision} />
+              )}
+              {entry.riskScore != null && (
+                <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
+                  {entry.riskScore}
+                </span>
+              )}
+              <span className="font-mono text-xs shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
+                {relTime(entry.timestamp)}
+              </span>
+            </div>
           ))}
         </div>
       )}
 
-      {hasMore && filtered.length > 0 && (
+      {hasMore && entries.length > 0 && (
         <button
           onClick={loadMore}
           disabled={loadingMore}
-          className="w-full mt-3 py-3 text-[13px] text-muted/50 hover:text-secondary transition-colors disabled:opacity-50"
+          className="w-full mt-4 py-3 text-sm transition-colors disabled:opacity-50 rounded-xl border"
+          style={{
+            color: "var(--cl-text-muted)",
+            borderColor: "var(--cl-border-subtle)",
+          }}
         >
-          {loadingMore ? "Loading\u2026" : "Load older actions"}
+          {loadingMore ? "Loading..." : "Load more"}
         </button>
       )}
     </div>
   );
-}
-
-function getTimeCutoff(range: string): number | null {
-  const now = Date.now();
-  switch (range) {
-    case "1h": return now - 3_600_000;
-    case "6h": return now - 21_600_000;
-    case "24h": return now - 86_400_000;
-    case "7d": return now - 604_800_000;
-    default: return null;
-  }
 }
 
 function computeDecision(entry: EntryResponse): string {
