@@ -60,7 +60,7 @@ const plugin: OpenClawPluginDefinition = {
     }
 
     // Resolve runtime from OpenClaw plugin API
-    const runtime = (api as Record<string, unknown>).runtime as
+    const runtime = (api as unknown as Record<string, unknown>).runtime as
       | { subagent?: Record<string, unknown>; modelAuth?: ModelAuth }
       | undefined;
 
