@@ -34,11 +34,51 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
-        // GET /api/entries
+        // GET /api/entries (with full filter support)
         if (apiPath === "entries") {
           const limit = parseInt(url.searchParams.get("limit") || "50");
           const offset = parseInt(url.searchParams.get("offset") || "0");
-          const sliced = entries.slice(offset, offset + limit);
+          const agentFilter = url.searchParams.get("agent");
+          const categoryFilter = url.searchParams.get("category");
+          const riskTierFilter = url.searchParams.get("riskTier");
+          const decisionFilter = url.searchParams.get("decision");
+          const sinceFilter = url.searchParams.get("since");
+
+          let filtered = entries;
+
+          if (agentFilter) {
+            filtered = filtered.filter((e) => e.agentId === agentFilter);
+          }
+          if (categoryFilter) {
+            filtered = filtered.filter((e) => e.category === categoryFilter);
+          }
+          if (riskTierFilter) {
+            filtered = filtered.filter((e) => e.riskTier === riskTierFilter);
+          }
+          if (decisionFilter) {
+            filtered = filtered.filter((e) => {
+              const eff = e.effectiveDecision;
+              if (decisionFilter === "block") return eff === "block" || eff === "denied";
+              return eff === decisionFilter;
+            });
+          }
+          if (sinceFilter) {
+            const ms: Record<string, number> = {
+              "1h": 60 * 60_000,
+              "6h": 6 * 60 * 60_000,
+              "24h": 24 * 60 * 60_000,
+              "7d": 7 * 24 * 60 * 60_000,
+            };
+            const cutoff = ms[sinceFilter];
+            if (cutoff) {
+              const since = Date.now() - cutoff;
+              filtered = filtered.filter(
+                (e) => new Date(e.timestamp).getTime() >= since,
+              );
+            }
+          }
+
+          const sliced = filtered.slice(offset, offset + limit);
           res.end(JSON.stringify(sliced));
           return;
         }
@@ -63,9 +103,15 @@ function mockApiPlugin(): Plugin {
           const agentEntries = entries.filter((e) => e.agentId === agentId);
           const sessions = generateMockSessions(entries, agentId);
           const riskTrend = generateRiskTrend(entries, agentId);
+          // Current session activity (entries matching the agent's current session key)
+          const currentSessionKey = agent.currentSession?.sessionKey;
+          const currentSessionActivity = currentSessionKey
+            ? agentEntries.filter((e) => e.sessionKey === currentSessionKey)
+            : [];
           res.end(
             JSON.stringify({
               agent,
+              currentSessionActivity,
               recentActivity: agentEntries.slice(0, 20),
               sessions: sessions.slice(0, 10),
               totalSessions: sessions.length,

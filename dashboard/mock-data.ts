@@ -294,14 +294,36 @@ export function generateMockEntries(): EntryResponse[] {
       { id: "compliance-checker", session: "agent:compliance-checker:web:audit:q2-2026", status: "active", tools: ["read", "grep", "exec"], riskBase: 61, riskVar: 14, offsetBase: 3 * min, count: 9 },
     ];
 
+    // Tool-appropriate params generators
+    const stressParams: Record<string, (id: string, i: number) => Record<string, unknown>> = {
+      read: (id, i) => ({ path: `src/${id}/module${i}.ts` }),
+      write: (id, i) => ({ path: `src/${id}/output${i}.ts` }),
+      edit: (id, i) => ({ path: `src/${id}/config${i}.ts` }),
+      exec: (_id, i) => ({ command: pick([
+        `npm run task-${i}`, `psql -c 'SELECT * FROM jobs LIMIT 10'`,
+        `docker ps --filter name=svc`, `kubectl get pods -n prod`,
+        `node scripts/run-${i}.js`, `curl -s https://api.internal/health`,
+      ]) }),
+      fetch_url: (_id, i) => ({ url: pick([
+        `https://api.internal/v2/data/${i}`, `https://registry.internal/check`,
+        `https://grafana.internal/api/dashboards`, `https://webhook.site/callback-${i}`,
+      ]) }),
+      message: (_id, i) => ({ to: pick(["#ops-alerts", "#deploys", "#incidents", "#team-updates"]), subject: pick([
+        `Status update #${i}`, "Alert resolved", "Deploy complete", "Scan results ready",
+      ]) }),
+      grep: (id, _i) => ({ pattern: pick(["TODO|FIXME", "password|secret", "error|fatal", "deprecated"]), path: `src/${id}/` }),
+      glob: (id, _i) => ({ pattern: `src/${id}/**/*.ts` }),
+    };
+
     for (const sa of stressAgents) {
       for (let i = 0; i < sa.count; i++) {
         const tool = sa.tools[i % sa.tools.length];
         const risk = Math.max(2, Math.min(98, sa.riskBase + Math.floor(Math.random() * sa.riskVar * 2) - sa.riskVar));
         const isBlock = risk > 85 && i === sa.count - 1;
+        const paramsFn = stressParams[tool] ?? ((id: string, j: number) => ({ path: `src/${id}/file${j}.ts` }));
         entries.push(buildEntry({
           toolName: tool,
-          params: { path: `src/${sa.id}/file${i}.ts`, command: `task-${i}` },
+          params: paramsFn(sa.id, i),
           riskScore: risk,
           agentId: sa.id,
           sessionKey: sa.session,
@@ -433,6 +455,9 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
     else if (parts[2] === "web") currentContext = parts.slice(3).join(":") || "via Web";
     else if (parts[2] === "api") currentContext = parts.slice(3).join(":") || "via API";
 
+    // Today's activity breakdown (from today's entries, not session)
+    const todayActivityBreakdown = computeBreakdown(todayEntries.length > 0 ? todayEntries : ae);
+
     agents.push({
       id,
       name: id,
@@ -453,6 +478,7 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
       currentContext,
       riskPosture: riskPosture(avg),
       activityBreakdown,
+      todayActivityBreakdown,
       latestAction: describeAction(latest),
       latestActionTime: latest.timestamp,
       needsAttention,
@@ -563,6 +589,31 @@ export function generateMockSessions(entries: EntryResponse[], agentId?: string)
     if (parts[2] === "cron") context = parts.slice(3).join(" ").replace(/-/g, " ") || "Scheduled task";
     else if (parts.length >= 4) context = parts.slice(3).join(" ").replace(/-/g, " ");
 
+    // Tool summary: top 5 tools by count
+    const toolCounts = new Map<string, number>();
+    for (const e of sEntries) {
+      toolCounts.set(e.toolName, (toolCounts.get(e.toolName) ?? 0) + 1);
+    }
+    const toolSummary = [...toolCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([toolName, count]) => ({ toolName, category: getCategory(toolName), count }));
+
+    // Risk sparkline: chronological scores (LLM-adjusted when available), max 20 points
+    const allScores = sorted
+      .filter((e) => e.riskScore != null)
+      .map((e) => e.llmEvaluation?.adjustedScore ?? e.riskScore!);
+    let riskSparkline: number[];
+    if (allScores.length <= 20) {
+      riskSparkline = allScores;
+    } else {
+      // Downsample to 20 points
+      riskSparkline = Array.from({ length: 20 }, (_, i) => {
+        const idx = Math.floor((i / 19) * (allScores.length - 1));
+        return allScores[idx];
+      });
+    }
+
     return {
       sessionKey: key,
       agentId: sEntries[0].agentId ?? "default",
@@ -575,6 +626,8 @@ export function generateMockSessions(entries: EntryResponse[], agentId?: string)
       activityBreakdown: computeBreakdown(sEntries),
       blockedCount,
       context,
+      toolSummary,
+      riskSparkline,
     };
   });
 
