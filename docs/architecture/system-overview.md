@@ -66,7 +66,24 @@
 
 ## Components
 
-### 1. Hook Handlers
+### 1. Risk Scorer (two-tier)
+
+Scores every tool call for risk on a 0-100 scale. The scoring hero of ClawLens.
+
+**Tier 1 — Deterministic scoring (<5ms):**
+- Exec commands parsed into 14 categories (`src/risk/exec-parser.ts`): read-only (10), scripting (40), destructive (75), etc.
+- Modifier system adds/subtracts for flags, network targets, data mutation
+- Non-exec tools scored by tool type (read=5, write=35, message=45, etc.)
+
+**Tier 2 — LLM evaluation (async, cached):**
+- Fires when tier-1 score >= 50 (configurable `llmEvalThreshold`)
+- Uses Claude Haiku via `runtime.subagent` (gateway requests) or direct Anthropic API (cron jobs)
+- Eval cache: SHA256(toolName + normalized params), 24h TTL, max 500 entries
+- Pre-warmed from audit log at startup
+
+**Files:** `src/risk/scorer.ts`, `src/risk/exec-parser.ts`, `src/risk/llm-evaluator.ts`, `src/risk/eval-cache.ts`, `src/risk/types.ts`
+
+### 2. Hook Handlers
 
 The entry points where ClawLens receives control from OpenClaw's plugin hook system.
 
@@ -169,17 +186,27 @@ Records every action and decision. Entirely our design.
 }
 ```
 
-### 5. Digest Generator
+### 6. Dashboard (React SPA)
 
-Creates human-readable summaries. Entirely our design.
+The primary product surface. Served via `registerHttpRoute()` on the gateway.
 
-**Responsibilities:**
-- Aggregate audit log entries over a time window
-- Generate plain-language summary of agent activity
-- Highlight blocked actions, approved actions, anomalies
-- Deliver via the user's preferred channel
+**Architecture:** React 18 + TypeScript + Tailwind CSS + Vite. Built to `dashboard/dist/`, served as static files. Backend API + SSE streaming in `src/dashboard/`.
 
-**v0.1:** Template-based digest via audit log aggregation. v0.2: LLM-generated natural language summaries.
+**Pages:**
+- **Agents** — landing page, hex constellation of agent nodes with risk posture
+- **Agent Detail** — risk intelligence panel, activity profile, current session stream, past sessions
+- **Session Detail** — unified timeline with risk-encoded nodes, risk lane, AI summary
+- **Activity** — global feed with filtering (agent, category, risk tier, decision, time)
+
+**API endpoints** (8 REST + 1 SSE): stats, entries (with filters), health, agents, agent detail, sessions, session detail, session summary, real-time stream.
+
+**Files:** `src/dashboard/api.ts`, `src/dashboard/routes.ts`, `src/dashboard/categories.ts`, `src/dashboard/session-summary.ts`. Frontend in `dashboard/src/`.
+
+### 7. Alerts + Digest
+
+**Telegram alerts** (`src/alerts/telegram.ts`): fires on high-risk actions above configurable threshold. Includes quiet hours, cooldown, and rate limiting.
+
+**Digest generator** (`src/audit/digest.ts`): template-based daily/weekly summaries of agent activity. Delivered via user's preferred channel.
 
 ## Data Flow: Action Through ClawLens
 
@@ -205,42 +232,55 @@ Creates human-readable summaries. Entirely our design.
 7. End of session → session_end hook → Digest Generator summarizes
 ```
 
-## File Structure (ClawLens Plugin)
-
-Following real OpenClaw plugin conventions (based on `extensions/voice-call/` and others):
+## File Structure
 
 ```
-clawlens/
-├── openclaw.plugin.json     # Plugin manifest (JSON)
-├── index.ts                 # Entry: exports OpenClawPluginDefinition
-├── package.json             # Dependencies, scripts
-├── tsconfig.json            # TypeScript config
-├── src/
-│   ├── hooks/
-│   │   ├── before-tool-call.ts   # Core enforcement (before_tool_call)
-│   │   ├── after-tool-call.ts    # Audit logging (after_tool_call)
-│   │   ├── before-prompt-build.ts # Constraint injection
-│   │   ├── session-start.ts      # Session initialization
-│   │   └── session-end.ts        # Cleanup, digest trigger
-│   ├── policy/
-│   │   ├── engine.ts             # Policy evaluation logic
-│   │   ├── parser.ts             # YAML policy parser
-│   │   └── types.ts              # Policy types
-│   ├── approval/
-│   │   ├── manager.ts            # Approval flow via gateway methods
-│   │   └── formatter.ts          # Prompt formatting
-│   ├── audit/
-│   │   ├── logger.ts             # Structured JSONL audit log
-│   │   └── digest.ts             # Activity summary generation
-│   └── config.ts                 # Plugin config schema + validation
-├── policies/
-│   ├── default.yaml              # Ships with ClawLens
-│   └── examples/
-│       ├── strict.yaml           # Block everything, approve all
-│       ├── relaxed.yaml          # Allow most, approve destructive
-│       └── enterprise.yaml       # Compliance-focused
-└── tests/
-    └── ...
+index.ts                    # Plugin entry: exports OpenClawPluginDefinition
+openclaw.plugin.json        # Plugin manifest
+biome.json                  # Linter/formatter config
+src/
+  hooks/                    # Hook handlers
+    before-tool-call.ts     # Core: risk scoring + policy eval + approval
+    after-tool-call.ts      # Audit logging (fire-and-forget)
+    before-prompt-build.ts  # Constraint injection into agent context
+    session-start.ts        # Session init, policy reload
+    session-end.ts          # Cleanup, digest trigger
+  risk/                     # Two-tier risk scoring
+    scorer.ts               # Tier-1 deterministic scorer
+    exec-parser.ts          # Exec command parser (14 categories)
+    llm-evaluator.ts        # Tier-2 LLM eval (subagent + direct API)
+    eval-cache.ts           # SHA256-keyed eval cache with TTL
+    types.ts                # Risk types
+  policy/                   # YAML policy engine
+    engine.ts               # First-match-wins evaluation
+    parser.ts               # YAML parser + hot-reload
+    types.ts                # Policy types
+  approval/                 # Human-in-the-loop
+    manager.ts              # Approval flow via gateway methods
+    formatter.ts            # Prompt formatting
+  audit/                    # Audit trail
+    logger.ts               # JSONL logger with hash chain
+    digest.ts               # Activity summary generation
+    exporter.ts             # Audit log export
+  dashboard/                # Dashboard backend
+    api.ts                  # Data aggregation (agents, sessions, stats)
+    routes.ts               # HTTP routes + SSE stream
+    categories.ts           # Tool -> activity category mapping
+    session-summary.ts      # LLM session summaries with caching
+    html.ts                 # Fallback v1 HTML dashboard
+  alerts/                   # External notifications
+    telegram.ts             # Telegram alert integration
+  config.ts                 # Plugin config schema + defaults
+  types.ts                  # OpenClaw plugin SDK types
+dashboard/                  # React SPA (separate package.json)
+  src/
+    pages/                  # Agents, AgentDetail, SessionDetail, Activity
+    components/             # UI components (timeline, risk viz, cards)
+    hooks/                  # useApi, useSSE, useSessionSummary
+    lib/                    # Types, utils, groupEntries
+tests/                      # Vitest tests
+policies/                   # Default + example YAML policies
+docs/                       # Obsidian vault (specs, ADRs, architecture)
 ```
 
 ## See Also
