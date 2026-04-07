@@ -262,6 +262,30 @@ function groupBySessions(entries: AuditEntry[]): Map<string, AuditEntry[]> {
   return sessions;
 }
 
+/**
+ * Resolve a session key (possibly with #N suffix from splitting) to its entries.
+ * Handles both raw keys (exact match) and split keys (re-runs groupBySessions).
+ */
+function resolveSessionEntries(
+  entries: AuditEntry[],
+  sessionKey: string,
+): AuditEntry[] {
+  // Try direct match first (works for non-split sessions)
+  const direct = entries.filter((e) => e.sessionKey === sessionKey);
+  if (direct.length > 0) return direct;
+
+  // If key has #N suffix, resolve through groupBySessions
+  const hashIdx = sessionKey.lastIndexOf("#");
+  if (hashIdx === -1) return [];
+
+  const baseKey = sessionKey.slice(0, hashIdx);
+  const baseEntries = entries.filter((e) => e.sessionKey === baseKey);
+  if (baseEntries.length === 0) return [];
+
+  const grouped = groupBySessions(baseEntries);
+  return grouped.get(sessionKey) ?? [];
+}
+
 function buildSessionInfo(
   sessionKey: string,
   entries: AuditEntry[],
@@ -804,7 +828,7 @@ export function getSessionDetail(
   entries: AuditEntry[],
   sessionKey: string,
 ): SessionDetailResponse | null {
-  const sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
+  const sessionEntries = resolveSessionEntries(entries, sessionKey);
   if (sessionEntries.length === 0) return null;
 
   const evalIdx = buildEvalIndex(entries);

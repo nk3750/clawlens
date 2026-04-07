@@ -137,7 +137,37 @@ export async function getSessionSummary(
   entries: AuditEntry[],
   config: { llmModel: string; llmApiKeyEnv: string },
 ): Promise<SessionSummary | null> {
-  const sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
+  let sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
+
+  // Handle split session keys (e.g., "agent:bot:cron:job#2")
+  if (sessionEntries.length === 0) {
+    const hashIdx = sessionKey.lastIndexOf("#");
+    if (hashIdx !== -1) {
+      const baseKey = sessionKey.slice(0, hashIdx);
+      const runNum = parseInt(sessionKey.slice(hashIdx + 1), 10);
+      const baseEntries = entries
+        .filter((e) => e.sessionKey === baseKey)
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      // Split by 30-min gaps and pick the right run
+      const GAP_MS = 30 * 60 * 1000;
+      const runs: AuditEntry[][] = [];
+      let current: AuditEntry[] = [];
+      for (const e of baseEntries) {
+        if (current.length > 0) {
+          const gap = new Date(e.timestamp).getTime() -
+            new Date(current[current.length - 1].timestamp).getTime();
+          if (gap > GAP_MS) {
+            runs.push(current);
+            current = [];
+          }
+        }
+        current.push(e);
+      }
+      if (current.length > 0) runs.push(current);
+      sessionEntries = runs[runNum - 1] ?? [];
+    }
+  }
+
   if (sessionEntries.length === 0) return null;
 
   // Check cache

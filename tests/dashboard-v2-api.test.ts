@@ -1304,6 +1304,18 @@ describe("groupBySessions — cron run splitting", () => {
     expect(result.sessions[0].startTime).toBe("2026-03-29T13:00:00Z");
   });
 
+  it("getSessionDetail resolves split session keys", () => {
+    const entries = [
+      entry({ sessionKey: "agent:bot:cron:job-001", agentId: "bot", decision: "allow", toolName: "read", timestamp: "2026-03-29T10:00:00Z" }),
+      entry({ sessionKey: "agent:bot:cron:job-001", agentId: "bot", decision: "allow", toolName: "exec", timestamp: "2026-03-29T12:00:00Z" }),
+    ];
+    // These are 2h apart (>30 min gap) so they split into job-001 and job-001#2
+    const detail = getSessionDetail(entries, "agent:bot:cron:job-001#2");
+    expect(detail).not.toBeNull();
+    expect(detail!.entries).toHaveLength(1);
+    expect(detail!.entries[0].toolName).toBe("exec");
+  });
+
   it("preserves original key for first run, appends #N for subsequent", () => {
     const entries = [
       entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
