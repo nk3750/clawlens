@@ -86,7 +86,7 @@ export function SessionDetailSkeleton() {
       </div>
 
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-4 mb-4">
         <div className="skeleton rounded-full" style={{ width: 44, height: 44 }} />
         <div className="space-y-2">
           <SkeletonBar width="200px" height="22px" />
@@ -94,22 +94,28 @@ export function SessionDetailSkeleton() {
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Summary line */}
+      <SkeletonBar width="60%" height="14px" className="mb-4" />
+
+      {/* Stat strip */}
+      <div className="flex gap-2 mb-8">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="cl-card p-4 space-y-2">
-            <SkeletonBar width="60px" height="10px" />
-            <SkeletonBar width="40px" height="18px" />
-          </div>
+          <SkeletonBar key={i} width="60px" height="12px" />
         ))}
       </div>
 
-      <div className="cl-divider mb-8" />
+      {/* Risk lane */}
+      <SkeletonBar height="40px" className="mb-8" />
 
-      {/* Chart skeleton */}
-      <SkeletonBar width="100px" height="11px" className="mb-5" />
-      <div className="cl-card p-5">
-        <SkeletonBar height="clamp(160px, 20vw, 240px)" />
+      {/* Timeline spine entries */}
+      <div className="relative pl-10 space-y-3">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="skeleton rounded-full" style={{ width: 12, height: 12 }} />
+            <SkeletonBar height="14px" />
+            <SkeletonBar width="30px" height="12px" />
+          </div>
+        ))}
       </div>
     </div>
   );

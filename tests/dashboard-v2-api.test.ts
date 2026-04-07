@@ -1350,3 +1350,240 @@ describe("getTodayEntries — rolling 24h window", () => {
     vi.useRealTimers();
   });
 });
+
+// ── LLM-adjusted score propagation ──────────────────────
+
+describe("LLM score propagation", () => {
+  /** Helper: build a decision entry + its corresponding LLM eval entry. */
+  function entryWithEval(opts: {
+    toolCallId: string;
+    riskScore: number;
+    adjustedScore: number;
+    sessionKey?: string;
+    agentId?: string;
+    timestamp?: string;
+    reasoning?: string;
+  }) {
+    const ts = opts.timestamp ?? "2026-03-29T10:00:00Z";
+    const main = entry({
+      toolCallId: opts.toolCallId,
+      decision: "allow",
+      riskScore: opts.riskScore,
+      riskTier: opts.riskScore > 75 ? "critical" : opts.riskScore > 50 ? "high" : opts.riskScore > 25 ? "medium" : "low",
+      sessionKey: opts.sessionKey ?? "s1",
+      agentId: opts.agentId ?? "bot-1",
+      timestamp: ts,
+    });
+    const evalEntry = entry({
+      refToolCallId: opts.toolCallId,
+      toolName: main.toolName,
+      llmEvaluation: {
+        adjustedScore: opts.adjustedScore,
+        reasoning: opts.reasoning ?? "Test evaluation",
+        tags: [],
+        confidence: "high",
+        patterns: [],
+      },
+      riskScore: opts.adjustedScore,
+      riskTier: opts.adjustedScore > 75 ? "critical" : opts.adjustedScore > 50 ? "high" : opts.adjustedScore > 25 ? "medium" : "low",
+      timestamp: ts,
+    });
+    return { main, evalEntry };
+  }
+
+  describe("EntryResponse — originalRiskScore", () => {
+    it("sets originalRiskScore when LLM eval adjusts score", () => {
+      const { main, evalEntry } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 55,
+        adjustedScore: 20,
+        sessionKey: "s1",
+      });
+      const result = getSessionDetail([main, evalEntry], "s1");
+      expect(result).not.toBeNull();
+      const e = result!.entries[0];
+      expect(e.riskScore).toBe(20); // LLM-adjusted
+      expect(e.originalRiskScore).toBe(55); // original tier 1
+    });
+
+    it("originalRiskScore is undefined when no LLM eval", () => {
+      const entries = [
+        entry({
+          toolCallId: "tc1",
+          decision: "allow",
+          riskScore: 45,
+          sessionKey: "s1",
+          agentId: "bot-1",
+          timestamp: "2026-03-29T10:00:00Z",
+        }),
+      ];
+      const result = getSessionDetail(entries, "s1");
+      expect(result!.entries[0].riskScore).toBe(45);
+      expect(result!.entries[0].originalRiskScore).toBeUndefined();
+    });
+
+    it("includes llmEvaluation data on the entry", () => {
+      const { main, evalEntry } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 55,
+        adjustedScore: 20,
+        reasoning: "Health check, no risk",
+      });
+      const result = getSessionDetail([main, evalEntry], "s1");
+      const e = result!.entries[0];
+      expect(e.llmEvaluation).toBeDefined();
+      expect(e.llmEvaluation!.adjustedScore).toBe(20);
+      expect(e.llmEvaluation!.reasoning).toBe("Health check, no risk");
+    });
+  });
+
+  describe("SessionInfo — uses LLM-adjusted scores", () => {
+    it("peakRisk reflects LLM-adjusted scores, not tier 1", () => {
+      const { main: m1, evalEntry: e1 } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 55,
+        adjustedScore: 20,
+        timestamp: "2026-03-29T10:00:00Z",
+      });
+      const plain = entry({
+        toolCallId: "tc2",
+        decision: "allow",
+        riskScore: 45,
+        sessionKey: "s1",
+        agentId: "bot-1",
+        timestamp: "2026-03-29T10:01:00Z",
+      });
+
+      const result = getSessionDetail([m1, e1, plain], "s1");
+      // Without LLM fix, peakRisk would be 55 (tier 1). With fix, it's 45.
+      expect(result!.session.peakRisk).toBe(45);
+    });
+
+    it("avgRisk reflects LLM-adjusted scores", () => {
+      const { main: m1, evalEntry: e1 } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 60,
+        adjustedScore: 10,
+        timestamp: "2026-03-29T10:00:00Z",
+      });
+      const plain = entry({
+        toolCallId: "tc2",
+        decision: "allow",
+        riskScore: 30,
+        sessionKey: "s1",
+        agentId: "bot-1",
+        timestamp: "2026-03-29T10:01:00Z",
+      });
+
+      const result = getSessionDetail([m1, e1, plain], "s1");
+      // avg should be (10 + 30) / 2 = 20, not (60 + 30) / 2 = 45
+      expect(result!.session.avgRisk).toBe(20);
+    });
+
+    it("riskSparkline uses LLM-adjusted scores", () => {
+      const { main: m1, evalEntry: e1 } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 55,
+        adjustedScore: 20,
+        timestamp: "2026-03-29T10:00:00Z",
+      });
+      const { main: m2, evalEntry: e2 } = entryWithEval({
+        toolCallId: "tc2",
+        riskScore: 55,
+        adjustedScore: 30,
+        timestamp: "2026-03-29T10:01:00Z",
+      });
+      const plain = entry({
+        toolCallId: "tc3",
+        decision: "allow",
+        riskScore: 5,
+        sessionKey: "s1",
+        agentId: "bot-1",
+        timestamp: "2026-03-29T10:02:00Z",
+      });
+
+      const result = getSessionDetail([m1, e1, m2, e2, plain], "s1");
+      // Sparkline should be [20, 30, 5] not [55, 55, 5]
+      expect(result!.session.riskSparkline).toEqual([20, 30, 5]);
+    });
+  });
+
+  describe("AgentInfo — uses LLM-adjusted scores", () => {
+    it("agent peakRiskScore uses LLM-adjusted scores", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+      const { main: m1, evalEntry: e1 } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 80,
+        adjustedScore: 25,
+        agentId: "bot-1",
+        timestamp: "2026-03-29T10:00:00Z",
+      });
+      const plain = entry({
+        toolCallId: "tc2",
+        decision: "allow",
+        riskScore: 40,
+        agentId: "bot-1",
+        sessionKey: "s1",
+        timestamp: "2026-03-29T10:01:00Z",
+      });
+
+      const agents = getAgents([m1, e1, plain]);
+      const bot = agents.find((a) => a.id === "bot-1")!;
+      // Peak should be 40 (plain entry), not 80 (tier 1 of m1)
+      expect(bot.peakRiskScore).toBe(40);
+
+      vi.useRealTimers();
+    });
+
+    it("agent avgRiskScore uses LLM-adjusted scores", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+      const { main: m1, evalEntry: e1 } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 60,
+        adjustedScore: 10,
+        agentId: "bot-1",
+        timestamp: "2026-03-29T10:00:00Z",
+      });
+      const plain = entry({
+        toolCallId: "tc2",
+        decision: "allow",
+        riskScore: 30,
+        agentId: "bot-1",
+        sessionKey: "s1",
+        timestamp: "2026-03-29T10:01:00Z",
+      });
+
+      const agents = getAgents([m1, e1, plain]);
+      const bot = agents.find((a) => a.id === "bot-1")!;
+      // avg should be (10 + 30) / 2 = 20, not (60 + 30) / 2 = 45
+      expect(bot.avgRiskScore).toBe(20);
+
+      vi.useRealTimers();
+    });
+
+    it("needsAttention uses LLM-adjusted peak, not tier 1", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+      // Tier 1 score is 80 (>= 75 threshold), but LLM adjusts to 25
+      const { main: m1, evalEntry: e1 } = entryWithEval({
+        toolCallId: "tc1",
+        riskScore: 80,
+        adjustedScore: 25,
+        agentId: "bot-1",
+        timestamp: "2026-03-29T10:00:00Z",
+      });
+
+      const agents = getAgents([m1, e1]);
+      const bot = agents.find((a) => a.id === "bot-1")!;
+      // With LLM adjustment, peak is 25 (< 75), so no attention needed
+      expect(bot.needsAttention).toBe(false);
+
+      vi.useRealTimers();
+    });
+  });
+});

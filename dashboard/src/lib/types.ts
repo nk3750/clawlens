@@ -42,6 +42,8 @@ export interface EntryResponse {
   executionResult?: string;
   durationMs?: number;
   riskScore?: number;
+  /** Original Tier 1 scorer output, before LLM adjustment. Only set when LLM eval exists. */
+  originalRiskScore?: number;
   riskTier?: string;
   riskTags?: string[];
   llmEvaluation?: {

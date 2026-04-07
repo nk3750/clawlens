@@ -1,34 +1,17 @@
 import { Link } from "react-router-dom";
 import type { SessionInfo } from "../lib/types";
-import { formatDuration, riskTierFromScore, riskColor, CATEGORY_META } from "../lib/utils";
+import { formatDuration, riskTierFromScore, riskColor, riskColorRaw } from "../lib/utils";
 import GradientAvatar from "./GradientAvatar";
-import ActivityBar from "./ActivityBar";
 import { useSessionSummary } from "../hooks/useSessionSummary";
 
 interface Props {
   session: SessionInfo;
 }
 
-function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="cl-card p-4">
-      <div className="label-mono mb-1.5" style={{ color: "var(--cl-text-muted)" }}>
-        {label}
-      </div>
-      <div
-        className="font-mono text-lg font-semibold"
-        style={{ color: color ?? "var(--cl-text-primary)" }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 export default function SessionHeader({ session }: Props) {
-  const tier = riskTierFromScore(session.peakRisk);
+  const avgTier = riskTierFromScore(session.avgRisk);
+  const peakTier = riskTierFromScore(session.peakRisk);
   const { summary, loading: summaryLoading } = useSessionSummary(session.sessionKey);
-  const tools = (session.toolSummary ?? []).slice(0, 5);
 
   return (
     <div className="mb-8">
@@ -56,8 +39,8 @@ export default function SessionHeader({ session }: Props) {
         <span style={{ color: "var(--cl-text-secondary)" }}>Session</span>
       </nav>
 
-      {/* Agent + context */}
-      <div className="flex items-center gap-4 mb-6">
+      {/* Agent identity + context */}
+      <div className="flex items-center gap-4 mb-4">
         <Link to={`/agent/${encodeURIComponent(session.agentId)}`} className="shrink-0">
           <GradientAvatar agentId={session.agentId} size="md" />
         </Link>
@@ -88,41 +71,6 @@ export default function SessionHeader({ session }: Props) {
         </div>
       </div>
 
-      {/* Stat cards grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="ACTIONS" value={String(session.toolCallCount)} />
-        <StatCard label="DURATION" value={formatDuration(session.duration)} />
-        <StatCard
-          label="AVG RISK"
-          value={String(session.avgRisk)}
-          color={riskColor(riskTierFromScore(session.avgRisk))}
-        />
-        <StatCard
-          label="PEAK RISK"
-          value={String(session.peakRisk)}
-          color={riskColor(tier)}
-        />
-      </div>
-
-      {/* Blocked count callout if any */}
-      {session.blockedCount > 0 && (
-        <div
-          className="flex items-center gap-2 px-4 py-2 rounded-lg mb-6"
-          style={{
-            backgroundColor: "rgba(248, 113, 113, 0.06)",
-            border: "1px solid rgba(248, 113, 113, 0.15)",
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-          </svg>
-          <span className="label-mono" style={{ color: "#f87171" }}>
-            {session.blockedCount} action{session.blockedCount > 1 ? "s" : ""} blocked
-          </span>
-        </div>
-      )}
-
       {/* AI summary */}
       {summaryLoading ? (
         <div
@@ -135,45 +83,27 @@ export default function SessionHeader({ session }: Props) {
           }}
         />
       ) : summary ? (
-        <div
-          className="px-4 py-3 rounded-lg mb-4"
-          style={{
-            backgroundColor: "var(--cl-surface-raised)",
-            border: "1px solid var(--cl-border)",
-          }}
-        >
-          <p className="text-sm italic" style={{ color: "var(--cl-text-secondary)" }}>
-            {summary}
-          </p>
-        </div>
+        <p className="text-sm italic mb-4" style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}>
+          &ldquo;{summary}&rdquo;
+        </p>
       ) : null}
 
-      {/* Tool breakdown */}
-      {tools.length > 0 && (
-        <div className="flex items-center gap-3 flex-wrap mb-4" style={{ fontSize: "12px" }}>
-          {tools.map((t) => {
-            const meta = CATEGORY_META[t.category];
-            return (
-              <span
-                key={t.toolName}
-                className="flex items-center gap-1 font-mono"
-                style={{ color: meta?.color ?? "var(--cl-text-muted)" }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={meta?.iconPath ?? ""} />
-                </svg>
-                {t.toolName}
-                <span style={{ color: "var(--cl-text-muted)" }}>{"\u00d7"}{t.count}</span>
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Activity breakdown */}
-      <ActivityBar breakdown={session.activityBreakdown} />
-
-      <div className="cl-divider mt-8" />
+      {/* Inline stat strip */}
+      <div className="font-mono text-xs flex items-center gap-1.5 flex-wrap" style={{ color: "var(--cl-text-secondary)" }}>
+        <span>{session.toolCallCount} actions</span>
+        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
+        <span>{formatDuration(session.duration)}</span>
+        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
+        <span>avg <span style={{ color: riskColor(avgTier) }}>{session.avgRisk}</span></span>
+        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
+        <span>peak <span style={{ color: riskColor(peakTier) }}>{session.peakRisk}</span></span>
+        {session.blockedCount > 0 && (
+          <>
+            <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
+            <span style={{ color: riskColorRaw("high") }}>{session.blockedCount} blocked</span>
+          </>
+        )}
+      </div>
     </div>
   );
 }

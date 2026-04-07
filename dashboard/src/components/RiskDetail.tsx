@@ -59,7 +59,7 @@ export default function RiskDetail({ entry }: Props) {
           {/* Score adjustment */}
           <div className="flex items-center gap-2 mb-2">
             <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-              tier 1: {entry.riskScore}
+              tier 1: {entry.originalRiskScore ?? entry.riskScore}
             </span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--cl-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="5" y1="12" x2="19" y2="12" />

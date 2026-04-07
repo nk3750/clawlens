@@ -40,6 +40,11 @@
     --cl-cat-comms: #4ade80;
     --cl-cat-data: #fb923c;
 
+    /* ── Timeline ── */
+    --cl-timeline-spine: color-mix(in srgb, var(--cl-accent) 12%, transparent);
+    --cl-lane-height: 40px;
+    --cl-lane-bar-radius: 2px;
+
     /* ── Shadows (Hex 5-layer) ── */
     --cl-shadow-card:
       inset 0 0 24px 0 rgba(0, 0, 0, 0.10),

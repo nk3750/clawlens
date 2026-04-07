@@ -48,6 +48,8 @@ export interface EntryResponse {
   executionResult?: string;
   durationMs?: number;
   riskScore?: number;
+  /** Original Tier 1 scorer output, before LLM adjustment. Only set when LLM eval exists. */
+  originalRiskScore?: number;
   riskTier?: string;
   riskTags?: string[];
   llmEvaluation?: {
@@ -175,6 +177,17 @@ function isDecisionEntry(entry: AuditEntry): boolean {
   return entry.decision !== undefined;
 }
 
+/** Get the final effective risk score for an entry, using LLM-adjusted score when available. */
+function getEffectiveScore(entry: AuditEntry, evalIdx?: Map<string, AuditEntry>): number | undefined {
+  if (evalIdx && entry.toolCallId) {
+    const evalEntry = evalIdx.get(entry.toolCallId);
+    if (evalEntry?.llmEvaluation) {
+      return evalEntry.llmEvaluation.adjustedScore;
+    }
+  }
+  return entry.riskScore;
+}
+
 function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>): EntryResponse {
   // If there's an LLM eval for this tool call, use its adjusted score/tier/tags
   const evalEntry = entry.toolCallId ? evalIndex?.get(entry.toolCallId) : undefined;
@@ -193,6 +206,7 @@ function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>): Entry
     executionResult: entry.executionResult,
     durationMs: entry.durationMs,
     riskScore: llmEval ? llmEval.adjustedScore : entry.riskScore,
+    originalRiskScore: llmEval ? entry.riskScore : undefined,
     riskTier: evalEntry?.riskTier ?? entry.riskTier,
     riskTags: evalEntry?.riskTags ?? entry.riskTags,
     llmEvaluation: llmEval,
@@ -289,6 +303,7 @@ function resolveSessionEntries(
 function buildSessionInfo(
   sessionKey: string,
   entries: AuditEntry[],
+  evalIdx?: Map<string, AuditEntry>,
 ): SessionInfo {
   const sorted = [...entries].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
@@ -303,10 +318,11 @@ function buildSessionInfo(
   let riskCount = 0;
   let peakRisk = 0;
   for (const e of entries) {
-    if (e.riskScore !== undefined) {
-      riskSum += e.riskScore;
+    const score = getEffectiveScore(e, evalIdx);
+    if (score !== undefined) {
+      riskSum += score;
       riskCount++;
-      if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+      if (score > peakRisk) peakRisk = score;
     }
   }
 
@@ -330,10 +346,10 @@ function buildSessionInfo(
       count,
     }));
 
-  // Risk sparkline: chronological risk scores, max 20 points (sampled evenly)
+  // Risk sparkline: chronological risk scores (using LLM-adjusted when available), max 20 points
   const chronoScores = sorted
-    .filter((e) => e.riskScore !== undefined)
-    .map((e) => e.riskScore!);
+    .map((e) => getEffectiveScore(e, evalIdx))
+    .filter((s): s is number => s !== undefined);
   let riskSparkline: number[];
   if (chronoScores.length <= 20) {
     riskSparkline = chronoScores;
@@ -563,6 +579,7 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
   const now = Date.now();
   const todayCutoff = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   const thirtyMinAgo = new Date(now - 1_800_000).toISOString();
+  const evalIdx = buildEvalIndex(entries);
 
   const agents: AgentInfo[] = [];
 
@@ -586,10 +603,11 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
     let riskCount = 0;
     let peakRisk = 0;
     for (const e of agentEntries) {
-      if (e.riskScore !== undefined) {
-        riskSum += e.riskScore;
+      const score = getEffectiveScore(e, evalIdx);
+      if (score !== undefined) {
+        riskSum += score;
         riskCount++;
-        if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+        if (score > peakRisk) peakRisk = score;
       }
     }
 
@@ -653,16 +671,16 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       : undefined;
     const latestActionTime = latestDecision?.timestamp;
 
-    // Risk posture from current/latest session
+    // Risk posture from current/latest session (using LLM-adjusted scores)
     const sessionRiskEntries = currentSessionKey
       ? agentEntries.filter(
           (e) =>
-            e.sessionKey === currentSessionKey && e.riskScore !== undefined,
+            e.sessionKey === currentSessionKey && getEffectiveScore(e, evalIdx) !== undefined,
         )
-      : agentEntries.filter((e) => e.riskScore !== undefined);
+      : agentEntries.filter((e) => getEffectiveScore(e, evalIdx) !== undefined);
     let sessionRiskSum = 0;
     for (const e of sessionRiskEntries) {
-      sessionRiskSum += e.riskScore!;
+      sessionRiskSum += getEffectiveScore(e, evalIdx)!;
     }
     const sessionAvg =
       sessionRiskEntries.length > 0
@@ -756,7 +774,7 @@ export function getAgentDetail(
   const sessionMap = groupBySessions(agentEntries);
   const allSessions: SessionInfo[] = [];
   for (const [key, sEntries] of sessionMap) {
-    allSessions.push(buildSessionInfo(key, sEntries));
+    allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
   }
   allSessions.sort((a, b) =>
     (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime),
@@ -808,10 +826,11 @@ export function getSessions(
     filtered = entries.filter((e) => (e.agentId || "default") === agentId);
   }
 
+  const evalIdx = buildEvalIndex(entries);
   const sessionMap = groupBySessions(filtered);
   const allSessions: SessionInfo[] = [];
   for (const [key, sEntries] of sessionMap) {
-    allSessions.push(buildSessionInfo(key, sEntries));
+    allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
   }
   allSessions.sort((a, b) =>
     (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime),
@@ -832,7 +851,7 @@ export function getSessionDetail(
   if (sessionEntries.length === 0) return null;
 
   const evalIdx = buildEvalIndex(entries);
-  const session = buildSessionInfo(sessionKey, sessionEntries);
+  const session = buildSessionInfo(sessionKey, sessionEntries, evalIdx);
   const mappedEntries = sessionEntries
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
     .map((e) => mapEntry(e, evalIdx));

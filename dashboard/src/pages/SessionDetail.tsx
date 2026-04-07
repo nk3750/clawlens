@@ -1,9 +1,10 @@
 import { useParams, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import type { SessionDetailResponse } from "../lib/types";
+import { groupEntries } from "../lib/groupEntries";
 import SessionHeader from "../components/SessionHeader";
-import RiskTimeline from "../components/RiskTimeline";
-import ToolCallTimeline from "../components/ToolCallTimeline";
+import SessionRiskLane from "../components/SessionRiskLane";
+import SessionTimeline from "../components/SessionTimeline";
 import ErrorCard from "../components/ErrorCard";
 import { SessionDetailSkeleton } from "../components/Skeleton";
 
@@ -34,36 +35,24 @@ export default function SessionDetail() {
   }
 
   const { session, entries } = data;
+  const sorted = [...entries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const groups = groupEntries(sorted);
 
   return (
     <div className="page-enter stagger">
+      {/* Lean header: identity + summary + stat strip */}
       <SessionHeader session={session} />
 
-      {/* Risk Timeline chart — the session risk hero */}
-      <section className="mb-10">
-        <h2 className="label-mono mb-5" style={{ color: "var(--cl-text-muted)" }}>
-          RISK TIMELINE
-        </h2>
-        <div
-          className="cl-card p-5 overflow-hidden"
-        >
-          <RiskTimeline
-            entries={entries}
-            sessionStart={session.startTime}
-            sessionEnd={session.endTime}
-          />
-        </div>
-      </section>
+      {/* Risk lane: bird's-eye risk shape */}
+      <SessionRiskLane entries={sorted} />
 
-      <div className="cl-divider mb-10" />
-
-      {/* Tool call timeline — granular forensics view */}
-      <section>
-        <h2 className="label-mono mb-5" style={{ color: "var(--cl-text-muted)" }}>
-          TOOL CALLS ({entries.length})
-        </h2>
-        <ToolCallTimeline entries={entries} sessionStart={session.startTime} />
-      </section>
+      {/* Unified timeline */}
+      <SessionTimeline
+        groups={groups}
+        sessionStart={session.startTime}
+        sessionEnd={session.endTime}
+        sessionDuration={session.duration}
+      />
     </div>
   );
 }

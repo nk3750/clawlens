@@ -65,6 +65,14 @@ export default function ActivityEntry({ entry, description }: Props) {
             <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
               {entry.riskScore}
             </span>
+            {entry.llmEvaluation && (
+              <span
+                className="font-mono font-semibold"
+                style={{ fontSize: "9px", color: "var(--cl-accent)", letterSpacing: "0.05em" }}
+              >
+                AI
+              </span>
+            )}
           </span>
         )}
 
