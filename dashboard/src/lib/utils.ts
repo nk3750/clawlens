@@ -130,3 +130,139 @@ export const CATEGORY_META: Record<
 export function categoryColor(cat: ActivityCategory): string {
   return CATEGORY_META[cat]?.color ?? "var(--cl-text-muted)";
 }
+
+// ── Entry tag derivation ────────────────────────────────
+// Exhaustive mappings for every ExecCategory (src/risk/exec-parser.ts)
+// and every tool name (src/dashboard/categories.ts TOOL_TO_CATEGORY).
+// When riskTags from the scorer exist, those take priority.
+// Otherwise we derive tags from exec sub-category or tool type
+// so every timeline entry always has visible context.
+
+/** Tag for each exec sub-category. Covers all 15 ExecCategory values. */
+const EXEC_CATEGORY_TAGS: Record<string, string> = {
+  "read-only": "read-only",
+  search: "search",
+  "system-info": "system",
+  echo: "echo",
+  "git-read": "git",
+  "git-write": "git-write",
+  "network-read": "network",
+  "network-write": "network-write",
+  scripting: "script",
+  "package-mgmt": "package",
+  destructive: "destructive",
+  permissions: "permissions",
+  persistence: "persistence",
+  remote: "remote",
+  "unknown-exec": "exec",
+};
+
+/** Tag for each non-exec tool. Covers all tool names in TOOL_TO_CATEGORY. */
+const TOOL_TAGS: Record<string, string> = {
+  read: "file-read",
+  write: "file-write",
+  edit: "file-edit",
+  grep: "search",
+  glob: "scan",
+  search: "web-search",
+  web_search: "web-search",
+  web_fetch: "web-fetch",
+  fetch_url: "web-fetch",
+  browser: "browser",
+  message: "message",
+  sessions_spawn: "spawn",
+  cron: "schedule",
+  process: "process",
+  memory_get: "memory",
+  memory_search: "memory",
+};
+
+/**
+ * Derive display tags for a timeline entry.
+ * Priority: scorer riskTags > exec sub-category > tool type.
+ * Returns 1-2 tags; never empty for known tools.
+ */
+export function deriveTags(entry: {
+  toolName: string;
+  execCategory?: string;
+  riskTags?: string[];
+}): string[] {
+  // Scorer tags take priority (e.g., "exfiltration", "credential-access")
+  if (entry.riskTags && entry.riskTags.length > 0) {
+    return entry.riskTags.slice(0, 2);
+  }
+  // Exec sub-category tag
+  if (entry.execCategory) {
+    const tag = EXEC_CATEGORY_TAGS[entry.execCategory];
+    if (tag) return [tag];
+  }
+  // Non-exec tool tag
+  const tag = TOOL_TAGS[entry.toolName];
+  if (tag) return [tag];
+  // Unknown tool — use the tool name itself
+  if (entry.toolName) return [entry.toolName];
+  return [];
+}
+
+// ── Entry icon selection ────────────────────────────────
+// Icon overrides for exec sub-categories. Non-exec tools use their
+// activity category icon from CATEGORY_META.
+// Covers all 15 ExecCategory values with meaningful visual differentiation.
+
+/** Additional SVG icon paths beyond what's in CATEGORY_META */
+const EXTRA_ICON_PATHS: Record<string, string> = {
+  git: "M15 22v-4a4.8 4.8 0 00-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 004 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4",
+  warning:
+    "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01",
+  shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  code: "M16 18l6-6-6-6 M8 6l-6 6 6 6",
+  repeat: "M17 1l4 4-4 4 M3 11V9a4 4 0 014-4h14 M7 23l-4-4 4-4 M21 13v2a4 4 0 01-4 4H3",
+  server: "M2 2h20v8H2z M2 14h20v8H2z M6 6h.01 M6 18h.01",
+  package:
+    "M16.5 9.4l-9-5.19 M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12",
+};
+
+/**
+ * Exec sub-category → icon override mapping. Covers all 15 ExecCategory values.
+ * Returns { path, color } for SVG rendering, or undefined to use the default
+ * category icon from CATEGORY_META.
+ */
+const EXEC_ICON_OVERRIDES: Record<string, { path: string; color: string } | undefined> = {
+  "network-read": { path: CATEGORY_META.web.iconPath, color: CATEGORY_META.web.color },
+  "network-write": { path: CATEGORY_META.web.iconPath, color: CATEGORY_META.web.color },
+  "read-only": { path: CATEGORY_META.exploring.iconPath, color: CATEGORY_META.exploring.color },
+  search: { path: CATEGORY_META.exploring.iconPath, color: CATEGORY_META.exploring.color },
+  "git-read": { path: EXTRA_ICON_PATHS.git, color: "var(--cl-cat-commands)" },
+  "git-write": { path: EXTRA_ICON_PATHS.git, color: "var(--cl-cat-changes)" },
+  destructive: { path: EXTRA_ICON_PATHS.warning, color: "var(--cl-risk-high)" },
+  permissions: { path: EXTRA_ICON_PATHS.shield, color: "var(--cl-risk-medium)" },
+  persistence: { path: EXTRA_ICON_PATHS.repeat, color: "var(--cl-cat-data)" },
+  remote: { path: EXTRA_ICON_PATHS.server, color: "var(--cl-cat-web)" },
+  scripting: { path: EXTRA_ICON_PATHS.code, color: "var(--cl-cat-commands)" },
+  "package-mgmt": { path: EXTRA_ICON_PATHS.package, color: "var(--cl-cat-commands)" },
+  // These use the default category icon (terminal for commands):
+  "system-info": undefined,
+  echo: undefined,
+  "unknown-exec": undefined,
+};
+
+/**
+ * Pick the icon for a timeline entry based on exec sub-category (if exec)
+ * or activity category (for all other tools).
+ * Exhaustive: handles all exec sub-categories and all activity categories.
+ */
+export function entryIcon(entry: {
+  toolName: string;
+  category: ActivityCategory;
+  execCategory?: string;
+}): { path: string; color: string } {
+  const meta = CATEGORY_META[entry.category];
+  const defaultIcon = { path: meta?.iconPath ?? "", color: meta?.color ?? "var(--cl-text-muted)" };
+
+  // Non-exec tools use their activity category icon
+  if (entry.toolName !== "exec" || !entry.execCategory) return defaultIcon;
+
+  // Exec tools: check for sub-category override
+  const override = EXEC_ICON_OVERRIDES[entry.execCategory];
+  return override ?? defaultIcon;
+}

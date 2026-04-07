@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { EntryResponse } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw, CATEGORY_META } from "../lib/utils";
+import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
 import DecisionBadge from "./DecisionBadge";
 import RiskDetail from "./RiskDetail";
@@ -24,36 +24,6 @@ const NODE_GLOW: Record<string, string> = {
   critical: "12px",
 };
 
-// Extra icon paths not in CATEGORY_META
-const ICON_PATHS = {
-  git: "M15 22v-4a4.8 4.8 0 00-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 004 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4",
-  warning: "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01",
-};
-
-/** Pick the right icon path based on exec sub-category */
-function getIconForEntry(entry: EntryResponse): { path: string; color: string } {
-  const meta = CATEGORY_META[entry.category];
-  const defaultIcon = { path: meta?.iconPath ?? "", color: meta?.color ?? "var(--cl-text-muted)" };
-
-  if (entry.toolName !== "exec" || !entry.execCategory) return defaultIcon;
-
-  switch (entry.execCategory) {
-    case "network-read":
-    case "network-write":
-      return { path: CATEGORY_META.web.iconPath, color: CATEGORY_META.web.color };
-    case "read-only":
-    case "search":
-      return { path: CATEGORY_META.exploring.iconPath, color: CATEGORY_META.exploring.color };
-    case "git-read":
-    case "git-write":
-      return { path: ICON_PATHS.git, color: "var(--cl-cat-commands)" };
-    case "destructive":
-      return { path: ICON_PATHS.warning, color: "var(--cl-risk-high)" };
-    default:
-      return defaultIcon;
-  }
-}
-
 export default function TimelineNode({ entry, index, defaultExpanded = false }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -63,8 +33,8 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
   const glow = NODE_GLOW[tier];
   const isBlocked = entry.effectiveDecision === "block" || entry.effectiveDecision === "denied";
   const showBadge = entry.effectiveDecision && entry.effectiveDecision !== "allow";
-  const icon = getIconForEntry(entry);
-  const tags = entry.riskTags?.slice(0, 2) ?? [];
+  const icon = entryIcon(entry);
+  const tags = deriveTags(entry);
 
   // Background tint for high risk / blocked rows
   let rowBg = "transparent";
@@ -135,7 +105,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             {describeEntry(entry)}
           </span>
 
-          {/* Inline risk tags */}
+          {/* Inline tags */}
           {tags.length > 0 && (
             <span className="hidden md:flex items-center gap-1 shrink-0">
               {tags.map((tag) => (
@@ -161,7 +131,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             </span>
           )}
 
-          {/* Risk dot + score + AI sparkle */}
+          {/* Risk dot + score + tier label + AI sparkle */}
           {entry.riskScore != null && (
             <span className="flex items-center gap-1.5 shrink-0">
               <span
@@ -173,6 +143,9 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
               />
               <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
                 {entry.riskScore}
+              </span>
+              <span className="label-mono shrink-0" style={{ color }}>
+                {tier.toUpperCase()}
               </span>
               {entry.llmEvaluation && (
                 <svg
