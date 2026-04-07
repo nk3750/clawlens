@@ -96,11 +96,11 @@ describe("computeStats", () => {
     expect(stats.total).toBe(7);
   });
 
-  it("only counts entries from today (UTC)", () => {
+  it("only counts entries from last 24 hours", () => {
     const entries: AuditEntry[] = [
-      entry({ timestamp: "2026-03-28T23:59:59Z", decision: "allow" }), // yesterday
-      entry({ timestamp: "2026-03-29T00:00:00Z", decision: "allow" }), // today
-      entry({ timestamp: "2026-03-29T13:00:00Z", decision: "block" }), // today
+      entry({ timestamp: "2026-03-28T10:00:00Z", decision: "allow" }), // >24h ago
+      entry({ timestamp: "2026-03-29T00:00:00Z", decision: "allow" }), // within 24h
+      entry({ timestamp: "2026-03-29T13:00:00Z", decision: "block" }), // within 24h
     ];
 
     const stats = computeStats(entries);

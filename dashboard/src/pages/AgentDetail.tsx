@@ -86,10 +86,10 @@ export default function AgentDetail() {
             className="label-mono mb-5"
             style={{ color: "var(--cl-text-muted)" }}
           >
-            {agent.todayToolCalls > 0 ? "TODAY'S ACTIVITY" : "ACTIVITY PROFILE"}
+            TODAY'S ACTIVITY
           </h2>
           <ActivityProfile
-            breakdown={agent.todayToolCalls > 0 ? agent.todayActivityBreakdown : agent.activityBreakdown}
+            breakdown={agent.todayActivityBreakdown}
             sessionActions={agent.currentSession?.toolCallCount}
             todayActions={agent.todayToolCalls}
           />

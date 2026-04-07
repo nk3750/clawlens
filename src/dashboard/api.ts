@@ -147,12 +147,9 @@ export interface SessionDetailResponse {
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
-/** Filter entries to today (since midnight UTC). */
+/** Filter entries to the last 24 hours (rolling window, timezone-agnostic). */
 function getTodayEntries(entries: AuditEntry[]): AuditEntry[] {
-  const now = new Date();
-  const cutoff = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  ).toISOString();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   return entries.filter((e) => e.timestamp >= cutoff);
 }
 
@@ -216,17 +213,52 @@ function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {
   return index;
 }
 
+/**
+ * Group entries into sessions. When a session key is reused across cron runs
+ * with a gap > SESSION_GAP_MS between consecutive entries, split into separate
+ * logical sessions (appending #2, #3 etc. to the key).
+ */
+const SESSION_GAP_MS = 30 * 60 * 1000; // 30 minutes
+
 function groupBySessions(entries: AuditEntry[]): Map<string, AuditEntry[]> {
-  const sessions = new Map<string, AuditEntry[]>();
+  // First pass: group by raw session key
+  const raw = new Map<string, AuditEntry[]>();
   for (const e of entries) {
     if (!e.sessionKey) continue;
-    const existing = sessions.get(e.sessionKey);
+    const existing = raw.get(e.sessionKey);
     if (existing) {
       existing.push(e);
     } else {
-      sessions.set(e.sessionKey, [e]);
+      raw.set(e.sessionKey, [e]);
     }
   }
+
+  // Second pass: split sessions with time gaps
+  const sessions = new Map<string, AuditEntry[]>();
+  for (const [key, group] of raw) {
+    const sorted = group.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    let runIndex = 1;
+    let current: AuditEntry[] = [sorted[0]];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const gap =
+        new Date(sorted[i].timestamp).getTime() -
+        new Date(sorted[i - 1].timestamp).getTime();
+      if (gap > SESSION_GAP_MS) {
+        // Store current run
+        const runKey = runIndex === 1 ? key : `${key}#${runIndex}`;
+        sessions.set(runKey, current);
+        runIndex++;
+        current = [sorted[i]];
+      } else {
+        current.push(sorted[i]);
+      }
+    }
+    // Store last run
+    const runKey = runIndex === 1 ? key : `${key}#${runIndex}`;
+    sessions.set(runKey, current);
+  }
+
   return sessions;
 }
 
@@ -505,13 +537,7 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
   }
 
   const now = Date.now();
-  const todayCutoff = new Date(
-    Date.UTC(
-      new Date().getUTCFullYear(),
-      new Date().getUTCMonth(),
-      new Date().getUTCDate(),
-    ),
-  ).toISOString();
+  const todayCutoff = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   const thirtyMinAgo = new Date(now - 1_800_000).toISOString();
 
   const agents: AgentInfo[] = [];
@@ -708,7 +734,9 @@ export function getAgentDetail(
   for (const [key, sEntries] of sessionMap) {
     allSessions.push(buildSessionInfo(key, sEntries));
   }
-  allSessions.sort((a, b) => b.startTime.localeCompare(a.startTime));
+  allSessions.sort((a, b) =>
+    (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime),
+  );
 
   // Risk trend: last 24h decision entries with scores, chronological
   const twentyFourHoursAgo = new Date(
@@ -761,7 +789,9 @@ export function getSessions(
   for (const [key, sEntries] of sessionMap) {
     allSessions.push(buildSessionInfo(key, sEntries));
   }
-  allSessions.sort((a, b) => b.startTime.localeCompare(a.startTime));
+  allSessions.sort((a, b) =>
+    (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime),
+  );
 
   return {
     sessions: allSessions.slice(offset, offset + limit),

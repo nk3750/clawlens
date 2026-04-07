@@ -1262,3 +1262,79 @@ describe("SessionInfo — riskSparkline", () => {
     expect(result.sessions[0].riskSparkline).toEqual([]);
   });
 });
+
+describe("groupBySessions — cron run splitting", () => {
+  it("splits recurring cron sessions with >30 min gaps", () => {
+    const entries = [
+      // Run 1: 10:00–10:02
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:02:00Z" }),
+      // Run 2: 11:00–11:01 (58 min gap)
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T11:00:00Z" }),
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T11:01:00Z" }),
+    ];
+    const result = getSessions(entries);
+    expect(result.total).toBe(2);
+    expect(result.sessions[0].toolCallCount).toBe(2);
+    expect(result.sessions[1].toolCallCount).toBe(2);
+  });
+
+  it("keeps sessions together when gaps are < 30 min", () => {
+    const entries = [
+      entry({ sessionKey: "s1", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
+      entry({ sessionKey: "s1", decision: "allow", timestamp: "2026-03-29T10:15:00Z" }),
+      entry({ sessionKey: "s1", decision: "allow", timestamp: "2026-03-29T10:29:00Z" }),
+    ];
+    const result = getSessions(entries);
+    expect(result.total).toBe(1);
+    expect(result.sessions[0].toolCallCount).toBe(3);
+  });
+
+  it("sorts sessions by most recent activity, not start time", () => {
+    const entries = [
+      // Old session with recent run
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T08:00:00Z" }),
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T13:00:00Z" }),
+      // Newer session, but no recent activity
+      entry({ sessionKey: "s2", decision: "allow", timestamp: "2026-03-29T09:00:00Z" }),
+    ];
+    const result = getSessions(entries);
+    expect(result.total).toBe(3); // job-001 splits into 2 + s2
+    // Most recent activity (13:00) should be first
+    expect(result.sessions[0].startTime).toBe("2026-03-29T13:00:00Z");
+  });
+
+  it("preserves original key for first run, appends #N for subsequent", () => {
+    const entries = [
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T12:00:00Z" }),
+      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T14:00:00Z" }),
+    ];
+    const result = getSessions(entries);
+    expect(result.total).toBe(3);
+    const keys = result.sessions.map((s) => s.sessionKey);
+    expect(keys).toContain("agent:bot:cron:job-001");
+    expect(keys).toContain("agent:bot:cron:job-001#2");
+    expect(keys).toContain("agent:bot:cron:job-001#3");
+  });
+});
+
+describe("getTodayEntries — rolling 24h window", () => {
+  it("includes entries from 23h ago but excludes 25h ago", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({ agentId: "bot-1", decision: "allow", timestamp: "2026-03-28T13:00:00Z" }), // 25h ago
+      entry({ agentId: "bot-1", decision: "allow", timestamp: "2026-03-28T15:00:00Z" }), // 23h ago
+      entry({ agentId: "bot-1", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }), // 4h ago
+    ];
+
+    const agents = getAgents(entries);
+    const bot = agents[0];
+    // 25h-ago entry should be excluded from today counts
+    expect(bot.todayToolCalls).toBe(2);
+
+    vi.useRealTimers();
+  });
+});
