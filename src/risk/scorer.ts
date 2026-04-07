@@ -86,17 +86,19 @@ const EXEC_MODIFIERS: Modifier[] = [
     tag: "destructive",
   },
 
-  // force-flag: only if --force or -f is in parsed flags array
-  // NOT from -c or other unrelated flags
+  // force-flag: --force on any command, but short -f only on commands where it means "force"
+  // (not test/[/tar/tail/awk/ssh/grep where -f means something else)
   {
     match: (_t, _p, parsed) => {
       if (!parsed) return false;
+      const hasLongForce = parsed.flags.includes("--force");
+      if (hasLongForce) return true;
+      // Short -f only means "force" on these commands
+      const FORCE_F_COMMANDS = new Set(["rm", "cp", "mv", "ln", "rmdir"]);
+      if (!FORCE_F_COMMANDS.has(parsed.primaryCommand)) return false;
       return parsed.flags.some((f) => {
-        if (f === "--force") return true;
-        // Match -f as standalone flag or within combined short flags like -rf
         if (f.startsWith("--")) return false;
-        // For short flags like -f, -rf, -fr etc., check if 'f' is one of the flag chars
-        const chars = f.slice(1); // strip leading -
+        const chars = f.slice(1);
         return chars.includes("f");
       });
     },

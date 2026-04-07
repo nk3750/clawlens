@@ -264,7 +264,7 @@ const plugin: OpenClawPluginDefinition = {
     });
 
     // Dashboard
-    registerDashboardRoutes(api, { engine, auditLogger, pluginDir: __dirname });
+    registerDashboardRoutes(api, { engine, auditLogger, pluginDir: __dirname, config });
 
     api.logger.info("ClawLens: Plugin registered");
   },

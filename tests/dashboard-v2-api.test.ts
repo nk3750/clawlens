@@ -428,6 +428,7 @@ describe("getAgentDetail", () => {
     expect(result).not.toBeNull();
     expect(result!.agent.id).toBe("bot-1");
     expect(result!.recentActivity).toHaveLength(2);
+    expect(result!.currentSessionActivity).toBeDefined();
     expect(result!.sessions).toHaveLength(1);
     expect(result!.totalSessions).toBe(1);
   });
@@ -1016,5 +1017,248 @@ describe("getRecentEntries — filtering", () => {
   it("returns all when since=all", () => {
     const result = getRecentEntries(testEntries(), 50, 0, { since: "all" });
     expect(result).toHaveLength(4);
+  });
+});
+
+// ── Phase 1.2 tests ──────────────────────────────────
+
+describe("getAgentDetail — currentSessionActivity", () => {
+  it("returns only current session entries in currentSessionActivity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s-old",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T02:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s-current",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T13:57:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s-current",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T13:58:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result).not.toBeNull();
+    // currentSessionActivity should only have entries from s-current
+    expect(result!.currentSessionActivity).toHaveLength(2);
+    result!.currentSessionActivity.forEach((e) => {
+      expect(e.sessionKey).toBe("s-current");
+    });
+    // recentActivity should have all
+    expect(result!.recentActivity).toHaveLength(3);
+
+    vi.useRealTimers();
+  });
+
+  it("returns empty currentSessionActivity when agent is idle", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result).not.toBeNull();
+    // Agent is idle (last activity >5 min ago), no currentSession
+    expect(result!.agent.currentSession).toBeUndefined();
+    expect(result!.currentSessionActivity).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("currentSessionActivity is in reverse chronological order", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T13:56:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T13:58:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result!.currentSessionActivity[0].toolName).toBe("exec"); // newest first
+    expect(result!.currentSessionActivity[1].toolName).toBe("read");
+
+    vi.useRealTimers();
+  });
+});
+
+describe("AgentInfo — todayActivityBreakdown", () => {
+  it("computes todayActivityBreakdown from full day entries", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      // Old session with reads
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s-old",
+        toolName: "read",
+        decision: "allow",
+        timestamp: "2026-03-29T08:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s-old",
+        toolName: "read",
+        decision: "allow",
+        timestamp: "2026-03-29T08:01:00Z",
+      }),
+      // Current session with exec
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s-current",
+        toolName: "exec",
+        decision: "allow",
+        timestamp: "2026-03-29T13:58:00Z",
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    const bot = agents.find((a) => a.id === "bot-1")!;
+
+    // activityBreakdown is from current session only (exec = 100%)
+    expect(bot.activityBreakdown.commands).toBe(100);
+
+    // todayActivityBreakdown reflects the full day
+    expect(bot.todayActivityBreakdown.exploring).toBe(67);
+    expect(bot.todayActivityBreakdown.commands).toBe(33);
+
+    vi.useRealTimers();
+  });
+});
+
+describe("SessionInfo — toolSummary", () => {
+  it("returns top 5 tools sorted by count", () => {
+    const entries = [
+      ...Array.from({ length: 7 }, (_, i) =>
+        entry({
+          sessionKey: "s1",
+          agentId: "bot-1",
+          decision: "allow",
+          toolName: "exec",
+          timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+        }),
+      ),
+      ...Array.from({ length: 3 }, (_, i) =>
+        entry({
+          sessionKey: "s1",
+          agentId: "bot-1",
+          decision: "allow",
+          toolName: "read",
+          timestamp: `2026-03-29T10:${String(10 + i).padStart(2, "0")}:00Z`,
+        }),
+      ),
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "write",
+        timestamp: "2026-03-29T10:20:00Z",
+      }),
+    ];
+
+    const result = getSessions(entries);
+    const session = result.sessions[0];
+    expect(session.toolSummary).toBeDefined();
+    expect(session.toolSummary.length).toBeLessThanOrEqual(5);
+    // exec should be first (highest count)
+    expect(session.toolSummary[0].toolName).toBe("exec");
+    expect(session.toolSummary[0].count).toBe(7);
+    expect(session.toolSummary[0].category).toBe("commands");
+    // read second
+    expect(session.toolSummary[1].toolName).toBe("read");
+    expect(session.toolSummary[1].count).toBe(3);
+  });
+});
+
+describe("SessionInfo — riskSparkline", () => {
+  it("returns chronological risk scores", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: 10,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: 50,
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: 20,
+        timestamp: "2026-03-29T10:02:00Z",
+      }),
+    ];
+
+    const result = getSessions(entries);
+    const session = result.sessions[0];
+    expect(session.riskSparkline).toEqual([10, 50, 20]);
+  });
+
+  it("samples to max 20 points for long sessions", () => {
+    const entries = Array.from({ length: 50 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: i * 2,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    const result = getSessions(entries);
+    const session = result.sessions[0];
+    expect(session.riskSparkline).toHaveLength(20);
+    // First point should be 0 (first entry)
+    expect(session.riskSparkline[0]).toBe(0);
+    // Last point should be 98 (last entry)
+    expect(session.riskSparkline[19]).toBe(98);
+  });
+
+  it("returns empty array when no risk scores", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+
+    const result = getSessions(entries);
+    expect(result.sessions[0].riskSparkline).toEqual([]);
   });
 });

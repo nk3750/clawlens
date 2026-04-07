@@ -183,6 +183,35 @@ describe("computeRiskScore", () => {
       expect(r.tags).toContain("destructive");
     });
 
+    it("does NOT add force-flag for test -f (file existence check)", () => {
+      const r = computeRiskScore("exec", {
+        command: 'test -f "/opt/homebrew/bin/railway" && echo "found"',
+      });
+      expect(r.tags).not.toContain("force-flag");
+      // test is unknown-exec (base 50), no force modifier
+      expect(r.score).toBe(50);
+    });
+
+    it("does NOT add force-flag for tail -f (follow)", () => {
+      const r = computeRiskScore("exec", { command: "tail -f /var/log/syslog" });
+      expect(r.tags).not.toContain("force-flag");
+    });
+
+    it("does NOT add force-flag for tar -xf (extract file)", () => {
+      const r = computeRiskScore("exec", { command: "tar -xf archive.tar.gz" });
+      expect(r.tags).not.toContain("force-flag");
+    });
+
+    it("adds force-flag for cp -f (force overwrite)", () => {
+      const r = computeRiskScore("exec", { command: "cp -f src.txt dst.txt" });
+      expect(r.tags).toContain("force-flag");
+    });
+
+    it("adds force-flag for mv -f (force overwrite)", () => {
+      const r = computeRiskScore("exec", { command: "mv -f old.txt new.txt" });
+      expect(r.tags).toContain("force-flag");
+    });
+
     it("adds deployment tag for git push", () => {
       const r = computeRiskScore("exec", { command: "git push origin main" });
       expect(r.tags).toContain("deployment");

@@ -74,10 +74,17 @@ export interface AgentInfo {
   currentContext?: string;
   riskPosture: RiskPosture;
   activityBreakdown: Record<ActivityCategory, number>;
+  todayActivityBreakdown: Record<ActivityCategory, number>;
   latestAction?: string;
   latestActionTime?: string;
   needsAttention: boolean;
   attentionReason?: string;
+}
+
+export interface ToolSummaryItem {
+  toolName: string;
+  category: ActivityCategory;
+  count: number;
 }
 
 export interface SessionInfo {
@@ -92,6 +99,8 @@ export interface SessionInfo {
   activityBreakdown: Record<ActivityCategory, number>;
   blockedCount: number;
   context?: string;
+  toolSummary: ToolSummaryItem[];
+  riskSparkline: number[];
 }
 
 export interface RiskTrendPoint {
@@ -102,6 +111,7 @@ export interface RiskTrendPoint {
 
 export interface AgentDetailResponse {
   agent: AgentInfo;
+  currentSessionActivity: EntryResponse[];
   recentActivity: EntryResponse[];
   sessions: SessionInfo[];
   totalSessions: number;

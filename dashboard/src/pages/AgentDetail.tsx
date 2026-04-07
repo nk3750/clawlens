@@ -40,12 +40,11 @@ export default function AgentDetail() {
     );
   }
 
-  const { agent, recentActivity, sessions, riskTrend } = data;
+  const { agent, currentSessionActivity, recentActivity, sessions, riskTrend } = data;
 
   // Session stats from current session entries
-  const currentSessionKey = agent.currentSession?.sessionKey;
-  const sessionEntries = currentSessionKey
-    ? recentActivity.filter((e) => e.sessionKey === currentSessionKey)
+  const sessionEntries = currentSessionActivity.length > 0
+    ? currentSessionActivity
     : recentActivity;
   const scores = sessionEntries
     .filter((e) => e.riskScore != null)
@@ -87,10 +86,10 @@ export default function AgentDetail() {
             className="label-mono mb-5"
             style={{ color: "var(--cl-text-muted)" }}
           >
-            ACTIVITY PROFILE
+            TODAY'S ACTIVITY
           </h2>
           <ActivityProfile
-            breakdown={agent.activityBreakdown}
+            breakdown={agent.todayActivityBreakdown}
             sessionActions={agent.currentSession?.toolCallCount}
             todayActions={agent.todayToolCalls}
           />
@@ -99,7 +98,7 @@ export default function AgentDetail() {
 
       <div className="cl-divider mb-10" />
 
-      {/* Activity stream */}
+      {/* Activity stream — current session only */}
       <section className="mb-10">
         <h2
           className="label-mono mb-5"
@@ -107,7 +106,13 @@ export default function AgentDetail() {
         >
           CURRENT SESSION
         </h2>
-        <ActivityStream entries={recentActivity} />
+        {agent.currentSession && currentSessionActivity.length > 0 ? (
+          <ActivityStream entries={currentSessionActivity} />
+        ) : (
+          <p className="text-sm py-6" style={{ color: "var(--cl-text-muted)" }}>
+            No active session
+          </p>
+        )}
       </section>
 
       {/* Past sessions */}

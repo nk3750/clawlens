@@ -86,10 +86,17 @@ export interface AgentInfo {
   currentContext?: string;
   riskPosture: RiskPosture;
   activityBreakdown: Record<ActivityCategory, number>;
+  todayActivityBreakdown: Record<ActivityCategory, number>;
   latestAction?: string;
   latestActionTime?: string;
   needsAttention: boolean;
   attentionReason?: string;
+}
+
+export interface ToolSummaryItem {
+  toolName: string;
+  category: ActivityCategory;
+  count: number;
 }
 
 export interface SessionInfo {
@@ -104,10 +111,13 @@ export interface SessionInfo {
   activityBreakdown: Record<ActivityCategory, number>;
   blockedCount: number;
   context?: string;
+  toolSummary: ToolSummaryItem[];
+  riskSparkline: number[];
 }
 
 export interface AgentDetailResponse {
   agent: AgentInfo;
+  currentSessionActivity: EntryResponse[];
   recentActivity: EntryResponse[];
   sessions: SessionInfo[];
   totalSessions: number;
@@ -250,6 +260,35 @@ function buildSessionInfo(
     if (eff === "block" || eff === "denied") blockedCount++;
   }
 
+  // Tool summary: count by toolName, top 5
+  const toolCounts = new Map<string, number>();
+  for (const e of decisions) {
+    toolCounts.set(e.toolName, (toolCounts.get(e.toolName) || 0) + 1);
+  }
+  const toolSummary = [...toolCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([toolName, count]) => ({
+      toolName,
+      category: getCategory(toolName),
+      count,
+    }));
+
+  // Risk sparkline: chronological risk scores, max 20 points (sampled evenly)
+  const chronoScores = sorted
+    .filter((e) => e.riskScore !== undefined)
+    .map((e) => e.riskScore!);
+  let riskSparkline: number[];
+  if (chronoScores.length <= 20) {
+    riskSparkline = chronoScores;
+  } else {
+    riskSparkline = [];
+    for (let i = 0; i < 20; i++) {
+      const idx = Math.round((i * (chronoScores.length - 1)) / 19);
+      riskSparkline.push(chronoScores[idx]);
+    }
+  }
+
   return {
     sessionKey,
     agentId: entries.find((e) => e.agentId)?.agentId || "default",
@@ -262,6 +301,8 @@ function buildSessionInfo(
     activityBreakdown: computeBreakdown(decisions),
     blockedCount,
     context: parseSessionContext(sessionKey),
+    toolSummary,
+    riskSparkline,
   };
 }
 
@@ -550,6 +591,9 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       : todayDecisions;
     const activityBreakdown = computeBreakdown(breakdownEntries);
 
+    // Today's activity breakdown (full day, for agent detail page)
+    const todayActivityBreakdown = computeBreakdown(todayDecisions);
+
     // Latest action
     const latestDecision = agentEntries
       .filter(isDecisionEntry)
@@ -611,6 +655,7 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       currentContext,
       riskPosture: agentPosture,
       activityBreakdown,
+      todayActivityBreakdown,
       latestAction,
       latestActionTime,
       needsAttention,
@@ -649,6 +694,15 @@ export function getAgentDetail(
     .slice(0, 20)
     .map((e) => mapEntry(e, evalIdx));
 
+  // Current session activity: entries filtered to current session only
+  const currentSessionKey = agent.currentSession?.sessionKey;
+  const currentSessionActivity = currentSessionKey
+    ? agentEntries
+        .filter((e) => e.sessionKey === currentSessionKey && isDecisionEntry(e))
+        .reverse()
+        .map((e) => mapEntry(e, evalIdx))
+    : [];
+
   const sessionMap = groupBySessions(agentEntries);
   const allSessions: SessionInfo[] = [];
   for (const [key, sEntries] of sessionMap) {
@@ -682,6 +736,7 @@ export function getAgentDetail(
 
   return {
     agent,
+    currentSessionActivity,
     recentActivity,
     sessions: allSessions.slice(0, 10),
     totalSessions: allSessions.length,

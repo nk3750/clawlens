@@ -646,6 +646,13 @@ describe("parseExecCommand", () => {
       expect(parsed.category).toBe("scripting");
     });
 
+    it("test -f parses -f as a flag on test (file existence)", () => {
+      const parsed = parseExecCommand('test -f "/opt/homebrew/bin/railway" && echo "found"');
+      expect(parsed.primaryCommand).toBe("test");
+      expect(parsed.flags).toContain("-f");
+      expect(parsed.category).toBe("unknown-exec");
+    });
+
     it("curl localhost:18789/health should NOT be network-write or high risk", () => {
       const result = getExecCategory("curl -s localhost:18789/health");
       expect(result.category).toBe("network-read");

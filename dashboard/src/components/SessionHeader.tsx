@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import type { SessionInfo } from "../lib/types";
-import { formatDuration, riskTierFromScore, riskColor } from "../lib/utils";
+import { formatDuration, riskTierFromScore, riskColor, CATEGORY_META } from "../lib/utils";
 import GradientAvatar from "./GradientAvatar";
 import ActivityBar from "./ActivityBar";
+import { useSessionSummary } from "../hooks/useSessionSummary";
 
 interface Props {
   session: SessionInfo;
@@ -26,6 +27,8 @@ function StatCard({ label, value, color }: { label: string; value: string; color
 
 export default function SessionHeader({ session }: Props) {
   const tier = riskTierFromScore(session.peakRisk);
+  const { summary, loading: summaryLoading } = useSessionSummary(session.sessionKey);
+  const tools = (session.toolSummary ?? []).slice(0, 5);
 
   return (
     <div className="mb-8">
@@ -117,6 +120,53 @@ export default function SessionHeader({ session }: Props) {
           <span className="label-mono" style={{ color: "#f87171" }}>
             {session.blockedCount} action{session.blockedCount > 1 ? "s" : ""} blocked
           </span>
+        </div>
+      )}
+
+      {/* AI summary */}
+      {summaryLoading ? (
+        <div
+          className="rounded mb-4"
+          style={{
+            height: "1rem",
+            width: "60%",
+            backgroundColor: "var(--cl-surface-raised)",
+            animation: "pulse 1.5s ease-in-out infinite",
+          }}
+        />
+      ) : summary ? (
+        <div
+          className="px-4 py-3 rounded-lg mb-4"
+          style={{
+            backgroundColor: "var(--cl-surface-raised)",
+            border: "1px solid var(--cl-border)",
+          }}
+        >
+          <p className="text-sm italic" style={{ color: "var(--cl-text-secondary)" }}>
+            {summary}
+          </p>
+        </div>
+      ) : null}
+
+      {/* Tool breakdown */}
+      {tools.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap mb-4" style={{ fontSize: "12px" }}>
+          {tools.map((t) => {
+            const meta = CATEGORY_META[t.category];
+            return (
+              <span
+                key={t.toolName}
+                className="flex items-center gap-1 font-mono"
+                style={{ color: meta?.color ?? "var(--cl-text-muted)" }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={meta?.iconPath ?? ""} />
+                </svg>
+                {t.toolName}
+                <span style={{ color: "var(--cl-text-muted)" }}>{"\u00d7"}{t.count}</span>
+              </span>
+            );
+          })}
         </div>
       )}
 

@@ -18,11 +18,14 @@ import {
 import type { ActivityCategory } from "./categories";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
+import { getSessionSummary } from "./session-summary";
+import type { ClawLensConfig } from "../config";
 
 export interface DashboardDeps {
   engine: PolicyEngine;
   auditLogger: AuditLogger;
   pluginDir?: string;
+  config?: ClawLensConfig;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -138,6 +141,24 @@ export function registerDashboardRoutes(
         );
         const entries = deps.auditLogger.readEntries();
         sendJson(res, getSessions(entries, agentId, limit, offset));
+        return true;
+      }
+
+      const summaryMatch = subPath.match(/^api\/session\/(.+)\/summary$/);
+      if (summaryMatch) {
+        const sessionKey = decodeURIComponent(summaryMatch[1]);
+        const entries = deps.auditLogger.readEntries();
+        const riskConfig = deps.config?.risk ?? { llmModel: "claude-haiku-4-5-20251001", llmApiKeyEnv: "ANTHROPIC_API_KEY" };
+        const summary = await getSessionSummary(sessionKey, entries, {
+          llmModel: riskConfig.llmModel,
+          llmApiKeyEnv: riskConfig.llmApiKeyEnv,
+        });
+        if (!summary) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Session not found" }));
+          return true;
+        }
+        sendJson(res, summary);
         return true;
       }
 

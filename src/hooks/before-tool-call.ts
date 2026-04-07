@@ -132,8 +132,25 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
               model: config.risk.llmModel,
             },
           ).then((evaluation) => {
-            // Skip writing stub evaluations to audit log
-            if (evaluation.reasoning?.includes("Stub evaluation")) return;
+            // For stub evaluations, write a minimal entry so the dashboard
+            // can show "AI assessment unavailable" rather than nothing
+            if (evaluation.reasoning?.includes("Stub evaluation")) {
+              auditLogger.appendEvaluation({
+                refToolCallId: toolCallId,
+                toolName,
+                llmEvaluation: {
+                  adjustedScore: risk.score,
+                  reasoning: "LLM evaluation unavailable",
+                  tags: risk.tags,
+                  confidence: "none" as string,
+                  patterns: [],
+                },
+                riskScore: risk.score,
+                riskTier: getTierFromScore(risk.score),
+                riskTags: risk.tags,
+              });
+              return;
+            }
 
             auditLogger.appendEvaluation({
               refToolCallId: toolCallId,
@@ -173,9 +190,26 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
               sendAlert(msg, alertSend);
             }
           }).catch((err) => {
-            console.error(
-              `ClawLens: LLM eval failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logger?.warn(`ClawLens: LLM eval failed for ${toolName}: ${errMsg}`);
+            try {
+              auditLogger.appendEvaluation({
+                refToolCallId: toolCallId,
+                toolName,
+                llmEvaluation: {
+                  adjustedScore: risk.score,
+                  reasoning: `LLM evaluation failed: ${errMsg}`,
+                  tags: risk.tags,
+                  confidence: "none" as string,
+                  patterns: [],
+                },
+                riskScore: risk.score,
+                riskTier: getTierFromScore(risk.score),
+                riskTags: risk.tags,
+              });
+            } catch {
+              // Last resort — don't let audit write failure crash the process
+            }
           });
         }
       }
