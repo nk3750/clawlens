@@ -62,6 +62,11 @@ export interface OpenClawPluginDefinition {
   register?: (api: OpenClawPluginApi) => void | Promise<void>;
 }
 
+export interface ModelAuth {
+  resolveApiKeyForProvider(provider: string): Promise<string>;
+  getApiKeyForModel(model: string): Promise<string>;
+}
+
 export interface BeforeToolCallEvent {
   toolName: string;
   params: Record<string, unknown>;

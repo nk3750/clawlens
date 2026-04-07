@@ -116,7 +116,7 @@ describe("getSessionSummary", () => {
     expect(result!.summary).toContain("exploration");
   });
 
-  it("falls back to template when no API key", async () => {
+  it("falls back to template when no API key and no modelAuth", async () => {
     // 3+ entries would try LLM, but no key → falls back to template
     const entries = Array.from({ length: 5 }, (_, i) =>
       entry({
@@ -140,6 +140,44 @@ describe("getSessionSummary", () => {
     expect(result!.summary).toMatch(/Ran \d+ command action/);
 
     // Restore
+    if (original !== undefined) {
+      process.env.ANTHROPIC_API_KEY = original;
+    }
+  });
+
+  it("attempts modelAuth before env var for summary generation", async () => {
+    // modelAuth rejects, no env var → should still fall back to template
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    const original = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const modelAuth = {
+      resolveApiKeyForProvider: vi.fn().mockRejectedValue(new Error("Not resolved")),
+      getApiKeyForModel: vi.fn().mockRejectedValue(new Error("Not resolved")),
+    };
+
+    const result = await getSessionSummary("s1", entries, {
+      llmModel: "claude-haiku-4-5-20251001",
+      llmApiKeyEnv: "ANTHROPIC_API_KEY",
+      modelAuth,
+      provider: "anthropic",
+    });
+
+    // modelAuth was attempted
+    expect(modelAuth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
+    // Falls back to template
+    expect(result).not.toBeNull();
+    expect(result!.summary).toMatch(/Ran \d+ command action/);
+
     if (original !== undefined) {
       process.env.ANTHROPIC_API_KEY = original;
     }

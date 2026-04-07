@@ -1,4 +1,4 @@
-import type { PluginLogger } from "../types";
+import type { ModelAuth, PluginLogger } from "../types";
 import type { SessionAction } from "./session-context";
 import type { LlmRiskEvaluation, RiskScore } from "./types";
 
@@ -68,141 +68,15 @@ export function parseEvalResponse(raw: string): LlmRiskEvaluation | null {
 }
 
 /**
- * Evaluate a tool call with an LLM for deeper risk analysis.
- *
- * Evaluation paths (tried in order):
- *   1. runtime.subagent — OpenClaw's built-in subagent API (works during gateway requests)
- *   2. Direct Anthropic API — via @anthropic-ai/sdk (works everywhere, including cron)
- *   3. Stub fallback — returns tier-1 score unchanged
- *
- * This is fire-and-forget. It does NOT block the tool call.
- * The result updates the audit entry after the fact.
+ * Shared helper: call the Anthropic API with a given key and return parsed eval.
+ * Returns null if the call fails or the response can't be parsed.
  */
-export async function evaluateWithLlm(
-  toolName: string,
-  params: Record<string, unknown>,
-  recentActions: SessionAction[],
-  tier1Score: RiskScore,
-  runtime?: {
-    subagent?: {
-      run?: (opts: unknown) => Promise<unknown>;
-      waitForRun?: (opts: unknown) => Promise<unknown>;
-      getSessionMessages?: (opts: unknown) => Promise<unknown>;
-      deleteSession?: (opts: unknown) => Promise<void>;
-    };
-  },
-  logger?: PluginLogger,
-  directApiConfig?: {
-    apiKeyEnv?: string;
-    model?: string;
-  },
-): Promise<LlmRiskEvaluation> {
-  const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
-
-  // Path 1: Try runtime.subagent (works during gateway requests)
-  const subagent = runtime?.subagent;
-  if (subagent?.run && subagent?.waitForRun && subagent?.getSessionMessages) {
-    const sessionKey = `clawlens:risk-eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-
-    try {
-      // 1. Spawn subagent
-      const idempotencyKey = `clawlens:eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-      const runResult = (await subagent.run({
-        sessionKey,
-        message,
-        extraSystemPrompt: EVAL_SYSTEM_PROMPT,
-        idempotencyKey,
-      })) as { runId: string };
-
-      // 2. Wait for completion (30s timeout)
-      const waitResult = (await subagent.waitForRun({
-        runId: runResult.runId,
-        timeoutMs: 30_000,
-      })) as { status: string; error?: string };
-
-      if (waitResult.status !== "ok") {
-        logger?.warn(
-          `ClawLens: LLM eval subagent failed: ${waitResult.status} ${waitResult.error || ""}`,
-        );
-        // Fall through to direct API
-      } else {
-        // 3. Get response messages
-        const messagesResult = (await subagent.getSessionMessages({
-          sessionKey,
-          limit: 5,
-        })) as { messages: unknown[] };
-
-        // Find the assistant's response — last message with content
-        const assistantMsg = [...messagesResult.messages].reverse().find((m: unknown) => {
-          const msg = m as Record<string, unknown>;
-          return msg.role === "assistant" && msg.content;
-        }) as Record<string, unknown> | undefined;
-
-        if (assistantMsg?.content) {
-          let raw: string;
-          if (typeof assistantMsg.content === "string") {
-            raw = assistantMsg.content;
-          } else if (Array.isArray(assistantMsg.content)) {
-            // Anthropic content block format: [{type: "text", text: "..."}]
-            raw = (assistantMsg.content as Array<Record<string, unknown>>)
-              .filter((b) => b.type === "text" && typeof b.text === "string")
-              .map((b) => b.text as string)
-              .join("\n");
-          } else {
-            raw = JSON.stringify(assistantMsg.content);
-          }
-          const parsed = parseEvalResponse(raw);
-          if (parsed) {
-            // 4. Cleanup session
-            subagent.deleteSession?.({ sessionKey }).catch(() => {});
-            return parsed;
-          }
-        }
-
-        logger?.warn("ClawLens: LLM eval returned unparseable response, trying direct API");
-        subagent.deleteSession?.({ sessionKey }).catch(() => {});
-      }
-    } catch (err) {
-      logger?.warn(
-        `ClawLens: LLM eval via subagent failed: ${err instanceof Error ? err.message : String(err)}, trying direct API`,
-      );
-      // Best-effort cleanup
-      subagent.deleteSession?.({ sessionKey }).catch(() => {});
-    }
-  }
-
-  // Path 2: Direct Anthropic API fallback (works in cron and everywhere)
-  const directResult = await evaluateWithDirectApi(message, logger, directApiConfig);
-  if (directResult) {
-    return directResult;
-  }
-
-  // Path 3: Stub fallback
-  return fallbackStub(tier1Score);
-}
-
-/**
- * Evaluate via the Anthropic SDK directly. Used as fallback when
- * runtime.subagent is unavailable (e.g., cron sessions).
- */
-async function evaluateWithDirectApi(
+export async function callAnthropicApi(
+  apiKey: string,
+  model: string,
   message: string,
   logger?: PluginLogger,
-  config?: {
-    apiKeyEnv?: string;
-    model?: string;
-  },
 ): Promise<LlmRiskEvaluation | null> {
-  const envVar = config?.apiKeyEnv || "ANTHROPIC_API_KEY";
-  const apiKey = process.env[envVar];
-
-  if (!apiKey) {
-    logger?.warn(`ClawLens: Direct API fallback unavailable — ${envVar} not set`);
-    return null;
-  }
-
-  const model = config?.model || "claude-haiku-4-5-20251001";
-
   try {
     // Dynamic import to avoid hard failure if SDK not installed
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
@@ -241,10 +115,149 @@ async function evaluateWithDirectApi(
   }
 }
 
+/**
+ * Evaluate a tool call with an LLM for deeper risk analysis.
+ *
+ * Evaluation paths (tried in order):
+ *   1. Direct API via modelAuth — resolves key from OpenClaw's auth system (works everywhere)
+ *   2. Direct API via explicit env var — optional override, backward compat
+ *   3. runtime.subagent — best-effort, works during gateway request batch only
+ *   4. Stub fallback — returns tier-1 score unchanged
+ *
+ * This is fire-and-forget. It does NOT block the tool call.
+ * The result updates the audit entry after the fact.
+ */
+export async function evaluateWithLlm(
+  toolName: string,
+  params: Record<string, unknown>,
+  recentActions: SessionAction[],
+  tier1Score: RiskScore,
+  runtime?: {
+    subagent?: {
+      run?: (opts: unknown) => Promise<unknown>;
+      waitForRun?: (opts: unknown) => Promise<unknown>;
+      getSessionMessages?: (opts: unknown) => Promise<unknown>;
+      deleteSession?: (opts: unknown) => Promise<void>;
+    };
+    modelAuth?: ModelAuth;
+  },
+  logger?: PluginLogger,
+  directApiConfig?: {
+    apiKeyEnv?: string;
+    model?: string;
+    provider?: string;
+  },
+): Promise<LlmRiskEvaluation> {
+  const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
+  const model = directApiConfig?.model || "claude-haiku-4-5-20251001";
+
+  // Path 1: Direct API via modelAuth-resolved key (works everywhere, any point in the turn)
+  if (runtime?.modelAuth && directApiConfig?.provider) {
+    try {
+      const apiKey = await runtime.modelAuth.resolveApiKeyForProvider(directApiConfig.provider);
+      const result = await callAnthropicApi(apiKey, model, message, logger);
+      if (result) return result;
+      logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+    } catch (err) {
+      logger?.warn(
+        `ClawLens: modelAuth key resolution failed: ${err instanceof Error ? err.message : String(err)}, falling through to env var`,
+      );
+    }
+  }
+
+  // Path 2: Direct API via explicit env var (backward compat / optional override)
+  const envVar = directApiConfig?.apiKeyEnv || "ANTHROPIC_API_KEY";
+  const envApiKey = process.env[envVar];
+  if (envApiKey) {
+    const result = await callAnthropicApi(envApiKey, model, message, logger);
+    if (result) return result;
+    logger?.warn("ClawLens: env var API call returned no result, falling through to subagent");
+  } else {
+    logger?.warn(`ClawLens: ${envVar} not set, falling through to subagent`);
+  }
+
+  // Path 3: Subagent (best-effort, entire block in try — fixes P0 bug)
+  try {
+    const subagent = runtime?.subagent;
+    if (subagent?.run && subagent?.waitForRun && subagent?.getSessionMessages) {
+      const sessionKey = `clawlens:risk-eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+
+      // 1. Spawn subagent
+      const idempotencyKey = `clawlens:eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const runResult = (await subagent.run({
+        sessionKey,
+        message,
+        extraSystemPrompt: EVAL_SYSTEM_PROMPT,
+        idempotencyKey,
+      })) as { runId: string };
+
+      // 2. Wait for completion (30s timeout)
+      const waitResult = (await subagent.waitForRun({
+        runId: runResult.runId,
+        timeoutMs: 30_000,
+      })) as { status: string; error?: string };
+
+      if (waitResult.status !== "ok") {
+        logger?.warn(
+          `ClawLens: LLM eval subagent failed: ${waitResult.status} ${waitResult.error || ""}, falling through to stub`,
+        );
+      } else {
+        // 3. Get response messages
+        const messagesResult = (await subagent.getSessionMessages({
+          sessionKey,
+          limit: 5,
+        })) as { messages: unknown[] };
+
+        // Find the assistant's response — last message with content
+        const assistantMsg = [...messagesResult.messages].reverse().find((m: unknown) => {
+          const msg = m as Record<string, unknown>;
+          return msg.role === "assistant" && msg.content;
+        }) as Record<string, unknown> | undefined;
+
+        if (assistantMsg?.content) {
+          let raw: string;
+          if (typeof assistantMsg.content === "string") {
+            raw = assistantMsg.content;
+          } else if (Array.isArray(assistantMsg.content)) {
+            // Anthropic content block format: [{type: "text", text: "..."}]
+            raw = (assistantMsg.content as Array<Record<string, unknown>>)
+              .filter(
+                (b: Record<string, unknown>) => b.type === "text" && typeof b.text === "string",
+              )
+              .map((b: Record<string, unknown>) => b.text as string)
+              .join("\n");
+          } else {
+            raw = JSON.stringify(assistantMsg.content);
+          }
+          const parsed = parseEvalResponse(raw);
+          if (parsed) {
+            // 4. Cleanup session
+            subagent.deleteSession?.({ sessionKey }).catch(() => {});
+            return parsed;
+          }
+        }
+
+        logger?.warn(
+          "ClawLens: LLM eval returned unparseable response via subagent, falling through to stub",
+        );
+        subagent.deleteSession?.({ sessionKey }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    logger?.warn(
+      `ClawLens: LLM eval via subagent failed: ${err instanceof Error ? err.message : String(err)}, falling through to stub`,
+    );
+  }
+
+  // Path 4: Stub fallback — returns tier-1 score unchanged
+  logger?.warn("ClawLens: All eval paths exhausted, returning stub");
+  return fallbackStub(tier1Score);
+}
+
 function fallbackStub(tier1Score: RiskScore): LlmRiskEvaluation {
   return {
     adjustedScore: tier1Score.score,
-    reasoning: "Stub evaluation — LLM subagent not available",
+    reasoning: "Stub evaluation — LLM evaluation unavailable",
     tags: [...tier1Score.tags],
     confidence: "low",
     patterns: [],

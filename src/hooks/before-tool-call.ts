@@ -8,7 +8,7 @@ import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
 import type { SessionContext } from "../risk/session-context";
 import type { RiskScore } from "../risk/types";
-import type { BeforeToolCallEvent, BeforeToolCallResult } from "../types";
+import type { BeforeToolCallEvent, BeforeToolCallResult, ModelAuth } from "../types";
 
 export interface BeforeToolCallDeps {
   engine: PolicyEngine;
@@ -26,7 +26,9 @@ export interface BeforeToolCallDeps {
       getSessionMessages?: (opts: unknown) => Promise<unknown>;
       deleteSession?: (opts: unknown) => Promise<void>;
     };
+    modelAuth?: ModelAuth;
   };
+  provider?: string;
 }
 
 export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
@@ -40,6 +42,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
     alertSend,
     logger,
     runtime,
+    provider,
   } = deps;
 
   return (
@@ -121,6 +124,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
           evaluateWithLlm(toolName, params, recentActions, risk, runtime, logger, {
             apiKeyEnv: config.risk.llmApiKeyEnv,
             model: config.risk.llmModel,
+            provider,
           })
             .then((evaluation) => {
               // For stub evaluations, write a minimal entry so the dashboard

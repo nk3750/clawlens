@@ -1,4 +1,5 @@
 import type { AuditEntry } from "../audit/logger";
+import type { ModelAuth } from "../types";
 import { describeAction, getCategory } from "./categories";
 
 export interface SessionSummary {
@@ -134,7 +135,7 @@ ${toolLines}`;
 export async function getSessionSummary(
   sessionKey: string,
   entries: AuditEntry[],
-  config: { llmModel: string; llmApiKeyEnv: string },
+  config: { llmModel: string; llmApiKeyEnv: string; modelAuth?: ModelAuth; provider?: string },
 ): Promise<SessionSummary | null> {
   let sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
 
@@ -205,16 +206,32 @@ export async function getSessionSummary(
 async function generateLlmSummary(
   sessionKey: string,
   entries: AuditEntry[],
-  config: { llmModel: string; llmApiKeyEnv: string },
+  config: { llmModel: string; llmApiKeyEnv: string; modelAuth?: ModelAuth; provider?: string },
 ): Promise<SessionSummary | null> {
-  const apiKey = process.env[config.llmApiKeyEnv];
+  const prompt = buildSummaryPrompt(sessionKey, entries);
+
+  // Resolve API key: modelAuth first, then env var
+  let apiKey: string | undefined;
+
+  // Path 1: modelAuth-resolved key
+  if (config.modelAuth && config.provider) {
+    try {
+      apiKey = await config.modelAuth.resolveApiKeyForProvider(config.provider);
+    } catch {
+      // Fall through to env var
+    }
+  }
+
+  // Path 2: explicit env var
+  if (!apiKey) {
+    apiKey = process.env[config.llmApiKeyEnv];
+  }
+
   if (!apiKey) return null;
 
   try {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey });
-
-    const prompt = buildSummaryPrompt(sessionKey, entries);
 
     const response = await Promise.race([
       client.messages.create({

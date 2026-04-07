@@ -14,7 +14,7 @@ import { PolicyLoader } from "./src/policy/loader";
 import { RateLimiter } from "./src/rate/limiter";
 import { EvalCache } from "./src/risk/eval-cache";
 import { SessionContext } from "./src/risk/session-context";
-import type { OpenClawPluginApi, OpenClawPluginDefinition } from "./src/types";
+import type { ModelAuth, OpenClawPluginApi, OpenClawPluginDefinition } from "./src/types";
 
 const plugin: OpenClawPluginDefinition = {
   id: "clawlens",
@@ -59,10 +59,20 @@ const plugin: OpenClawPluginDefinition = {
       );
     }
 
-    // Resolve runtime from OpenClaw plugin API (runtime.subagent used for async LLM eval)
+    // Resolve runtime from OpenClaw plugin API
     const runtime = (api as Record<string, unknown>).runtime as
-      | { subagent?: Record<string, unknown> }
+      | { subagent?: Record<string, unknown>; modelAuth?: ModelAuth }
       | undefined;
+
+    // Resolve provider from OpenClaw auth config (e.g., "anthropic")
+    const authProfiles = (
+      (api.config as Record<string, unknown>).auth as
+        | { profiles?: Record<string, { provider?: string }> }
+        | undefined
+    )?.profiles;
+    const detectedProvider = authProfiles
+      ? Object.values(authProfiles).find((p) => p.provider)?.provider
+      : undefined;
 
     // Wire hooks
     api.on(
@@ -84,8 +94,10 @@ const plugin: OpenClawPluginDefinition = {
                 getSessionMessages?: (opts: unknown) => Promise<unknown>;
                 deleteSession?: (opts: unknown) => Promise<void>;
               };
+              modelAuth?: ModelAuth;
             }
           | undefined,
+        provider: detectedProvider || config.risk.llmProvider,
       }),
       { priority: 100 },
     );
@@ -242,7 +254,14 @@ const plugin: OpenClawPluginDefinition = {
     });
 
     // Dashboard
-    registerDashboardRoutes(api, { engine, auditLogger, pluginDir: __dirname, config });
+    registerDashboardRoutes(api, {
+      engine,
+      auditLogger,
+      pluginDir: __dirname,
+      config,
+      modelAuth: runtime?.modelAuth,
+      provider: detectedProvider || config.risk.llmProvider,
+    });
 
     api.logger.info("ClawLens: Plugin registered");
   },

@@ -17,6 +17,8 @@ export interface ClawLensConfig {
     llmEnabled: boolean;
     llmModel: string;
     llmApiKeyEnv: string;
+    /** Optional override — auto-detected from OpenClaw auth config if not set */
+    llmProvider: string;
   };
   alerts: {
     enabled: boolean;
@@ -43,6 +45,7 @@ export const DEFAULT_CONFIG: ClawLensConfig = {
     llmEnabled: true,
     llmModel: "claude-haiku-4-5-20251001",
     llmApiKeyEnv: "ANTHROPIC_API_KEY",
+    llmProvider: "anthropic",
   },
   alerts: {
     enabled: true,
@@ -90,6 +93,10 @@ export function resolveConfig(
         typeof riskCfg?.llmApiKeyEnv === "string"
           ? riskCfg.llmApiKeyEnv
           : DEFAULT_CONFIG.risk.llmApiKeyEnv,
+      llmProvider:
+        typeof riskCfg?.llmProvider === "string"
+          ? riskCfg.llmProvider
+          : DEFAULT_CONFIG.risk.llmProvider,
     },
     alerts: {
       enabled:
