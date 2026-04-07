@@ -3,7 +3,6 @@ import { useApi } from "../hooks/useApi";
 import type { SessionDetailResponse } from "../lib/types";
 import { groupEntries } from "../lib/groupEntries";
 import SessionHeader from "../components/SessionHeader";
-import SessionRiskLane from "../components/SessionRiskLane";
 import SessionTimeline from "../components/SessionTimeline";
 import ErrorCard from "../components/ErrorCard";
 import { SessionDetailSkeleton } from "../components/Skeleton";
@@ -42,9 +41,6 @@ export default function SessionDetail() {
     <div className="page-enter stagger">
       {/* Lean header: identity + summary + stat strip */}
       <SessionHeader session={session} />
-
-      {/* Risk lane: bird's-eye risk shape */}
-      <SessionRiskLane entries={sorted} />
 
       {/* Unified timeline */}
       <SessionTimeline

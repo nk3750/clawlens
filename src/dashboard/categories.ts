@@ -188,7 +188,8 @@ export function describeAction(entry: {
     case "fetch_url":
     case "web_fetch": {
       const url = typeof params.url === "string" ? params.url : "";
-      return url ? `Fetch ${truncate(url, 50)}` : "Web fetch";
+      if (!url) return "Web fetch";
+      return `Fetch: ${extractUrlDomain(url)}`;
     }
     case "message": {
       const to = typeof params.to === "string" ? params.to : "";
@@ -197,16 +198,15 @@ export function describeAction(entry: {
     case "exec": {
       const cmd = typeof params.command === "string" ? params.command : "";
       if (!cmd) return "Run command";
-      const parsed = parseExecCommand(cmd);
-      const primary = parsed.primaryCommand || cmd.split(/\s+/)[0];
-      // Build a short description from the primary command + first meaningful arg
-      const rest = cmd.slice(cmd.indexOf(primary) + primary.length).trim();
-      const shortRest = truncate(rest, 40);
-      return shortRest ? `Ran ${primary} ${shortRest}` : `Ran ${primary}`;
+      return describeExecAction(cmd);
     }
+    case "memory_get":
+      return "Memory: retrieve";
+    case "memory_search":
+      return "Memory: search";
     case "sessions_spawn": {
       const name = typeof params.agent === "string" ? params.agent : "";
-      return name ? `Spawn agent ${name}` : "Spawn sub-agent";
+      return name ? `Spawn: ${name}` : "Spawn sub-agent";
     }
     case "cron": {
       const name = typeof params.name === "string" ? params.name : "";
@@ -214,11 +214,77 @@ export function describeAction(entry: {
     }
     case "process": {
       const action = typeof params.action === "string" ? params.action : "";
-      return action ? `Process ${action}` : "Process operation";
+      return action ? `Process: ${action}` : "Process operation";
     }
     default:
       return toolName;
   }
+}
+
+function describeExecAction(cmd: string): string {
+  const parsed = parseExecCommand(cmd);
+  const primary = parsed.primaryCommand || cmd.split(/\s+/)[0];
+  const idx = cmd.indexOf(primary);
+  const rest = idx >= 0 ? cmd.slice(idx + primary.length).trim() : "";
+
+  switch (parsed.category) {
+    case "network-read":
+    case "network-write": {
+      if (parsed.urls.length > 0) {
+        return `Network: ${primary} ${extractUrlDomain(parsed.urls[0])}`;
+      }
+      return `Network: ${primary}`;
+    }
+    case "read-only": {
+      const arg = firstNonFlagArg(rest);
+      const name = arg ? lastSegment(arg) : "";
+      return name ? `Read: ${primary} ${name}` : `Read: ${primary}`;
+    }
+    case "search": {
+      const arg = firstNonFlagArg(rest);
+      return arg ? `Search: ${primary} ${truncate(arg, 30)}` : `Search: ${primary}`;
+    }
+    case "system-info":
+      return rest ? `System: ${primary} ${truncate(rest, 25)}` : `System: ${primary}`;
+    case "git-read":
+    case "git-write":
+      return `Git: ${truncate(rest || "command", 35)}`;
+    case "destructive":
+      return rest ? `Destructive: ${primary} ${truncate(rest, 30)}` : `Destructive: ${primary}`;
+    case "scripting":
+      return rest ? `Script: ${primary} ${truncate(rest, 30)}` : `Script: ${primary}`;
+    case "package-mgmt": {
+      const sub = rest.split(/\s+/)[0] || "";
+      return sub ? `Package: ${primary} ${sub}` : `Package: ${primary}`;
+    }
+    default: {
+      const shortRest = truncate(rest, 40);
+      return shortRest ? `Ran ${primary} ${shortRest}` : `Ran ${primary}`;
+    }
+  }
+}
+
+function extractUrlDomain(url: string): string {
+  const localMatch = url.match(/^(localhost|127\.\d+\.\d+\.\d+)(:\d+)?/);
+  if (localMatch) return localMatch[0];
+  try {
+    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return truncate(u.hostname, 45);
+  } catch {
+    return truncate(url, 45);
+  }
+}
+
+function firstNonFlagArg(rest: string): string | undefined {
+  for (const t of rest.split(/\s+/)) {
+    if (t.length > 0 && !t.startsWith("-")) return t;
+  }
+  return undefined;
+}
+
+function lastSegment(path: string): string {
+  const parts = path.split("/");
+  return parts[parts.length - 1] || path;
 }
 
 function extractPath(value: unknown): string | undefined {

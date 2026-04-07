@@ -24,9 +24,38 @@ const NODE_GLOW: Record<string, string> = {
   critical: "12px",
 };
 
+// Extra icon paths not in CATEGORY_META
+const ICON_PATHS = {
+  git: "M15 22v-4a4.8 4.8 0 00-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 004 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4",
+  warning: "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01",
+};
+
+/** Pick the right icon path based on exec sub-category */
+function getIconForEntry(entry: EntryResponse): { path: string; color: string } {
+  const meta = CATEGORY_META[entry.category];
+  const defaultIcon = { path: meta?.iconPath ?? "", color: meta?.color ?? "var(--cl-text-muted)" };
+
+  if (entry.toolName !== "exec" || !entry.execCategory) return defaultIcon;
+
+  switch (entry.execCategory) {
+    case "network-read":
+    case "network-write":
+      return { path: CATEGORY_META.web.iconPath, color: CATEGORY_META.web.color };
+    case "read-only":
+    case "search":
+      return { path: CATEGORY_META.exploring.iconPath, color: CATEGORY_META.exploring.color };
+    case "git-read":
+    case "git-write":
+      return { path: ICON_PATHS.git, color: "var(--cl-cat-commands)" };
+    case "destructive":
+      return { path: ICON_PATHS.warning, color: "var(--cl-risk-high)" };
+    default:
+      return defaultIcon;
+  }
+}
+
 export default function TimelineNode({ entry, index, defaultExpanded = false }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const meta = CATEGORY_META[entry.category];
 
   const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : "low";
   const color = riskColorRaw(tier);
@@ -34,6 +63,8 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
   const glow = NODE_GLOW[tier];
   const isBlocked = entry.effectiveDecision === "block" || entry.effectiveDecision === "denied";
   const showBadge = entry.effectiveDecision && entry.effectiveDecision !== "allow";
+  const icon = getIconForEntry(entry);
+  const tags = entry.riskTags?.slice(0, 2) ?? [];
 
   // Background tint for high risk / blocked rows
   let rowBg = "transparent";
@@ -61,7 +92,6 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
           animation: tier === "critical" ? "pulse 2s ease-in-out infinite" : undefined,
         }}
       >
-        {/* X overlay for blocked */}
         {isBlocked && (
           <svg
             width={nodeSize - 4}
@@ -88,13 +118,13 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             height="14"
             viewBox="0 0 24 24"
             fill="none"
-            stroke={meta?.color ?? "var(--cl-text-muted)"}
+            stroke={icon.color}
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
             className="shrink-0"
           >
-            <path d={meta?.iconPath ?? ""} />
+            <path d={icon.path} />
           </svg>
 
           {/* Description */}
@@ -105,6 +135,25 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             {describeEntry(entry)}
           </span>
 
+          {/* Inline risk tags */}
+          {tags.length > 0 && (
+            <span className="hidden md:flex items-center gap-1 shrink-0">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="label-mono px-1.5 py-0.5 rounded"
+                  style={{
+                    fontSize: "10px",
+                    backgroundColor: "var(--cl-accent-7)",
+                    color: "var(--cl-text-secondary)",
+                  }}
+                >
+                  {tag.toUpperCase()}
+                </span>
+              ))}
+            </span>
+          )}
+
           {/* Decision badge */}
           {showBadge && (
             <span className="shrink-0">
@@ -112,7 +161,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             </span>
           )}
 
-          {/* Risk dot + score + AI indicator */}
+          {/* Risk dot + score + AI sparkle */}
           {entry.riskScore != null && (
             <span className="flex items-center gap-1.5 shrink-0">
               <span
@@ -126,16 +175,15 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
                 {entry.riskScore}
               </span>
               {entry.llmEvaluation && (
-                <span
-                  className="font-mono font-semibold"
-                  style={{
-                    fontSize: "9px",
-                    color: "var(--cl-accent)",
-                    letterSpacing: "0.05em",
-                  }}
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="var(--cl-accent)"
+                  className="shrink-0"
                 >
-                  AI
-                </span>
+                  <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
+                </svg>
               )}
             </span>
           )}

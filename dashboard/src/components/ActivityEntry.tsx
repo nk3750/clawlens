@@ -66,12 +66,9 @@ export default function ActivityEntry({ entry, description }: Props) {
               {entry.riskScore}
             </span>
             {entry.llmEvaluation && (
-              <span
-                className="font-mono font-semibold"
-                style={{ fontSize: "9px", color: "var(--cl-accent)", letterSpacing: "0.05em" }}
-              >
-                AI
-              </span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--cl-accent)" className="shrink-0">
+                <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
+              </svg>
             )}
           </span>
         )}

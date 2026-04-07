@@ -56,7 +56,10 @@ export interface EntryResponse {
   agentId?: string;
   sessionKey?: string;
   category: ActivityCategory;
+  /** Exec sub-category (only set for exec tool calls). */
+  execCategory?: string;
 }
+
 
 export interface AgentInfo {
   id: string;

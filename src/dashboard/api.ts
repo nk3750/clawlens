@@ -1,5 +1,6 @@
 import type { AuditEntry } from "../audit/logger";
 import { AuditLogger } from "../audit/logger";
+import { parseExecCommand } from "../risk/exec-parser";
 import {
   type ActivityCategory,
   computeBreakdown,
@@ -62,6 +63,8 @@ export interface EntryResponse {
   agentId?: string;
   sessionKey?: string;
   category: ActivityCategory;
+  /** Exec sub-category from parseExecCommand (only set for exec tool calls). */
+  execCategory?: string;
 }
 
 export interface HealthResponse {
@@ -216,6 +219,10 @@ function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>): Entry
     agentId: entry.agentId,
     sessionKey: entry.sessionKey,
     category: getCategory(entry.toolName),
+    execCategory:
+      entry.toolName === "exec" && typeof entry.params.command === "string"
+        ? parseExecCommand(entry.params.command).category
+        : undefined,
   };
 }
 

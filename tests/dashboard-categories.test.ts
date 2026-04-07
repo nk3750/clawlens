@@ -150,7 +150,7 @@ describe("describeAction", () => {
     );
   });
 
-  it("describes exec with command", () => {
+  it("describes exec with command (unknown-exec)", () => {
     const result = describeAction({
       toolName: "exec",
       params: { command: "npm test" },
@@ -158,12 +158,81 @@ describe("describeAction", () => {
     expect(result).toBe("Ran npm test");
   });
 
-  it("describes exec with complex command", () => {
+  it("describes exec read-only with category label", () => {
     const result = describeAction({
       toolName: "exec",
       params: { command: "cat /etc/hosts" },
     });
-    expect(result).toBe("Ran cat /etc/hosts");
+    expect(result).toBe("Read: cat hosts");
+  });
+
+  it("describes exec read-only tail", () => {
+    expect(
+      describeAction({
+        toolName: "exec",
+        params: { command: "tail -10 ~/logs/growth-activity.jsonl" },
+      }),
+    ).toBe("Read: tail growth-activity.jsonl");
+  });
+
+  it("describes exec network-read with domain", () => {
+    expect(
+      describeAction({
+        toolName: "exec",
+        params: {
+          command: "curl -s -m 5 https://streambuddy-production.up.railway.app/v1/healthz",
+        },
+      }),
+    ).toBe("Network: curl streambuddy-production.up.railway.app");
+  });
+
+  it("describes exec network-read localhost", () => {
+    expect(
+      describeAction({ toolName: "exec", params: { command: "curl -s localhost:18789/health" } }),
+    ).toBe("Network: curl localhost:18789");
+  });
+
+  it("describes exec git-write", () => {
+    expect(describeAction({ toolName: "exec", params: { command: "git push --force" } })).toBe(
+      "Git: push --force",
+    );
+  });
+
+  it("describes exec git-read", () => {
+    expect(describeAction({ toolName: "exec", params: { command: "git status" } })).toBe(
+      "Git: status",
+    );
+  });
+
+  it("describes exec destructive", () => {
+    const result = describeAction({ toolName: "exec", params: { command: "rm -rf /tmp/foo" } });
+    expect(result).toBe("Destructive: rm -rf /tmp/foo");
+  });
+
+  it("describes exec scripting", () => {
+    const result = describeAction({
+      toolName: "exec",
+      params: { command: "python3 -c \"print('hello')\"" },
+    });
+    expect(result).toMatch(/^Script: python3/);
+  });
+
+  it("describes exec system-info", () => {
+    expect(describeAction({ toolName: "exec", params: { command: "df -h" } })).toBe(
+      "System: df -h",
+    );
+  });
+
+  it("describes exec package-mgmt", () => {
+    expect(describeAction({ toolName: "exec", params: { command: "npm install lodash" } })).toBe(
+      "Package: npm install",
+    );
+  });
+
+  it("describes exec search", () => {
+    expect(describeAction({ toolName: "exec", params: { command: "grep -r TODO src/" } })).toBe(
+      "Search: grep TODO",
+    );
   });
 
   it("truncates long commands", () => {
@@ -198,6 +267,32 @@ describe("describeAction", () => {
 
   it("returns tool name for unknown tools", () => {
     expect(describeAction({ toolName: "custom_tool", params: {} })).toBe("custom_tool");
+  });
+
+  it("describes memory_get", () => {
+    expect(describeAction({ toolName: "memory_get", params: {} })).toBe("Memory: retrieve");
+  });
+
+  it("describes memory_search", () => {
+    expect(describeAction({ toolName: "memory_search", params: {} })).toBe("Memory: search");
+  });
+
+  it("describes sessions_spawn with agent name", () => {
+    expect(describeAction({ toolName: "sessions_spawn", params: { agent: "debugger" } })).toBe(
+      "Spawn: debugger",
+    );
+  });
+
+  it("describes fetch_url with domain", () => {
+    expect(
+      describeAction({ toolName: "fetch_url", params: { url: "https://api.example.com/data" } }),
+    ).toBe("Fetch: api.example.com");
+  });
+
+  it("describes process with action", () => {
+    expect(describeAction({ toolName: "process", params: { action: "poll" } })).toBe(
+      "Process: poll",
+    );
   });
 });
 
