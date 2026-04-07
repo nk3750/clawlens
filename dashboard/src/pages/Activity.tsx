@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
 import type { EntryResponse, StatsResponse, AgentInfo } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw, CATEGORY_META } from "../lib/utils";
+import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon } from "../lib/utils";
+import { describeEntry } from "../lib/groupEntries";
 import GradientAvatar from "../components/GradientAvatar";
 import DecisionBadge from "../components/DecisionBadge";
 import FilterBar, { type FilterState } from "../components/FilterBar";
@@ -44,20 +45,6 @@ function matchesFilters(entry: EntryResponse, filters: FilterState): boolean {
   return true;
 }
 
-function describeEntry(e: EntryResponse): string {
-  const p = e.params;
-  switch (e.toolName) {
-    case "read": return p.path ? `Read ${p.path}` : "Read file";
-    case "write": return p.path ? `Wrote ${p.path}` : "Wrote file";
-    case "edit": return p.path ? `Edited ${p.path}` : "Edited file";
-    case "exec": return p.command ? `Ran \`${String(p.command).slice(0, 40)}\`` : "Executed command";
-    case "message": return p.subject ? `Sent "${p.subject}"` : "Sent message";
-    case "fetch_url": return p.url ? `Fetched ${String(p.url).slice(0, 40)}` : "Fetched URL";
-    case "grep": return p.pattern ? `Searched "${p.pattern}"` : "Searched";
-    case "glob": return p.pattern ? `Scanned ${p.pattern}` : "Scanned files";
-    default: return e.toolName;
-  }
-}
 
 export default function Activity() {
   const [entries, setEntries] = useState<EntryResponse[]>([]);
@@ -198,7 +185,8 @@ export default function Activity() {
             const isNew = newIds.has(id);
             const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : null;
             const dotColor = tier ? riskColorRaw(tier) : null;
-            const meta = CATEGORY_META[entry.category];
+            const icon = entryIcon(entry);
+            const tags = deriveTags(entry);
             const showBadge = entry.effectiveDecision && entry.effectiveDecision !== "allow";
 
             return (
@@ -219,19 +207,19 @@ export default function Activity() {
                   </Link>
                 )}
 
-                {/* Category icon */}
+                {/* Category icon (exec sub-category aware) */}
                 <svg
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke={meta?.color ?? "var(--cl-text-muted)"}
+                  stroke={icon.color}
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   className="shrink-0"
                 >
-                  <path d={meta?.iconPath ?? ""} />
+                  <path d={icon.path} />
                 </svg>
 
                 {/* Content */}
@@ -250,8 +238,27 @@ export default function Activity() {
                   </span>
                 </div>
 
-                {/* Risk dot */}
-                {entry.riskScore != null && dotColor && (
+                {/* Inline tags */}
+                {tags.length > 0 && (
+                  <span className="hidden lg:flex items-center gap-1 shrink-0">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="label-mono px-1.5 py-0.5 rounded"
+                        style={{
+                          fontSize: "10px",
+                          backgroundColor: "var(--cl-accent-7)",
+                          color: "var(--cl-text-secondary)",
+                        }}
+                      >
+                        {tag.toUpperCase()}
+                      </span>
+                    ))}
+                  </span>
+                )}
+
+                {/* Risk dot + score + tier */}
+                {entry.riskScore != null && dotColor && tier && (
                   <span className="flex items-center gap-1 shrink-0">
                     <span
                       className="inline-block w-1.5 h-1.5 rounded-full"
@@ -262,6 +269,9 @@ export default function Activity() {
                     />
                     <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
                       {entry.riskScore}
+                    </span>
+                    <span className="label-mono shrink-0" style={{ color: dotColor }}>
+                      {tier.toUpperCase()}
                     </span>
                   </span>
                 )}

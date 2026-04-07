@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { EntryResponse } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw, CATEGORY_META } from "../lib/utils";
+import { relTime, riskTierFromScore, riskColorRaw, entryIcon } from "../lib/utils";
 import { groupEntries, describeEntry, groupVerb, type EntryGroup } from "../lib/groupEntries";
 import ActivityEntry from "./ActivityEntry";
 
@@ -10,8 +10,8 @@ interface Props {
 
 function GroupRow({ group }: { group: EntryGroup }) {
   const [expanded, setExpanded] = useState(false);
-  const meta = CATEGORY_META[group.category];
   const firstEntry = group.entries[0];
+  const icon = firstEntry ? entryIcon(firstEntry) : { path: "", color: "var(--cl-text-muted)" };
 
   const tier = riskTierFromScore(group.avgRisk);
   const dotColor = riskColorRaw(tier);
@@ -30,19 +30,19 @@ function GroupRow({ group }: { group: EntryGroup }) {
           backgroundColor: expanded ? "var(--cl-elevated)" : "transparent",
         }}
       >
-        {/* Category icon */}
+        {/* Category icon (exec sub-category aware) */}
         <svg
           width="16"
           height="16"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={meta?.color ?? "var(--cl-text-muted)"}
+          stroke={icon.color}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
           className="shrink-0"
         >
-          <path d={meta?.iconPath ?? ""} />
+          <path d={icon.path} />
         </svg>
 
         {/* Group description */}
@@ -53,7 +53,7 @@ function GroupRow({ group }: { group: EntryGroup }) {
           {desc}
         </span>
 
-        {/* Avg risk */}
+        {/* Avg risk + tier */}
         {group.avgRisk > 0 && (
           <span className="flex items-center gap-1.5 shrink-0">
             <span
@@ -65,6 +65,9 @@ function GroupRow({ group }: { group: EntryGroup }) {
             />
             <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
               avg {group.avgRisk}
+            </span>
+            <span className="label-mono shrink-0" style={{ color: dotColor }}>
+              {tier.toUpperCase()}
             </span>
           </span>
         )}
@@ -144,13 +147,14 @@ export default function ActivityStream({ entries }: Props) {
           key={group.id}
           style={{
             borderBottom:
-              i < groups.length - 1
-                ? "1px solid var(--cl-border-subtle)"
-                : undefined,
+              i < groups.length - 1 ? "1px solid var(--cl-border-subtle)" : undefined,
           }}
         >
           {group.entries.length === 1 ? (
-            <ActivityEntry entry={group.entries[0]} description={describeEntry(group.entries[0])} />
+            <ActivityEntry
+              entry={group.entries[0]}
+              description={describeEntry(group.entries[0])}
+            />
           ) : (
             <GroupRow group={group} />
           )}
