@@ -1,12 +1,12 @@
-import { AuditLogger } from "../audit/logger";
 import type { AuditEntry } from "../audit/logger";
+import { AuditLogger } from "../audit/logger";
 import {
   type ActivityCategory,
-  type RiskPosture,
-  getCategory,
   computeBreakdown,
-  parseSessionContext,
   describeAction,
+  getCategory,
+  parseSessionContext,
+  type RiskPosture,
   riskPosture,
 } from "./categories";
 
@@ -178,7 +178,10 @@ function isDecisionEntry(entry: AuditEntry): boolean {
 }
 
 /** Get the final effective risk score for an entry, using LLM-adjusted score when available. */
-function getEffectiveScore(entry: AuditEntry, evalIdx?: Map<string, AuditEntry>): number | undefined {
+function getEffectiveScore(
+  entry: AuditEntry,
+  evalIdx?: Map<string, AuditEntry>,
+): number | undefined {
   if (evalIdx && entry.toolCallId) {
     const evalEntry = evalIdx.get(entry.toolCallId);
     if (evalEntry?.llmEvaluation) {
@@ -256,8 +259,7 @@ function groupBySessions(entries: AuditEntry[]): Map<string, AuditEntry[]> {
 
     for (let i = 1; i < sorted.length; i++) {
       const gap =
-        new Date(sorted[i].timestamp).getTime() -
-        new Date(sorted[i - 1].timestamp).getTime();
+        new Date(sorted[i].timestamp).getTime() - new Date(sorted[i - 1].timestamp).getTime();
       if (gap > SESSION_GAP_MS) {
         // Store current run
         const runKey = runIndex === 1 ? key : `${key}#${runIndex}`;
@@ -280,10 +282,7 @@ function groupBySessions(entries: AuditEntry[]): Map<string, AuditEntry[]> {
  * Resolve a session key (possibly with #N suffix from splitting) to its entries.
  * Handles both raw keys (exact match) and split keys (re-runs groupBySessions).
  */
-function resolveSessionEntries(
-  entries: AuditEntry[],
-  sessionKey: string,
-): AuditEntry[] {
+function resolveSessionEntries(entries: AuditEntry[], sessionKey: string): AuditEntry[] {
   // Try direct match first (works for non-split sessions)
   const direct = entries.filter((e) => e.sessionKey === sessionKey);
   if (direct.length > 0) return direct;
@@ -305,9 +304,7 @@ function buildSessionInfo(
   entries: AuditEntry[],
   evalIdx?: Map<string, AuditEntry>,
 ): SessionInfo {
-  const sorted = [...entries].sort((a, b) =>
-    a.timestamp.localeCompare(b.timestamp),
-  );
+  const sorted = [...entries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   const startTime = sorted[0].timestamp;
   const endTime = sorted[sorted.length - 1].timestamp;
   const startMs = new Date(startTime).getTime();
@@ -435,9 +432,7 @@ export function getRecentEntries(
   if (filters) {
     if (filters.agent) {
       const agentId = filters.agent;
-      filtered = filtered.filter(
-        (e) => (e.agentId || "default") === agentId,
-      );
+      filtered = filtered.filter((e) => (e.agentId || "default") === agentId);
     }
     if (filters.category) {
       const cat = filters.category;
@@ -449,9 +444,7 @@ export function getRecentEntries(
     }
     if (filters.decision) {
       const decision = filters.decision;
-      filtered = filtered.filter(
-        (e) => getEffectiveDecision(e) === decision,
-      );
+      filtered = filtered.filter((e) => getEffectiveDecision(e) === decision);
     }
     if (filters.since && filters.since !== "all") {
       const ms: Record<string, number> = {
@@ -482,9 +475,7 @@ export function checkHealth(entries: AuditEntry[]): HealthResponse {
 // ── New v2 functions ────────────────────────────────────
 
 /** Enhanced stats with risk breakdown and active counts. */
-export function computeEnhancedStats(
-  entries: AuditEntry[],
-): EnhancedStatsResponse {
+export function computeEnhancedStats(entries: AuditEntry[]): EnhancedStatsResponse {
   const base = computeStats(entries);
   const evalIdx = buildEvalIndex(entries);
   const todayDecisions = getTodayEntries(entries).filter(isDecisionEntry);
@@ -621,9 +612,7 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
     if (withSession.length > 0) {
       currentSessionKey = withSession[0].sessionKey!;
       if (isActive) {
-        const sessionEntries = agentEntries.filter(
-          (e) => e.sessionKey === currentSessionKey,
-        );
+        const sessionEntries = agentEntries.filter((e) => e.sessionKey === currentSessionKey);
         const startTime = sessionEntries.reduce(
           (min, e) => (e.timestamp < min ? e.timestamp : min),
           sessionEntries[0].timestamp,
@@ -642,20 +631,14 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       const parts = e.sessionKey.split(":");
       return parts.length >= 3 && parts[2] === "cron";
     });
-    const mode: "interactive" | "scheduled" = hasCronSession
-      ? "scheduled"
-      : "interactive";
+    const mode: "interactive" | "scheduled" = hasCronSession ? "scheduled" : "interactive";
 
     // Context from current/latest session
-    const currentContext = currentSessionKey
-      ? parseSessionContext(currentSessionKey)
-      : undefined;
+    const currentContext = currentSessionKey ? parseSessionContext(currentSessionKey) : undefined;
 
     // Activity breakdown from current session (or latest session if idle)
     const breakdownEntries = currentSessionKey
-      ? agentEntries.filter(
-          (e) => e.sessionKey === currentSessionKey && isDecisionEntry(e),
-        )
+      ? agentEntries.filter((e) => e.sessionKey === currentSessionKey && isDecisionEntry(e))
       : todayDecisions;
     const activityBreakdown = computeBreakdown(breakdownEntries);
 
@@ -666,16 +649,13 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
     const latestDecision = agentEntries
       .filter(isDecisionEntry)
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
-    const latestAction = latestDecision
-      ? describeAction(latestDecision)
-      : undefined;
+    const latestAction = latestDecision ? describeAction(latestDecision) : undefined;
     const latestActionTime = latestDecision?.timestamp;
 
     // Risk posture from current/latest session (using LLM-adjusted scores)
     const sessionRiskEntries = currentSessionKey
       ? agentEntries.filter(
-          (e) =>
-            e.sessionKey === currentSessionKey && getEffectiveScore(e, evalIdx) !== undefined,
+          (e) => e.sessionKey === currentSessionKey && getEffectiveScore(e, evalIdx) !== undefined,
         )
       : agentEntries.filter((e) => getEffectiveScore(e, evalIdx) !== undefined);
     let sessionRiskSum = 0;
@@ -683,9 +663,7 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       sessionRiskSum += getEffectiveScore(e, evalIdx)!;
     }
     const sessionAvg =
-      sessionRiskEntries.length > 0
-        ? Math.round(sessionRiskSum / sessionRiskEntries.length)
-        : 0;
+      sessionRiskEntries.length > 0 ? Math.round(sessionRiskSum / sessionRiskEntries.length) : 0;
     const agentPosture = riskPosture(sessionAvg);
 
     // Needs attention: pending approval, blocked in last 30 min, or session peak >= 75
@@ -733,22 +711,15 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
 
   agents.sort((a, b) => {
     if (a.status !== b.status) return a.status === "active" ? -1 : 1;
-    return (b.lastActiveTimestamp || "").localeCompare(
-      a.lastActiveTimestamp || "",
-    );
+    return (b.lastActiveTimestamp || "").localeCompare(a.lastActiveTimestamp || "");
   });
 
   return agents;
 }
 
 /** Get detailed info for a single agent. */
-export function getAgentDetail(
-  entries: AuditEntry[],
-  agentId: string,
-): AgentDetailResponse | null {
-  const agentEntries = entries.filter(
-    (e) => (e.agentId || "default") === agentId,
-  );
+export function getAgentDetail(entries: AuditEntry[], agentId: string): AgentDetailResponse | null {
+  const agentEntries = entries.filter((e) => (e.agentId || "default") === agentId);
   if (agentEntries.length === 0) return null;
 
   const agents = getAgents(entries);
@@ -776,27 +747,19 @@ export function getAgentDetail(
   for (const [key, sEntries] of sessionMap) {
     allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
   }
-  allSessions.sort((a, b) =>
-    (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime),
-  );
+  allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
 
   // Risk trend: last 24h decision entries with scores, chronological
-  const twentyFourHoursAgo = new Date(
-    Date.now() - 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const riskTrend = agentEntries
     .filter(
-      (e) =>
-        isDecisionEntry(e) &&
-        e.timestamp >= twentyFourHoursAgo &&
-        e.riskScore !== undefined,
+      (e) => isDecisionEntry(e) && e.timestamp >= twentyFourHoursAgo && e.riskScore !== undefined,
     )
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
     .slice(0, 200)
     .map((e) => {
       const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
-      const score =
-        evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore ?? 0;
+      const score = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore ?? 0;
       return {
         timestamp: e.timestamp,
         score,
@@ -832,9 +795,7 @@ export function getSessions(
   for (const [key, sEntries] of sessionMap) {
     allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
   }
-  allSessions.sort((a, b) =>
-    (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime),
-  );
+  allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
 
   return {
     sessions: allSessions.slice(offset, offset + limit),

@@ -5,10 +5,7 @@ import type { RuleMatch } from "./types";
  * Match a tool name against a pattern (exact string, glob, or array of patterns).
  * Uses minimatch (safe — tool names don't contain `/`).
  */
-export function matchTool(
-  toolName: string,
-  pattern: string | string[],
-): boolean {
+export function matchTool(toolName: string, pattern: string | string[]): boolean {
   if (Array.isArray(pattern)) {
     return pattern.some((p) => minimatch(toolName, p));
   }

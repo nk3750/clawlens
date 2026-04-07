@@ -1,7 +1,7 @@
-import * as fs from "node:fs";
 import * as crypto from "node:crypto";
-import * as path from "node:path";
 import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export interface AuditEntry {
   timestamp: string;
@@ -82,10 +82,7 @@ export class AuditLogger extends EventEmitter {
   }
 
   private computeHash(entryWithoutHash: Omit<AuditEntry, "hash">): string {
-    return crypto
-      .createHash("sha256")
-      .update(JSON.stringify(entryWithoutHash))
-      .digest("hex");
+    return crypto.createHash("sha256").update(JSON.stringify(entryWithoutHash)).digest("hex");
   }
 
   /** Ensure write stream is open. Called lazily on first write. */
@@ -123,7 +120,7 @@ export class AuditLogger extends EventEmitter {
     const entry: AuditEntry = { ...entryWithPrev, hash };
 
     this.lastHash = hash;
-    this.writeStream!.write(JSON.stringify(entry) + "\n");
+    this.writeStream!.write(`${JSON.stringify(entry)}\n`);
     this.emit("entry", entry);
   }
 
@@ -213,9 +210,7 @@ export class AuditLogger extends EventEmitter {
   }
 
   /** Verify the hash chain integrity of audit entries. */
-  static verifyChain(
-    entries: AuditEntry[],
-  ): { valid: boolean; brokenAt?: number } {
+  static verifyChain(entries: AuditEntry[]): { valid: boolean; brokenAt?: number } {
     let prevHash = "0";
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
@@ -227,10 +222,7 @@ export class AuditLogger extends EventEmitter {
 
       // Recompute and verify hash
       const { hash: _hash, ...rest } = entry;
-      const computed = crypto
-        .createHash("sha256")
-        .update(JSON.stringify(rest))
-        .digest("hex");
+      const computed = crypto.createHash("sha256").update(JSON.stringify(rest)).digest("hex");
 
       if (computed !== entry.hash) {
         return { valid: false, brokenAt: i };

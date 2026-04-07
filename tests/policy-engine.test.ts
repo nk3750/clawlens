@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { PolicyEngine } from "../src/policy/engine";
 import type { Policy } from "../src/policy/types";
 
@@ -102,24 +102,14 @@ describe("PolicyEngine", () => {
     });
 
     it("allows search tools (array match)", () => {
-      expect(engine.evaluate("web_search", { query: "test" }).action).toBe(
-        "allow",
-      );
-      expect(engine.evaluate("glob", { pattern: "*.ts" }).action).toBe(
-        "allow",
-      );
-      expect(engine.evaluate("grep", { pattern: "foo" }).action).toBe(
-        "allow",
-      );
+      expect(engine.evaluate("web_search", { query: "test" }).action).toBe("allow");
+      expect(engine.evaluate("glob", { pattern: "*.ts" }).action).toBe("allow");
+      expect(engine.evaluate("grep", { pattern: "foo" }).action).toBe("allow");
     });
 
     it("requires approval for write/edit (array match)", () => {
-      expect(engine.evaluate("write", { path: "/tmp/file" }).action).toBe(
-        "approval_required",
-      );
-      expect(engine.evaluate("edit", { path: "/tmp/file" }).action).toBe(
-        "approval_required",
-      );
+      expect(engine.evaluate("write", { path: "/tmp/file" }).action).toBe("approval_required");
+      expect(engine.evaluate("edit", { path: "/tmp/file" }).action).toBe("approval_required");
     });
   });
 

@@ -1,5 +1,5 @@
-import type { Policy, PolicyDecision } from "./types";
 import { matchRule } from "./matcher";
+import type { Policy, PolicyDecision } from "./types";
 
 export class PolicyEngine {
   private policy: Policy | null = null;
@@ -21,11 +21,7 @@ export class PolicyEngine {
   evaluate(
     toolName: string,
     params: Record<string, unknown>,
-    getActionCount?: (
-      toolName: string,
-      ruleName: string,
-      windowSec: number,
-    ) => number,
+    getActionCount?: (toolName: string, ruleName: string, windowSec: number) => number,
   ): PolicyDecision {
     if (!this.policy) {
       // Fail closed: no policy loaded = block
@@ -36,11 +32,7 @@ export class PolicyEngine {
       if (matchRule(toolName, params, rule.match)) {
         // Check rate limit before returning the rule's action
         if (rule.rate_limit && getActionCount) {
-          const count = getActionCount(
-            toolName,
-            rule.name,
-            rule.rate_limit.window,
-          );
+          const count = getActionCount(toolName, rule.name, rule.rate_limit.window);
           if (count >= rule.rate_limit.max) {
             return {
               action: rule.rate_limit.on_exceed,

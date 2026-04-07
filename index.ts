@@ -1,26 +1,25 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { OpenClawPluginDefinition, OpenClawPluginApi } from "./src/types";
-import { resolveConfig } from "./src/config";
-import { PolicyEngine } from "./src/policy/engine";
-import { PolicyLoader } from "./src/policy/loader";
+import { exportToCSV, exportToJSON } from "./src/audit/exporter";
 import { AuditLogger } from "./src/audit/logger";
-import { RateLimiter } from "./src/rate/limiter";
-import { SessionContext } from "./src/risk/session-context";
-import { EvalCache } from "./src/risk/eval-cache";
-import { exportToJSON, exportToCSV } from "./src/audit/exporter";
-import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
+import { resolveConfig } from "./src/config";
+import { registerDashboardRoutes } from "./src/dashboard/routes";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { createBeforePromptBuildHandler } from "./src/hooks/before-prompt-build";
-import { createSessionStartHandler } from "./src/hooks/session-start";
+import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createSessionEndHandler } from "./src/hooks/session-end";
-import { registerDashboardRoutes } from "./src/dashboard/routes";
+import { createSessionStartHandler } from "./src/hooks/session-start";
+import { PolicyEngine } from "./src/policy/engine";
+import { PolicyLoader } from "./src/policy/loader";
+import { RateLimiter } from "./src/rate/limiter";
+import { EvalCache } from "./src/risk/eval-cache";
+import { SessionContext } from "./src/risk/session-context";
+import type { OpenClawPluginApi, OpenClawPluginDefinition } from "./src/types";
 
 const plugin: OpenClawPluginDefinition = {
   id: "clawlens",
   name: "ClawLens",
-  description:
-    "Agent governance — policy enforcement, approval flows, and audit trails",
+  description: "Agent governance — policy enforcement, approval flows, and audit trails",
   version: "0.2.0",
 
   register(api: OpenClawPluginApi) {
@@ -91,33 +90,18 @@ const plugin: OpenClawPluginDefinition = {
       { priority: 100 },
     );
 
-    api.on(
-      "after_tool_call",
-      createAfterToolCallHandler(auditLogger, rateLimiter),
-    );
+    api.on("after_tool_call", createAfterToolCallHandler(auditLogger, rateLimiter));
 
     api.on("before_prompt_build", createBeforePromptBuildHandler(engine));
 
     api.on(
       "session_start",
-      createSessionStartHandler(
-        engine,
-        loader,
-        auditLogger,
-        rateLimiter,
-        api.logger,
-      ),
+      createSessionStartHandler(engine, loader, auditLogger, rateLimiter, api.logger),
     );
 
     api.on(
       "session_end",
-      createSessionEndHandler(
-        auditLogger,
-        rateLimiter,
-        config,
-        api.logger,
-        sessionContext,
-      ),
+      createSessionEndHandler(auditLogger, rateLimiter, config, api.logger, sessionContext),
     );
 
     // Register service for lifecycle management
@@ -176,7 +160,7 @@ const plugin: OpenClawPluginDefinition = {
               // Fallback: write a minimal default policy inline
               fs.writeFileSync(
                 config.policiesPath,
-                [
+                `${[
                   'version: "1"',
                   "",
                   "defaults:",
@@ -207,21 +191,15 @@ const plugin: OpenClawPluginDefinition = {
                   '  - name: "Default"',
                   "    match: {}",
                   "    action: approval_required",
-                ].join("\n") + "\n",
+                ].join("\n")}\n`,
               );
             }
-            console.log(
-              `ClawLens initialized. Edit policies at ${config.policiesPath}`,
-            );
+            console.log(`ClawLens initialized. Edit policies at ${config.policiesPath}`);
           } else {
-            console.log(
-              `Policies already exist at ${config.policiesPath} — skipping.`,
-            );
+            console.log(`Policies already exist at ${config.policiesPath} — skipping.`);
           }
 
-          console.log(
-            "\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:",
-          );
+          console.log("\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:");
           console.log(
             JSON.stringify(
               {

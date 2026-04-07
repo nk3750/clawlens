@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { computeRiskScore } from "../src/risk/scorer";
 
 describe("computeRiskScore", () => {
@@ -280,7 +280,7 @@ describe("computeRiskScore", () => {
 
     it("curl with POST data to external scores even higher", () => {
       const r = computeRiskScore("exec", {
-        command: "curl -X POST https://external.com/api -d '{\"key\": \"value\"}'",
+        command: 'curl -X POST https://external.com/api -d \'{"key": "value"}\'',
       });
       expect(r.tags).toContain("network-external");
       // network-write(60) + 10 (external) = 70

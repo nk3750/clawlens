@@ -1,21 +1,21 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuditEntry } from "../src/audit/logger";
 import {
-  computeStats,
-  computeEnhancedStats,
-  getRecentEntries,
   checkHealth,
-  getEffectiveDecision,
+  computeEnhancedStats,
+  computeStats,
   getAgents,
+  getEffectiveDecision,
+  getRecentEntries,
 } from "../src/dashboard/api";
 import {
-  getCategory,
   computeBreakdown,
-  parseSessionContext,
   describeAction,
+  getCategory,
+  parseSessionContext,
   riskPosture,
 } from "../src/dashboard/categories";
-import type { AuditEntry } from "../src/audit/logger";
 
 /** Build a minimal AuditEntry with overrides. */
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
@@ -31,9 +31,15 @@ function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
 
 describe("getEffectiveDecision", () => {
   it("maps userResponse over raw decision", () => {
-    expect(getEffectiveDecision(entry({ decision: "approval_required", userResponse: "approved" }))).toBe("approved");
-    expect(getEffectiveDecision(entry({ decision: "approval_required", userResponse: "denied" }))).toBe("denied");
-    expect(getEffectiveDecision(entry({ decision: "approval_required", userResponse: "timeout" }))).toBe("timeout");
+    expect(
+      getEffectiveDecision(entry({ decision: "approval_required", userResponse: "approved" })),
+    ).toBe("approved");
+    expect(
+      getEffectiveDecision(entry({ decision: "approval_required", userResponse: "denied" })),
+    ).toBe("denied");
+    expect(
+      getEffectiveDecision(entry({ decision: "approval_required", userResponse: "timeout" })),
+    ).toBe("timeout");
   });
 
   it("maps raw decisions when no userResponse", () => {
@@ -83,7 +89,11 @@ describe("computeStats", () => {
       entry({ timestamp: "2026-03-29T10:02:00Z", decision: "block" }),
       entry({ timestamp: "2026-03-29T10:03:00Z", decision: "allow", userResponse: "approved" }),
       entry({ timestamp: "2026-03-29T10:04:00Z", decision: "block", userResponse: "denied" }),
-      entry({ timestamp: "2026-03-29T10:05:00Z", decision: "approval_required", userResponse: "timeout" }),
+      entry({
+        timestamp: "2026-03-29T10:05:00Z",
+        decision: "approval_required",
+        userResponse: "timeout",
+      }),
       entry({ timestamp: "2026-03-29T10:06:00Z", decision: "approval_required" }),
     ];
 
@@ -126,7 +136,12 @@ describe("getRecentEntries", () => {
     entry({ timestamp: "2026-03-29T10:00:00Z", toolName: "read", decision: "allow" }),
     entry({ timestamp: "2026-03-29T10:01:00Z", toolName: "write", decision: "block" }),
     entry({ timestamp: "2026-03-29T10:02:00Z", toolName: "exec", decision: "allow" }),
-    entry({ timestamp: "2026-03-29T10:03:00Z", toolName: "message", decision: "approval_required", userResponse: "approved" }),
+    entry({
+      timestamp: "2026-03-29T10:03:00Z",
+      toolName: "message",
+      decision: "approval_required",
+      userResponse: "approved",
+    }),
     // Result entry — should be excluded
     entry({ timestamp: "2026-03-29T10:04:00Z", toolName: "exec", executionResult: "success" }),
   ];
@@ -185,10 +200,7 @@ describe("checkHealth", () => {
           decision: "allow" as const,
           prevHash,
         };
-        const hash = crypto
-          .createHash("sha256")
-          .update(JSON.stringify(base))
-          .digest("hex");
+        const hash = crypto.createHash("sha256").update(JSON.stringify(base)).digest("hex");
         chain.push({ ...base, hash });
         prevHash = hash;
       }
@@ -293,7 +305,9 @@ describe("parseSessionContext", () => {
 
 describe("describeAction", () => {
   it("describes read actions", () => {
-    expect(describeAction({ toolName: "read", params: { path: "config.yaml" } })).toBe("Read config.yaml");
+    expect(describeAction({ toolName: "read", params: { path: "config.yaml" } })).toBe(
+      "Read config.yaml",
+    );
   });
 
   it("describes exec actions using parseExecCommand", () => {
@@ -347,8 +361,18 @@ describe("computeEnhancedStats", () => {
 
   it("returns riskPosture as valid string enum", () => {
     const entries: AuditEntry[] = [
-      entry({ timestamp: "2026-03-29T10:00:00Z", decision: "allow", riskScore: 15, riskTier: "low" }),
-      entry({ timestamp: "2026-03-29T10:01:00Z", decision: "allow", riskScore: 10, riskTier: "low" }),
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        decision: "allow",
+        riskScore: 15,
+        riskTier: "low",
+      }),
+      entry({
+        timestamp: "2026-03-29T10:01:00Z",
+        decision: "allow",
+        riskScore: 10,
+        riskTier: "low",
+      }),
     ];
     const stats = computeEnhancedStats(entries);
     expect(["calm", "elevated", "high", "critical"]).toContain(stats.riskPosture);
@@ -357,7 +381,12 @@ describe("computeEnhancedStats", () => {
 
   it("overrides riskPosture to critical if recent block", () => {
     const entries: AuditEntry[] = [
-      entry({ timestamp: "2026-03-29T13:45:00Z", decision: "block", riskScore: 30, riskTier: "medium" }),
+      entry({
+        timestamp: "2026-03-29T13:45:00Z",
+        decision: "block",
+        riskScore: 30,
+        riskTier: "medium",
+      }),
     ];
     const stats = computeEnhancedStats(entries);
     expect(stats.riskPosture).toBe("critical");

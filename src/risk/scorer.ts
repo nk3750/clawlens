@@ -1,9 +1,5 @@
+import { EXEC_BASE_SCORES, type ParsedExecCommand, parseExecCommand } from "./exec-parser";
 import type { RiskScore, RiskTier } from "./types";
-import {
-  parseExecCommand,
-  EXEC_BASE_SCORES,
-  type ParsedExecCommand,
-} from "./exec-parser";
 
 // Base risk scores by tool type (non-exec)
 const BASE_SCORES: Record<string, number> = {
@@ -27,20 +23,13 @@ const BASE_SCORES: Record<string, number> = {
 const DEFAULT_BASE = 30; // Unknown tools get a moderate score
 
 interface Modifier {
-  match: (
-    toolName: string,
-    params: Record<string, unknown>,
-    parsed?: ParsedExecCommand,
-  ) => boolean;
+  match: (toolName: string, params: Record<string, unknown>, parsed?: ParsedExecCommand) => boolean;
   delta: number;
   reason: string;
   tag: string;
 }
 
-function pathMatches(
-  params: Record<string, unknown>,
-  ...patterns: string[]
-): boolean {
+function pathMatches(params: Record<string, unknown>, ...patterns: string[]): boolean {
   const p =
     typeof params.path === "string"
       ? params.path
@@ -210,7 +199,7 @@ const NON_EXEC_MODIFIERS: Modifier[] = [
       const url = typeof p.url === "string" ? p.url : "";
       if (!url) return false;
       // Check if URL is NOT localhost/127.*
-      return !(/localhost|127\.\d+\.\d+\.\d+/i.test(url));
+      return !/localhost|127\.\d+\.\d+\.\d+/i.test(url);
     },
     delta: 10,
     reason: "web_fetch URL is external (not localhost/127)",
@@ -219,29 +208,25 @@ const NON_EXEC_MODIFIERS: Modifier[] = [
 
   // write/edit path modifiers
   {
-    match: (t, p) =>
-      (t === "write" || t === "edit") && pathMatches(p, ".env"),
+    match: (t, p) => (t === "write" || t === "edit") && pathMatches(p, ".env"),
     delta: 20,
     reason: "write/edit path matches .env",
     tag: "credential-access",
   },
   {
-    match: (t, p) =>
-      (t === "write" || t === "edit") && pathMatches(p, ".ssh"),
+    match: (t, p) => (t === "write" || t === "edit") && pathMatches(p, ".ssh"),
     delta: 20,
     reason: "write/edit path matches .ssh",
     tag: "credential-access",
   },
   {
-    match: (t, p) =>
-      (t === "write" || t === "edit") && pathMatches(p, "/etc/", "/usr/"),
+    match: (t, p) => (t === "write" || t === "edit") && pathMatches(p, "/etc/", "/usr/"),
     delta: 25,
     reason: "write/edit path matches /etc/ or /usr/",
     tag: "system-file",
   },
   {
-    match: (t, p) =>
-      (t === "write" || t === "edit") && pathMatches(p, ".git/"),
+    match: (t, p) => (t === "write" || t === "edit") && pathMatches(p, ".git/"),
     delta: 15,
     reason: "write/edit path matches .git/",
     tag: "git-internal",

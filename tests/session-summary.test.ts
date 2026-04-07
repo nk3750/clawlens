@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuditEntry } from "../src/audit/logger";
 import {
-  getSessionSummary,
   clearSummaryCache,
+  getSessionSummary,
   getSummaryCacheSize,
 } from "../src/dashboard/session-summary";
-import type { AuditEntry } from "../src/audit/logger";
 
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
   return {

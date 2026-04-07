@@ -1,10 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { generateDigest } from "../src/audit/digest";
 import type { AuditEntry } from "../src/audit/logger";
 
-function makeEntry(
-  overrides: Partial<AuditEntry>,
-): AuditEntry {
+function makeEntry(overrides: Partial<AuditEntry>): AuditEntry {
   return {
     timestamp: "2026-03-29T10:00:00Z",
     toolName: "read",
@@ -94,9 +92,7 @@ describe("generateDigest", () => {
     }
 
     const digest = generateDigest(entries, testDate);
-    const blockedLines = digest
-      .split("\n")
-      .filter((l) => l.startsWith("Blocked:"));
+    const blockedLines = digest.split("\n").filter((l) => l.startsWith("Blocked:"));
     expect(blockedLines).toHaveLength(5);
   });
 });

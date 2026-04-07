@@ -1,5 +1,5 @@
 import type { AuditEntry } from "../audit/logger";
-import { getCategory, describeAction } from "./categories";
+import { describeAction, getCategory } from "./categories";
 
 export interface SessionSummary {
   sessionKey: string;
@@ -81,10 +81,7 @@ function templateSummary(sessionKey: string, entries: AuditEntry[]): SessionSumm
 /**
  * Build the LLM prompt for session summarization.
  */
-function buildSummaryPrompt(
-  sessionKey: string,
-  entries: AuditEntry[],
-): string {
+function buildSummaryPrompt(sessionKey: string, entries: AuditEntry[]): string {
   const decisions = entries
     .filter((e) => e.decision !== undefined)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -94,9 +91,8 @@ function buildSummaryPrompt(
   const startMs = new Date(startTime).getTime();
   const endMs = new Date(endTime).getTime();
   const durationMs = endMs - startMs;
-  const durationStr = durationMs > 60000
-    ? `${Math.round(durationMs / 60000)}m`
-    : `${Math.round(durationMs / 1000)}s`;
+  const durationStr =
+    durationMs > 60000 ? `${Math.round(durationMs / 60000)}m` : `${Math.round(durationMs / 1000)}s`;
 
   let riskSum = 0;
   let riskCount = 0;
@@ -110,12 +106,15 @@ function buildSummaryPrompt(
   }
   const avgRisk = riskCount > 0 ? Math.round(riskSum / riskCount) : 0;
 
-  const toolLines = decisions.slice(0, 30).map((e) => {
-    const desc = describeAction(e);
-    const risk = e.riskScore !== undefined ? `risk ${e.riskScore}` : "no score";
-    const decision = e.decision || "unknown";
-    return `- ${e.timestamp} ${e.toolName} ${desc} → ${risk} ${decision}`;
-  }).join("\n");
+  const toolLines = decisions
+    .slice(0, 30)
+    .map((e) => {
+      const desc = describeAction(e);
+      const risk = e.riskScore !== undefined ? `risk ${e.riskScore}` : "no score";
+      const decision = e.decision || "unknown";
+      return `- ${e.timestamp} ${e.toolName} ${desc} → ${risk} ${decision}`;
+    })
+    .join("\n");
 
   return `Summarize this agent session in 1-2 sentences. Focus on: what the agent did, whether anything was risky or blocked, and the outcome. Be concise and factual.
 
@@ -154,7 +153,8 @@ export async function getSessionSummary(
       let current: AuditEntry[] = [];
       for (const e of baseEntries) {
         if (current.length > 0) {
-          const gap = new Date(e.timestamp).getTime() -
+          const gap =
+            new Date(e.timestamp).getTime() -
             new Date(current[current.length - 1].timestamp).getTime();
           if (gap > GAP_MS) {
             runs.push(current);
@@ -230,7 +230,10 @@ async function generateLlmSummary(
     const textBlocks = response.content.filter(
       (b): b is { type: "text"; text: string } => b.type === "text",
     );
-    const text = textBlocks.map((b) => b.text).join(" ").trim();
+    const text = textBlocks
+      .map((b) => b.text)
+      .join(" ")
+      .trim();
 
     if (!text) return null;
 

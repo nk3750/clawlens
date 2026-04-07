@@ -36,13 +36,10 @@ export function exportToCSV(entries: AuditEntry[], since?: string): string {
     lines.push(values.join(","));
   }
 
-  return lines.join("\n") + "\n";
+  return `${lines.join("\n")}\n`;
 }
 
-function filterBySince(
-  entries: AuditEntry[],
-  since?: string,
-): AuditEntry[] {
+function filterBySince(entries: AuditEntry[], since?: string): AuditEntry[] {
   if (!since) return entries;
 
   const match = since.match(/^(\d+)(m|h|d)$/);

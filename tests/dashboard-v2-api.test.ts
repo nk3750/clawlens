@@ -1,13 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuditEntry } from "../src/audit/logger";
 import {
   computeEnhancedStats,
-  getAgents,
   getAgentDetail,
+  getAgents,
   getRecentEntries,
-  getSessions,
   getSessionDetail,
+  getSessions,
 } from "../src/dashboard/api";
-import type { AuditEntry } from "../src/audit/logger";
 
 /** Build a minimal AuditEntry with overrides. */
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
@@ -32,9 +32,7 @@ describe("computeEnhancedStats", () => {
   });
 
   it("includes base stats fields and riskPosture", () => {
-    const entries = [
-      entry({ timestamp: "2026-03-29T10:00:00Z", decision: "allow" }),
-    ];
+    const entries = [entry({ timestamp: "2026-03-29T10:00:00Z", decision: "allow" })];
     const stats = computeEnhancedStats(entries);
     expect(stats.allowed).toBe(1);
     expect(stats.total).toBe(1);
@@ -85,9 +83,7 @@ describe("computeEnhancedStats", () => {
   });
 
   it("returns zero risk stats when no risk data", () => {
-    const entries = [
-      entry({ timestamp: "2026-03-29T10:00:00Z", decision: "allow" }),
-    ];
+    const entries = [entry({ timestamp: "2026-03-29T10:00:00Z", decision: "allow" })];
     const stats = computeEnhancedStats(entries);
     expect(stats.riskBreakdown).toEqual({
       low: 0,
@@ -967,7 +963,7 @@ describe("getRecentEntries — filtering", () => {
   it("filters by agent", () => {
     const result = getRecentEntries(testEntries(), 50, 0, { agent: "bot-1" });
     expect(result).toHaveLength(2);
-    result.forEach((e) => expect(e.agentId).toBe("bot-1"));
+    for (const e of result) expect(e.agentId).toBe("bot-1");
   });
 
   it("filters by category", () => {
@@ -1267,11 +1263,27 @@ describe("groupBySessions — cron run splitting", () => {
   it("splits recurring cron sessions with >30 min gaps", () => {
     const entries = [
       // Run 1: 10:00–10:02
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:02:00Z" }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T10:02:00Z",
+      }),
       // Run 2: 11:00–11:01 (58 min gap)
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T11:00:00Z" }),
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T11:01:00Z" }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T11:00:00Z",
+      }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T11:01:00Z",
+      }),
     ];
     const result = getSessions(entries);
     expect(result.total).toBe(2);
@@ -1293,8 +1305,16 @@ describe("groupBySessions — cron run splitting", () => {
   it("sorts sessions by most recent activity, not start time", () => {
     const entries = [
       // Old session with recent run
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T08:00:00Z" }),
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T13:00:00Z" }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T08:00:00Z",
+      }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T13:00:00Z",
+      }),
       // Newer session, but no recent activity
       entry({ sessionKey: "s2", decision: "allow", timestamp: "2026-03-29T09:00:00Z" }),
     ];
@@ -1306,8 +1326,20 @@ describe("groupBySessions — cron run splitting", () => {
 
   it("getSessionDetail resolves split session keys", () => {
     const entries = [
-      entry({ sessionKey: "agent:bot:cron:job-001", agentId: "bot", decision: "allow", toolName: "read", timestamp: "2026-03-29T10:00:00Z" }),
-      entry({ sessionKey: "agent:bot:cron:job-001", agentId: "bot", decision: "allow", toolName: "exec", timestamp: "2026-03-29T12:00:00Z" }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        agentId: "bot",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        agentId: "bot",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T12:00:00Z",
+      }),
     ];
     // These are 2h apart (>30 min gap) so they split into job-001 and job-001#2
     const detail = getSessionDetail(entries, "agent:bot:cron:job-001#2");
@@ -1318,9 +1350,21 @@ describe("groupBySessions — cron run splitting", () => {
 
   it("preserves original key for first run, appends #N for subsequent", () => {
     const entries = [
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T12:00:00Z" }),
-      entry({ sessionKey: "agent:bot:cron:job-001", decision: "allow", timestamp: "2026-03-29T14:00:00Z" }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T12:00:00Z",
+      }),
+      entry({
+        sessionKey: "agent:bot:cron:job-001",
+        decision: "allow",
+        timestamp: "2026-03-29T14:00:00Z",
+      }),
     ];
     const result = getSessions(entries);
     expect(result.total).toBe(3);
@@ -1369,7 +1413,14 @@ describe("LLM score propagation", () => {
       toolCallId: opts.toolCallId,
       decision: "allow",
       riskScore: opts.riskScore,
-      riskTier: opts.riskScore > 75 ? "critical" : opts.riskScore > 50 ? "high" : opts.riskScore > 25 ? "medium" : "low",
+      riskTier:
+        opts.riskScore > 75
+          ? "critical"
+          : opts.riskScore > 50
+            ? "high"
+            : opts.riskScore > 25
+              ? "medium"
+              : "low",
       sessionKey: opts.sessionKey ?? "s1",
       agentId: opts.agentId ?? "bot-1",
       timestamp: ts,
@@ -1385,7 +1436,14 @@ describe("LLM score propagation", () => {
         patterns: [],
       },
       riskScore: opts.adjustedScore,
-      riskTier: opts.adjustedScore > 75 ? "critical" : opts.adjustedScore > 50 ? "high" : opts.adjustedScore > 25 ? "medium" : "low",
+      riskTier:
+        opts.adjustedScore > 75
+          ? "critical"
+          : opts.adjustedScore > 50
+            ? "high"
+            : opts.adjustedScore > 25
+              ? "medium"
+              : "low",
       timestamp: ts,
     });
     return { main, evalEntry };

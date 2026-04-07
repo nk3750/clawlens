@@ -1,14 +1,14 @@
-import type { PolicyEngine } from "../policy/engine";
+import { formatAlert, sendAlert, shouldAlert } from "../alerts/telegram";
 import type { AuditLogger } from "../audit/logger";
-import type { RateLimiter } from "../rate/limiter";
 import type { ClawLensConfig } from "../config";
-import type { BeforeToolCallEvent, BeforeToolCallResult } from "../types";
+import type { PolicyEngine } from "../policy/engine";
+import type { RateLimiter } from "../rate/limiter";
+import type { EvalCache } from "../risk/eval-cache";
+import { evaluateWithLlm } from "../risk/llm-evaluator";
+import { computeRiskScore } from "../risk/scorer";
 import type { SessionContext } from "../risk/session-context";
 import type { RiskScore } from "../risk/types";
-import { computeRiskScore } from "../risk/scorer";
-import { shouldAlert, formatAlert, sendAlert } from "../alerts/telegram";
-import { evaluateWithLlm } from "../risk/llm-evaluator";
-import { EvalCache } from "../risk/eval-cache";
+import type { BeforeToolCallEvent, BeforeToolCallResult } from "../types";
 
 export interface BeforeToolCallDeps {
   engine: PolicyEngine;
@@ -45,16 +45,14 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
   return (
     event: BeforeToolCallEvent,
     ctx: Record<string, unknown>,
-  ): BeforeToolCallResult | void => {
+  ): BeforeToolCallResult | undefined => {
     const { toolName, params, toolCallId } = event;
     const sessionKey = (ctx?.sessionKey as string) || "default";
 
     try {
       // Evaluate policy (for logging what *would* happen, even in observe mode)
-      const decision = engine.evaluate(
-        toolName,
-        params,
-        (tn, rn, w) => rateLimiter.getCount(tn, rn, w),
+      const decision = engine.evaluate(toolName, params, (tn, rn, w) =>
+        rateLimiter.getCount(tn, rn, w),
       );
 
       const policy = engine.getPolicy();
@@ -62,11 +60,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
       const defaultTimeoutAction = policy?.defaults.timeout_action ?? "deny";
 
       // Compute risk score
-      const risk: RiskScore = computeRiskScore(
-        toolName,
-        params,
-        config.risk.llmEvalThreshold,
-      );
+      const risk: RiskScore = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
 
       // Record in session context
       sessionContext.record(sessionKey, {
@@ -115,102 +109,90 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
               patterns: [],
             },
             riskScore: cached.adjustedScore,
-            riskTier: getTierFromScore(cached.adjustedScore) as "low" | "medium" | "high" | "critical",
+            riskTier: getTierFromScore(cached.adjustedScore) as
+              | "low"
+              | "medium"
+              | "high"
+              | "critical",
             riskTags: cached.tags,
           });
         } else {
           const recentActions = sessionContext.getRecent(sessionKey, 5);
-          evaluateWithLlm(
-            toolName,
-            params,
-            recentActions,
-            risk,
-            runtime,
-            logger,
-            {
-              apiKeyEnv: config.risk.llmApiKeyEnv,
-              model: config.risk.llmModel,
-            },
-          ).then((evaluation) => {
-            // For stub evaluations, write a minimal entry so the dashboard
-            // can show "AI assessment unavailable" rather than nothing
-            if (evaluation.reasoning?.includes("Stub evaluation")) {
+          evaluateWithLlm(toolName, params, recentActions, risk, runtime, logger, {
+            apiKeyEnv: config.risk.llmApiKeyEnv,
+            model: config.risk.llmModel,
+          })
+            .then((evaluation) => {
+              // For stub evaluations, write a minimal entry so the dashboard
+              // can show "AI assessment unavailable" rather than nothing
+              if (evaluation.reasoning?.includes("Stub evaluation")) {
+                auditLogger.appendEvaluation({
+                  refToolCallId: toolCallId,
+                  toolName,
+                  llmEvaluation: {
+                    adjustedScore: risk.score,
+                    reasoning: "LLM evaluation unavailable",
+                    tags: risk.tags,
+                    confidence: "none" as string,
+                    patterns: [],
+                  },
+                  riskScore: risk.score,
+                  riskTier: getTierFromScore(risk.score),
+                  riskTags: risk.tags,
+                });
+                return;
+              }
+
               auditLogger.appendEvaluation({
                 refToolCallId: toolCallId,
                 toolName,
-                llmEvaluation: {
-                  adjustedScore: risk.score,
-                  reasoning: "LLM evaluation unavailable",
-                  tags: risk.tags,
-                  confidence: "none" as string,
-                  patterns: [],
-                },
-                riskScore: risk.score,
-                riskTier: getTierFromScore(risk.score),
-                riskTags: risk.tags,
+                llmEvaluation: evaluation,
+                riskScore: evaluation.adjustedScore,
+                riskTier: getTierFromScore(evaluation.adjustedScore),
+                riskTags: evaluation.tags,
               });
-              return;
-            }
 
-            auditLogger.appendEvaluation({
-              refToolCallId: toolCallId,
-              toolName,
-              llmEvaluation: evaluation,
-              riskScore: evaluation.adjustedScore,
-              riskTier: getTierFromScore(evaluation.adjustedScore),
-              riskTags: evaluation.tags,
+              // Cache high-confidence low-risk evaluations for future use
+              evalCache?.maybeCache(toolName, params, evaluation, config.risk.llmEvalThreshold);
+
+              // Alert on LLM-adjusted score if it was raised above threshold
+              if (
+                alertSend &&
+                evaluation.adjustedScore > risk.score &&
+                shouldAlert(evaluation.adjustedScore, config.alerts)
+              ) {
+                const adjustedRisk = {
+                  ...risk,
+                  score: evaluation.adjustedScore,
+                  tier: getTierFromScore(evaluation.adjustedScore),
+                  tags: evaluation.tags,
+                } as RiskScore;
+                const msg = formatAlert(toolName, params, adjustedRisk, config.dashboardUrl || "");
+                sendAlert(msg, alertSend);
+              }
+            })
+            .catch((err) => {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              logger?.warn(`ClawLens: LLM eval failed for ${toolName}: ${errMsg}`);
+              try {
+                auditLogger.appendEvaluation({
+                  refToolCallId: toolCallId,
+                  toolName,
+                  llmEvaluation: {
+                    adjustedScore: risk.score,
+                    reasoning: `LLM evaluation failed: ${errMsg}`,
+                    tags: risk.tags,
+                    confidence: "none" as string,
+                    patterns: [],
+                  },
+                  riskScore: risk.score,
+                  riskTier: getTierFromScore(risk.score),
+                  riskTags: risk.tags,
+                });
+              } catch {
+                // Last resort — don't let audit write failure crash the process
+              }
             });
-
-            // Cache high-confidence low-risk evaluations for future use
-            evalCache?.maybeCache(
-              toolName,
-              params,
-              evaluation,
-              config.risk.llmEvalThreshold,
-            );
-
-            // Alert on LLM-adjusted score if it was raised above threshold
-            if (
-              alertSend &&
-              evaluation.adjustedScore > risk.score &&
-              shouldAlert(evaluation.adjustedScore, config.alerts)
-            ) {
-              const adjustedRisk = {
-                ...risk,
-                score: evaluation.adjustedScore,
-                tier: getTierFromScore(evaluation.adjustedScore),
-                tags: evaluation.tags,
-              } as RiskScore;
-              const msg = formatAlert(
-                toolName,
-                params,
-                adjustedRisk,
-                config.dashboardUrl || "",
-              );
-              sendAlert(msg, alertSend);
-            }
-          }).catch((err) => {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            logger?.warn(`ClawLens: LLM eval failed for ${toolName}: ${errMsg}`);
-            try {
-              auditLogger.appendEvaluation({
-                refToolCallId: toolCallId,
-                toolName,
-                llmEvaluation: {
-                  adjustedScore: risk.score,
-                  reasoning: `LLM evaluation failed: ${errMsg}`,
-                  tags: risk.tags,
-                  confidence: "none" as string,
-                  patterns: [],
-                },
-                riskScore: risk.score,
-                riskTier: getTierFromScore(risk.score),
-                riskTags: risk.tags,
-              });
-            } catch {
-              // Last resort — don't let audit write failure crash the process
-            }
-          });
         }
       }
 
@@ -250,8 +232,6 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
               },
             },
           };
-
-        case "allow":
         default:
           return;
       }
@@ -285,17 +265,14 @@ function getTierFromScore(score: number): "low" | "medium" | "high" | "critical"
   return "low";
 }
 
-function formatApprovalDescription(
-  toolName: string,
-  params: Record<string, unknown>,
-): string {
+function formatApprovalDescription(toolName: string, params: Record<string, unknown>): string {
   const lines: string[] = [`The agent wants to use **${toolName}**`];
 
   const interesting = ["command", "path", "url", "to", "content", "name"];
   for (const key of interesting) {
     if (params[key] !== undefined) {
       const value = String(params[key]);
-      const display = value.length > 200 ? value.slice(0, 200) + "\u2026" : value;
+      const display = value.length > 200 ? `${value.slice(0, 200)}\u2026` : value;
       lines.push(`  ${key}: \`${display}\``);
     }
   }

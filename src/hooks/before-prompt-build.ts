@@ -1,14 +1,8 @@
 import type { PolicyEngine } from "../policy/engine";
-import type {
-  BeforePromptBuildEvent,
-  BeforePromptBuildResult,
-} from "../types";
+import type { BeforePromptBuildEvent, BeforePromptBuildResult } from "../types";
 
 export function createBeforePromptBuildHandler(engine: PolicyEngine) {
-  return (
-    _event: BeforePromptBuildEvent,
-    _ctx: unknown,
-  ): BeforePromptBuildResult | void => {
+  return (_event: BeforePromptBuildEvent, _ctx: unknown): BeforePromptBuildResult | undefined => {
     const blocked = engine.getBlockedTools();
     const approvalRequired = engine.getApprovalRequiredTools();
 
@@ -23,9 +17,7 @@ export function createBeforePromptBuildHandler(engine: PolicyEngine) {
       lines.push(`Approval required for: ${approvalRequired.join(", ")}`);
     }
 
-    lines.push(
-      "Do not plan actions using blocked tools — they will be denied.",
-    );
+    lines.push("Do not plan actions using blocked tools — they will be denied.");
 
     return { appendSystemContext: lines.join("\n") };
   };

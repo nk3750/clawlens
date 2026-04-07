@@ -2,10 +2,7 @@ import type { AuditLogger } from "../audit/logger";
 import type { RateLimiter } from "../rate/limiter";
 import type { AfterToolCallEvent } from "../types";
 
-export function createAfterToolCallHandler(
-  auditLogger: AuditLogger,
-  rateLimiter: RateLimiter,
-) {
+export function createAfterToolCallHandler(auditLogger: AuditLogger, rateLimiter: RateLimiter) {
   return (event: AfterToolCallEvent, _ctx: unknown): void => {
     auditLogger.logResult({
       timestamp: new Date().toISOString(),

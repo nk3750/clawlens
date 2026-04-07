@@ -1,9 +1,9 @@
-import type { AuditLogger } from "../audit/logger";
-import type { RateLimiter } from "../rate/limiter";
-import type { ClawLensConfig } from "../config";
-import type { PluginLogger, SessionEvent } from "../types";
-import type { SessionContext } from "../risk/session-context";
 import { generateDigest } from "../audit/digest";
+import type { AuditLogger } from "../audit/logger";
+import type { ClawLensConfig } from "../config";
+import type { RateLimiter } from "../rate/limiter";
+import type { SessionContext } from "../risk/session-context";
+import type { PluginLogger, SessionEvent } from "../types";
 
 export function createSessionEndHandler(
   auditLogger: AuditLogger,
@@ -34,7 +34,7 @@ export function createSessionEndHandler(
 
         if (todayEntries.length > 0) {
           const digest = generateDigest(todayEntries);
-          logger.info("ClawLens: Session digest:\n" + digest);
+          logger.info(`ClawLens: Session digest:\n${digest}`);
         }
       } catch (err) {
         logger.error("ClawLens: Failed to generate digest:", err);

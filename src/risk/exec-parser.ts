@@ -417,7 +417,15 @@ function extractUrls(command: string): string[] {
 
 // ── Network command analysis ──────────────────────────────────
 
-const CURL_WRITE_FLAGS = new Set(["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "-F", "--form"]);
+const CURL_WRITE_FLAGS = new Set([
+  "-d",
+  "--data",
+  "--data-raw",
+  "--data-binary",
+  "--data-urlencode",
+  "-F",
+  "--form",
+]);
 
 function isNetworkWrite(tokens: string[]): boolean {
   for (let i = 0; i < tokens.length; i++) {
@@ -475,7 +483,13 @@ function classifyPersistence(command: string, tokens: string[]): ExecCategory {
     for (let i = 1; i < tokens.length; i++) {
       const t = tokens[i];
       if (t.startsWith("-")) continue;
-      if (t === "status" || t === "is-active" || t === "is-enabled" || t === "list-units" || t === "show") {
+      if (
+        t === "status" ||
+        t === "is-active" ||
+        t === "is-enabled" ||
+        t === "list-units" ||
+        t === "show"
+      ) {
         return "system-info";
       }
       break;
@@ -528,9 +542,13 @@ function findPrimaryCommand(tokens: string[]): { command: string; remaining: str
       while (i < tokens.length && /^[A-Za-z_]/.test(tokens[i])) {
         i++;
       }
-    } else if (baseName === "sudo" || baseName === "nohup" || baseName === "nice" || baseName === "time" || baseName === "command") {
-      // These just prefix the real command — skip no args, next token is the command
-      continue;
+    } else if (
+      baseName === "sudo" ||
+      baseName === "nohup" ||
+      baseName === "nice" ||
+      baseName === "time" ||
+      baseName === "command"
+    ) {
     } else if (baseName === "env") {
       // env can have VAR=val pairs before the command
       // But bare `env` (no further command) is system-info
@@ -674,11 +692,7 @@ export function parseExecCommand(rawCommand: string): ParsedExecCommand {
   };
 }
 
-function classifyCommand(
-  command: string,
-  tokens: string[],
-  _fullCommand: string,
-): ExecCategory {
+function classifyCommand(command: string, tokens: string[], _fullCommand: string): ExecCategory {
   // Normalize command name (handle python3.11 → python3 → python)
   const normalized = command.replace(/\d+(\.\d+)*$/, "");
   const commandLower = command.toLowerCase();
@@ -703,10 +717,7 @@ function classifyCommand(
   }
 
   // Scripting — check for -c flag or -m flag etc.
-  if (
-    SCRIPTING_COMMANDS.has(commandLower) ||
-    SCRIPTING_COMMANDS.has(normalizedLower)
-  ) {
+  if (SCRIPTING_COMMANDS.has(commandLower) || SCRIPTING_COMMANDS.has(normalizedLower)) {
     return "scripting";
   }
 
@@ -728,11 +739,7 @@ function classifyCommand(
   }
 
   // sort, uniq, awk, cut, tr, jq — data transformation, read-only-ish
-  if (
-    ["sort", "uniq", "awk", "cut", "tr", "jq", "yq", "xargs", "tee"].includes(
-      commandLower,
-    )
-  ) {
+  if (["sort", "uniq", "awk", "cut", "tr", "jq", "yq", "xargs", "tee"].includes(commandLower)) {
     return "read-only";
   }
 

@@ -1,25 +1,24 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import type { ServerResponse } from "node:http";
-import type { OpenClawPluginApi } from "../types";
-import type { AuditLogger } from "../audit/logger";
-import type { AuditEntry } from "../audit/logger";
+import * as path from "node:path";
+import type { AuditEntry, AuditLogger } from "../audit/logger";
+import type { ClawLensConfig } from "../config";
 import type { PolicyEngine } from "../policy/engine";
+import type { OpenClawPluginApi } from "../types";
 import {
-  computeEnhancedStats,
-  getRecentEntries,
   checkHealth,
-  getAgents,
-  getAgentDetail,
-  getSessions,
-  getSessionDetail,
+  computeEnhancedStats,
   type EntryFilters,
+  getAgentDetail,
+  getAgents,
+  getRecentEntries,
+  getSessionDetail,
+  getSessions,
 } from "./api";
 import type { ActivityCategory } from "./categories";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
-import type { ClawLensConfig } from "../config";
 
 export interface DashboardDeps {
   engine: PolicyEngine;
@@ -41,13 +40,8 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-export function registerDashboardRoutes(
-  api: OpenClawPluginApi,
-  deps: DashboardDeps,
-): void {
-  const distDir = deps.pluginDir
-    ? path.join(deps.pluginDir, "dashboard", "dist")
-    : null;
+export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardDeps): void {
+  const distDir = deps.pluginDir ? path.join(deps.pluginDir, "dashboard", "dist") : null;
 
   api.registerHttpRoute({
     path: "/plugins/clawlens",
@@ -55,10 +49,7 @@ export function registerDashboardRoutes(
     match: "prefix",
     replaceExisting: true,
     handler: async (req, res) => {
-      const url = new URL(
-        req.url || "/",
-        `http://${req.headers.host || "localhost"}`,
-      );
+      const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
       // Strip the route prefix to get the sub-path
       let subPath = url.pathname;
@@ -77,30 +68,21 @@ export function registerDashboardRoutes(
 
       if (subPath === "api/entries") {
         const limit = clampInt(url.searchParams.get("limit"), 1, 200, 50);
-        const offset = clampInt(
-          url.searchParams.get("offset"),
-          0,
-          Infinity,
-          0,
-        );
+        const offset = clampInt(url.searchParams.get("offset"), 0, Infinity, 0);
         const filters: EntryFilters = {};
         const agent = url.searchParams.get("agent");
         if (agent) filters.agent = agent;
         const category = url.searchParams.get("category");
         if (category) filters.category = category as ActivityCategory;
         const riskTier = url.searchParams.get("riskTier");
-        if (riskTier)
-          filters.riskTier = riskTier as EntryFilters["riskTier"];
+        if (riskTier) filters.riskTier = riskTier as EntryFilters["riskTier"];
         const decision = url.searchParams.get("decision");
         if (decision) filters.decision = decision;
         const since = url.searchParams.get("since");
         if (since) filters.since = since as EntryFilters["since"];
 
         const entries = deps.auditLogger.readEntries();
-        sendJson(
-          res,
-          getRecentEntries(entries, limit, offset, filters),
-        );
+        sendJson(res, getRecentEntries(entries, limit, offset, filters));
         return true;
       }
 
@@ -133,12 +115,7 @@ export function registerDashboardRoutes(
       if (subPath === "api/sessions") {
         const agentId = url.searchParams.get("agentId") || undefined;
         const limit = clampInt(url.searchParams.get("limit"), 1, 100, 10);
-        const offset = clampInt(
-          url.searchParams.get("offset"),
-          0,
-          Infinity,
-          0,
-        );
+        const offset = clampInt(url.searchParams.get("offset"), 0, Infinity, 0);
         const entries = deps.auditLogger.readEntries();
         sendJson(res, getSessions(entries, agentId, limit, offset));
         return true;
@@ -148,7 +125,10 @@ export function registerDashboardRoutes(
       if (summaryMatch) {
         const sessionKey = decodeURIComponent(summaryMatch[1]);
         const entries = deps.auditLogger.readEntries();
-        const riskConfig = deps.config?.risk ?? { llmModel: "claude-haiku-4-5-20251001", llmApiKeyEnv: "ANTHROPIC_API_KEY" };
+        const riskConfig = deps.config?.risk ?? {
+          llmModel: "claude-haiku-4-5-20251001",
+          llmApiKeyEnv: "ANTHROPIC_API_KEY",
+        };
         const summary = await getSessionSummary(sessionKey, entries, {
           llmModel: riskConfig.llmModel,
           llmApiKeyEnv: riskConfig.llmApiKeyEnv,
@@ -216,10 +196,7 @@ export function registerDashboardRoutes(
             const content = fs.readFileSync(resolved);
             res.writeHead(200, {
               "Content-Type": mime,
-              "Cache-Control":
-                ext === ".html"
-                  ? "no-cache"
-                  : "public, max-age=31536000, immutable",
+              "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
             });
             res.end(content);
             return true;
@@ -264,14 +241,9 @@ function sendJson(res: ServerResponse, data: unknown): void {
   res.end(JSON.stringify(data));
 }
 
-function clampInt(
-  raw: string | null,
-  min: number,
-  max: number,
-  fallback: number,
-): number {
+function clampInt(raw: string | null, min: number, max: number, fallback: number): number {
   if (raw === null) return fallback;
   const n = parseInt(raw, 10);
-  if (isNaN(n)) return fallback;
+  if (Number.isNaN(n)) return fallback;
   return Math.max(min, Math.min(max, n));
 }

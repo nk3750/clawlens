@@ -1,4 +1,4 @@
-import type { RiskScore, AlertConfig } from "../risk/types";
+import type { AlertConfig, RiskScore } from "../risk/types";
 
 /**
  * Check whether an alert should fire for the given score and config.
@@ -79,7 +79,7 @@ export function formatAlert(
 }
 
 function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "\u2026" : s;
+  return s.length > max ? `${s.slice(0, max)}\u2026` : s;
 }
 
 /**

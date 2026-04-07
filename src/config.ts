@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 
 export interface ClawLensConfig {
   /** "observe" = score and log everything, never block. "enforce" = apply policy decisions. */
@@ -54,8 +54,7 @@ export function resolveConfig(
   pluginConfig?: Record<string, unknown>,
   resolvePath?: (input: string) => string,
 ): ClawLensConfig {
-  const resolve =
-    resolvePath || ((p: string) => p.replace(/^~/, os.homedir()));
+  const resolve = resolvePath || ((p: string) => p.replace(/^~/, os.homedir()));
 
   if (!pluginConfig) return { ...DEFAULT_CONFIG };
 
@@ -66,22 +65,15 @@ export function resolveConfig(
 
   return {
     mode,
-    policiesPath: resolve(
-      (pluginConfig.policiesPath as string) || DEFAULT_CONFIG.policiesPath,
-    ),
-    auditLogPath: resolve(
-      (pluginConfig.auditLogPath as string) || DEFAULT_CONFIG.auditLogPath,
-    ),
-    rateStatePath: resolve(
-      (pluginConfig.rateStatePath as string) || DEFAULT_CONFIG.rateStatePath,
-    ),
+    policiesPath: resolve((pluginConfig.policiesPath as string) || DEFAULT_CONFIG.policiesPath),
+    auditLogPath: resolve((pluginConfig.auditLogPath as string) || DEFAULT_CONFIG.auditLogPath),
+    rateStatePath: resolve((pluginConfig.rateStatePath as string) || DEFAULT_CONFIG.rateStatePath),
     retention: (pluginConfig.retention as string) || DEFAULT_CONFIG.retention,
     digest: {
       schedule:
-        (pluginConfig.digest as Record<string, unknown>)?.schedule as string ||
+        ((pluginConfig.digest as Record<string, unknown>)?.schedule as string) ||
         DEFAULT_CONFIG.digest.schedule,
-      channel: (pluginConfig.digest as Record<string, unknown>)
-        ?.channel as string,
+      channel: (pluginConfig.digest as Record<string, unknown>)?.channel as string,
     },
     risk: {
       llmEvalThreshold:
@@ -93,9 +85,7 @@ export function resolveConfig(
           ? riskCfg.llmEnabled
           : DEFAULT_CONFIG.risk.llmEnabled,
       llmModel:
-        typeof riskCfg?.llmModel === "string"
-          ? riskCfg.llmModel
-          : DEFAULT_CONFIG.risk.llmModel,
+        typeof riskCfg?.llmModel === "string" ? riskCfg.llmModel : DEFAULT_CONFIG.risk.llmModel,
       llmApiKeyEnv:
         typeof riskCfg?.llmApiKeyEnv === "string"
           ? riskCfg.llmApiKeyEnv
@@ -103,9 +93,7 @@ export function resolveConfig(
     },
     alerts: {
       enabled:
-        typeof alertsCfg?.enabled === "boolean"
-          ? alertsCfg.enabled
-          : DEFAULT_CONFIG.alerts.enabled,
+        typeof alertsCfg?.enabled === "boolean" ? alertsCfg.enabled : DEFAULT_CONFIG.alerts.enabled,
       threshold:
         typeof alertsCfg?.threshold === "number"
           ? alertsCfg.threshold

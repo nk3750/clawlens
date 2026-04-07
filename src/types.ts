@@ -8,7 +8,7 @@ export type HttpRouteMatch = "exact" | "prefix";
 export type HttpRouteHandler = (
   req: IncomingMessage,
   res: ServerResponse,
-) => Promise<boolean | void> | boolean | void;
+) => Promise<boolean | undefined> | boolean | undefined;
 
 export interface HttpRouteParams {
   path: string;
@@ -30,21 +30,15 @@ export interface OpenClawPluginApi {
   config: Record<string, unknown>;
   pluginConfig?: Record<string, unknown>;
   logger: PluginLogger;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: OpenClaw plugin SDK signature
   on(hookName: string, handler: (...args: any[]) => any, opts?: { priority?: number }): void;
-  registerGatewayMethod(
-    method: string,
-    handler: (...args: unknown[]) => unknown,
-  ): void;
+  registerGatewayMethod(method: string, handler: (...args: unknown[]) => unknown): void;
   registerService(service: {
     id: string;
     start: () => Promise<void>;
     stop: () => Promise<void>;
   }): void;
-  registerCli(
-    registrar: (cli: CliRegistrar) => void,
-    opts?: Record<string, unknown>,
-  ): void;
+  registerCli(registrar: (cli: CliRegistrar) => void, opts?: Record<string, unknown>): void;
   registerHttpRoute(params: HttpRouteParams): void;
   resolvePath(input: string): string;
 }
@@ -56,7 +50,7 @@ export interface CliRegistrar {
 export interface CliCommand {
   description(desc: string): CliCommand;
   option(flags: string, desc: string, defaultValue?: string): CliCommand;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: OpenClaw CLI SDK signature
   action(fn: (...args: any[]) => void | Promise<void>): CliCommand;
 }
 

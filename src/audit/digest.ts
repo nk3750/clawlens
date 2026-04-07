@@ -4,10 +4,7 @@ import type { AuditEntry } from "./logger";
  * Generate a narrative daily digest from audit log entries.
  * Now includes per-agent risk summaries and high-risk call highlights.
  */
-export function generateDigest(
-  entries: AuditEntry[],
-  date?: Date,
-): string {
+export function generateDigest(entries: AuditEntry[], date?: Date): string {
   const now = date || new Date();
   const dateStr = now.toLocaleDateString("en-US", {
     month: "long",
@@ -20,10 +17,7 @@ export function generateDigest(
 
   // Separate decision entries from result/resolution/evaluation entries
   const decisions = entries.filter(
-    (e) =>
-      !e.executionResult &&
-      !e.userResponse &&
-      !e.refToolCallId,
+    (e) => !e.executionResult && !e.userResponse && !e.refToolCallId,
   );
 
   const resolutions = entries.filter((e) => e.userResponse);
@@ -44,21 +38,14 @@ export function generateDigest(
   const scoredDecisions = decisions.filter((e) => typeof e.riskScore === "number");
   const hasRiskData = scoredDecisions.length > 0;
 
-  lines.push(
-    `Your agent made ${total} tool call${total !== 1 ? "s" : ""} today.`,
-  );
+  lines.push(`Your agent made ${total} tool call${total !== 1 ? "s" : ""} today.`);
 
   const parts: string[] = [];
-  if (allowed.length > 0)
-    parts.push(`${allowed.length} auto-allowed (reads, searches)`);
-  if (approved.length > 0)
-    parts.push(`${approved.length} approved by you`);
-  if (blocked.length > 0)
-    parts.push(`${blocked.length} blocked by policy`);
-  if (timedOut.length > 0)
-    parts.push(`${timedOut.length} timed out (denied)`);
-  if (denied.length > 0)
-    parts.push(`${denied.length} denied by you`);
+  if (allowed.length > 0) parts.push(`${allowed.length} auto-allowed (reads, searches)`);
+  if (approved.length > 0) parts.push(`${approved.length} approved by you`);
+  if (blocked.length > 0) parts.push(`${blocked.length} blocked by policy`);
+  if (timedOut.length > 0) parts.push(`${timedOut.length} timed out (denied)`);
+  if (denied.length > 0) parts.push(`${denied.length} denied by you`);
 
   for (const part of parts) {
     lines.push(`- ${part}`);
@@ -70,9 +57,7 @@ export function generateDigest(
 
     // LLM evaluation entries — index by refToolCallId for lookup
     const evalEntries = entries.filter((e) => e.refToolCallId && e.llmEvaluation);
-    const evalByRef = new Map(
-      evalEntries.map((e) => [e.refToolCallId!, e]),
-    );
+    const evalByRef = new Map(evalEntries.map((e) => [e.refToolCallId!, e]));
 
     // Group decisions by agent (toolCallId prefix or "main")
     // For now we treat all as one agent since ctx.agentId isn't in audit entries yet
@@ -83,12 +68,12 @@ export function generateDigest(
       (e) => e.riskTier === "high" || e.riskTier === "critical",
     );
 
-    lines.push(
-      `Risk: ${total} tool calls, avg risk ${avgRisk}, peak ${peakRisk}`,
-    );
+    lines.push(`Risk: ${total} tool calls, avg risk ${avgRisk}, peak ${peakRisk}`);
 
     if (highRiskCalls.length > 0) {
-      lines.push(`  \u2014 \u26a0\ufe0f ${highRiskCalls.length} high-risk call${highRiskCalls.length !== 1 ? "s" : ""}`);
+      lines.push(
+        `  \u2014 \u26a0\ufe0f ${highRiskCalls.length} high-risk call${highRiskCalls.length !== 1 ? "s" : ""}`,
+      );
 
       for (const entry of highRiskCalls.slice(0, 5)) {
         const detail = entry.params?.command
@@ -102,13 +87,9 @@ export function generateDigest(
         const reasoning = evalEntry?.llmEvaluation?.reasoning;
 
         if (reasoning) {
-          lines.push(
-            `  \u2014 ${detail} scored ${entry.riskScore}: "${reasoning}"`,
-          );
+          lines.push(`  \u2014 ${detail} scored ${entry.riskScore}: "${reasoning}"`);
         } else {
-          const tagStr = entry.riskTags?.length
-            ? ` [${entry.riskTags.join(", ")}]`
-            : "";
+          const tagStr = entry.riskTags?.length ? ` [${entry.riskTags.join(", ")}]` : "";
           lines.push(`  \u2014 ${detail} scored ${entry.riskScore}${tagStr}`);
         }
       }
@@ -141,9 +122,7 @@ export function generateDigest(
         hour: "numeric",
         minute: "2-digit",
       });
-      lines.push(
-        `Approved: You approved \`${entry.toolName}\` at ${time}.`,
-      );
+      lines.push(`Approved: You approved \`${entry.toolName}\` at ${time}.`);
     }
   }
 
@@ -167,5 +146,5 @@ export function generateDigest(
 }
 
 function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "\u2026" : s;
+  return s.length > max ? `${s.slice(0, max)}\u2026` : s;
 }

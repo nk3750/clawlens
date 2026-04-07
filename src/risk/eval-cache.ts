@@ -89,9 +89,13 @@ export class EvalCache {
     }
 
     const tier =
-      evaluation.adjustedScore >= 80 ? "critical" :
-      evaluation.adjustedScore >= 60 ? "high" :
-      evaluation.adjustedScore >= 30 ? "medium" : "low";
+      evaluation.adjustedScore >= 80
+        ? "critical"
+        : evaluation.adjustedScore >= 60
+          ? "high"
+          : evaluation.adjustedScore >= 30
+            ? "medium"
+            : "low";
 
     this.cache.set(key, {
       adjustedScore: evaluation.adjustedScore,
@@ -121,16 +125,18 @@ export class EvalCache {
    * Limit to last 200 qualifying entries.
    * Returns the number of entries warmed.
    */
-  warmFromAuditLog(entries: Array<{
-    toolName: string;
-    params: Record<string, unknown>;
-    llmEvaluation?: {
-      adjustedScore: number;
-      confidence: string;
-      tags: string[];
-      reasoning: string;
-    };
-  }>): number {
+  warmFromAuditLog(
+    entries: Array<{
+      toolName: string;
+      params: Record<string, unknown>;
+      llmEvaluation?: {
+        adjustedScore: number;
+        confidence: string;
+        tags: string[];
+        reasoning: string;
+      };
+    }>,
+  ): number {
     // Filter to entries with high-confidence LLM evaluations
     const qualifying = entries.filter(
       (e) => e.llmEvaluation && e.llmEvaluation.confidence === "high",
@@ -161,9 +167,13 @@ export class EvalCache {
       }
 
       const tier =
-        evaluation.adjustedScore >= 80 ? "critical" :
-        evaluation.adjustedScore >= 60 ? "high" :
-        evaluation.adjustedScore >= 30 ? "medium" : "low";
+        evaluation.adjustedScore >= 80
+          ? "critical"
+          : evaluation.adjustedScore >= 60
+            ? "high"
+            : evaluation.adjustedScore >= 30
+              ? "medium"
+              : "low";
 
       this.cache.set(key, {
         adjustedScore: evaluation.adjustedScore,

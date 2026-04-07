@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { matchTool, matchParams, matchRule } from "../src/policy/matcher";
+import { describe, expect, it } from "vitest";
+import { matchParams, matchRule, matchTool } from "../src/policy/matcher";
 
 describe("matchTool", () => {
   it("matches exact tool name", () => {
@@ -31,15 +31,8 @@ describe("matchParams", () => {
   });
 
   it("matches glob pattern on params", () => {
-    expect(
-      matchParams(
-        { command: "rm -rf /tmp/stuff" },
-        { command: "*rm -rf*" },
-      ),
-    ).toBe(true);
-    expect(
-      matchParams({ command: "ls -la" }, { command: "*rm -rf*" }),
-    ).toBe(false);
+    expect(matchParams({ command: "rm -rf /tmp/stuff" }, { command: "*rm -rf*" })).toBe(true);
+    expect(matchParams({ command: "ls -la" }, { command: "*rm -rf*" })).toBe(false);
   });
 
   it("returns false when param key is missing", () => {
@@ -49,10 +42,7 @@ describe("matchParams", () => {
 
   it("matches multiple param patterns (all must match)", () => {
     expect(
-      matchParams(
-        { to: "boss@company.com", subject: "Report" },
-        { to: "*@company.com" },
-      ),
+      matchParams({ to: "boss@company.com", subject: "Report" }, { to: "*@company.com" }),
     ).toBe(true);
   });
 
@@ -74,39 +64,23 @@ describe("matchRule", () => {
 
   it("matches tool + params", () => {
     expect(
-      matchRule(
-        "exec",
-        { command: "rm -rf /" },
-        { tool: "exec", params: { command: "*rm -rf*" } },
-      ),
+      matchRule("exec", { command: "rm -rf /" }, { tool: "exec", params: { command: "*rm -rf*" } }),
     ).toBe(true);
 
     expect(
-      matchRule(
-        "exec",
-        { command: "ls -la" },
-        { tool: "exec", params: { command: "*rm -rf*" } },
-      ),
+      matchRule("exec", { command: "ls -la" }, { tool: "exec", params: { command: "*rm -rf*" } }),
     ).toBe(false);
   });
 
   it("fails if tool matches but params don't", () => {
     expect(
-      matchRule(
-        "exec",
-        { command: "echo hello" },
-        { tool: "exec", params: { command: "*rm*" } },
-      ),
+      matchRule("exec", { command: "echo hello" }, { tool: "exec", params: { command: "*rm*" } }),
     ).toBe(false);
   });
 
   it("matches params only (no tool constraint)", () => {
-    expect(
-      matchRule(
-        "anything",
-        { path: "/tmp/secret.key" },
-        { params: { path: "/tmp/*" } },
-      ),
-    ).toBe(true);
+    expect(matchRule("anything", { path: "/tmp/secret.key" }, { params: { path: "/tmp/*" } })).toBe(
+      true,
+    );
   });
 });

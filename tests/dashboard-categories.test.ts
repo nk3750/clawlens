@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  getCategory,
   computeBreakdown,
-  parseSessionContext,
   describeAction,
+  getCategory,
+  parseSessionContext,
   riskPosture,
 } from "../src/dashboard/categories";
 
@@ -75,11 +75,7 @@ describe("computeBreakdown", () => {
   });
 
   it("percentages sum to 100", () => {
-    const entries = [
-      { toolName: "read" },
-      { toolName: "write" },
-      { toolName: "exec" },
-    ];
+    const entries = [{ toolName: "read" }, { toolName: "write" }, { toolName: "exec" }];
     const result = computeBreakdown(entries);
     const sum = Object.values(result).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
@@ -94,11 +90,7 @@ describe("computeBreakdown", () => {
 
   it("handles rounding edge cases", () => {
     // 3 entries across 3 categories = 33.33% each
-    const entries = [
-      { toolName: "read" },
-      { toolName: "write" },
-      { toolName: "exec" },
-    ];
+    const entries = [{ toolName: "read" }, { toolName: "write" }, { toolName: "exec" }];
     const result = computeBreakdown(entries);
     const sum = Object.values(result).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
@@ -107,21 +99,19 @@ describe("computeBreakdown", () => {
 
 describe("parseSessionContext", () => {
   it("parses cron session keys", () => {
-    expect(
-      parseSessionContext("agent:social-manager:cron:trend-scan-tweet-006"),
-    ).toBe("Cron: Trend scan tweet");
+    expect(parseSessionContext("agent:social-manager:cron:trend-scan-tweet-006")).toBe(
+      "Cron: Trend scan tweet",
+    );
   });
 
   it("parses cron with health-check", () => {
-    expect(
-      parseSessionContext("agent:debugger:cron:f62h5ig4-health-check"),
-    ).toBe("Cron: F62h5ig4 health check");
+    expect(parseSessionContext("agent:debugger:cron:f62h5ig4-health-check")).toBe(
+      "Cron: F62h5ig4 health check",
+    );
   });
 
   it("parses telegram direct sessions", () => {
-    expect(
-      parseSessionContext("agent:main:telegram:direct:7928586762"),
-    ).toBe("Telegram DM");
+    expect(parseSessionContext("agent:main:telegram:direct:7928586762")).toBe("Telegram DM");
   });
 
   it("parses main sessions", () => {
@@ -143,21 +133,21 @@ describe("parseSessionContext", () => {
 
 describe("describeAction", () => {
   it("describes read actions", () => {
-    expect(
-      describeAction({ toolName: "read", params: { path: "/src/auth/config.yaml" } }),
-    ).toBe("Read .../auth/config.yaml");
+    expect(describeAction({ toolName: "read", params: { path: "/src/auth/config.yaml" } })).toBe(
+      "Read .../auth/config.yaml",
+    );
   });
 
   it("describes read with short path", () => {
-    expect(
-      describeAction({ toolName: "read", params: { path: "config.yaml" } }),
-    ).toBe("Read config.yaml");
+    expect(describeAction({ toolName: "read", params: { path: "config.yaml" } })).toBe(
+      "Read config.yaml",
+    );
   });
 
   it("describes write actions", () => {
-    expect(
-      describeAction({ toolName: "write", params: { path: "/tmp/out.txt" } }),
-    ).toBe("Write .../tmp/out.txt");
+    expect(describeAction({ toolName: "write", params: { path: "/tmp/out.txt" } })).toBe(
+      "Write .../tmp/out.txt",
+    );
   });
 
   it("describes exec with command", () => {
@@ -185,21 +175,19 @@ describe("describeAction", () => {
   });
 
   it("describes grep actions", () => {
-    expect(
-      describeAction({ toolName: "grep", params: { pattern: "TODO" } }),
-    ).toBe('Grep "TODO"');
+    expect(describeAction({ toolName: "grep", params: { pattern: "TODO" } })).toBe('Grep "TODO"');
   });
 
   it("describes message actions", () => {
-    expect(
-      describeAction({ toolName: "message", params: { to: "team-channel" } }),
-    ).toBe("Message team-channel");
+    expect(describeAction({ toolName: "message", params: { to: "team-channel" } })).toBe(
+      "Message team-channel",
+    );
   });
 
   it("describes web search", () => {
-    expect(
-      describeAction({ toolName: "web_search", params: { query: "Node.js 22" } }),
-    ).toBe('Search "Node.js 22"');
+    expect(describeAction({ toolName: "web_search", params: { query: "Node.js 22" } })).toBe(
+      'Search "Node.js 22"',
+    );
   });
 
   it("handles missing params gracefully", () => {
@@ -209,9 +197,7 @@ describe("describeAction", () => {
   });
 
   it("returns tool name for unknown tools", () => {
-    expect(
-      describeAction({ toolName: "custom_tool", params: {} }),
-    ).toBe("custom_tool");
+    expect(describeAction({ toolName: "custom_tool", params: {} })).toBe("custom_tool");
   });
 });
 

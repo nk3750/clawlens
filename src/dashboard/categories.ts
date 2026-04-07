@@ -9,13 +9,7 @@ import { parseExecCommand } from "../risk/exec-parser";
 
 // ── Activity categories ──────────────────────────────────
 
-export type ActivityCategory =
-  | "exploring"
-  | "changes"
-  | "commands"
-  | "web"
-  | "comms"
-  | "data";
+export type ActivityCategory = "exploring" | "changes" | "commands" | "web" | "comms" | "data";
 
 const TOOL_TO_CATEGORY: Record<string, ActivityCategory> = {
   read: "exploring",
@@ -238,7 +232,7 @@ function extractPath(value: unknown): string | undefined {
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "\u2026";
+  return `${s.slice(0, max - 1)}\u2026`;
 }
 
 // ── Risk posture derivation ──────────────────────────────

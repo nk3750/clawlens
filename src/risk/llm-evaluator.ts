@@ -1,6 +1,6 @@
-import type { RiskScore, LlmRiskEvaluation } from "./types";
-import type { SessionAction } from "./session-context";
 import type { PluginLogger } from "../types";
+import type { SessionAction } from "./session-context";
+import type { LlmRiskEvaluation, RiskScore } from "./types";
 
 export const EVAL_SYSTEM_PROMPT = `You are a security analyst evaluating an AI agent's tool call for risk.
 
@@ -59,9 +59,7 @@ export function parseEvalResponse(raw: string): LlmRiskEvaluation | null {
       adjustedScore: Math.max(0, Math.min(100, parsed.adjustedScore)),
       reasoning: parsed.reasoning,
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-      confidence: ["high", "medium", "low"].includes(parsed.confidence)
-        ? parsed.confidence
-        : "low",
+      confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
       patterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
     };
   } catch {
@@ -123,7 +121,9 @@ export async function evaluateWithLlm(
       })) as { status: string; error?: string };
 
       if (waitResult.status !== "ok") {
-        logger?.warn(`ClawLens: LLM eval subagent failed: ${waitResult.status} ${waitResult.error || ""}`);
+        logger?.warn(
+          `ClawLens: LLM eval subagent failed: ${waitResult.status} ${waitResult.error || ""}`,
+        );
         // Fall through to direct API
       } else {
         // 3. Get response messages
@@ -133,12 +133,10 @@ export async function evaluateWithLlm(
         })) as { messages: unknown[] };
 
         // Find the assistant's response — last message with content
-        const assistantMsg = [...messagesResult.messages]
-          .reverse()
-          .find((m: unknown) => {
-            const msg = m as Record<string, unknown>;
-            return msg.role === "assistant" && msg.content;
-          }) as Record<string, unknown> | undefined;
+        const assistantMsg = [...messagesResult.messages].reverse().find((m: unknown) => {
+          const msg = m as Record<string, unknown>;
+          return msg.role === "assistant" && msg.content;
+        }) as Record<string, unknown> | undefined;
 
         if (assistantMsg?.content) {
           let raw: string;
