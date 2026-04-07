@@ -10,9 +10,10 @@ interface Props {
   position: { x: number; y: number };
   tooltipAnchor: "below" | "above" | "left" | "right";
   onHover: (id: string | null) => void;
+  scale?: number;
 }
 
-export default function HexNode({ agent, position, tooltipAnchor, onHover }: Props) {
+export default function HexNode({ agent, position, tooltipAnchor, onHover, scale = 1 }: Props) {
   const [hovered, setHovered] = useState(false);
   const tierColor = riskColorRaw(riskTierFromScore(agent.avgRiskScore));
 
@@ -42,7 +43,7 @@ export default function HexNode({ agent, position, tooltipAnchor, onHover }: Pro
         className="flex flex-col items-center gap-2 text-center outline-none"
         style={{
           transition: "transform var(--cl-spring-duration) var(--cl-spring)",
-          transform: hovered ? "scale(1.12)" : "scale(1)",
+          transform: `scale(${(hovered ? 1.12 : 1) * scale})`,
         }}
       >
         {/* Avatar with risk glow ring */}

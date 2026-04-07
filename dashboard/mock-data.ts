@@ -1,12 +1,14 @@
 /**
  * Mock data for ClawLens Dashboard v2 local development.
  *
- * 4 agents:
- * 1. deploy-bot — interactive, active, CI pipeline. Risk: 42 elevated.
- * 2. code-reviewer — interactive, active, reviewing PR. Risk: 18 calm.
- * 3. nightly-scan — scheduled (every 6h), idle. Risk: 78 high.
- * 4. data-sync — interactive, idle (2h ago). Risk: 12 calm.
+ * MOCK_SCENARIO controls agent count for testing the constellation layout:
+ *   "standard" — 7 agents (heptagon: outer hex + center). Default.
+ *   "stress"   — 21 agents across 3-4 concentric rings. Heterogeneous properties.
+ *
+ * Switch to "stress" to test the shape-from-count algorithm at scale.
  */
+
+export const MOCK_SCENARIO: "standard" | "stress" = "standard";
 
 import type {
   AgentInfo,
@@ -268,6 +270,48 @@ export function generateMockEntries(): EntryResponse[] {
   ];
   for (const spec of logSpecs) {
     entries.push(buildEntry({ ...spec, agentId: "log-analyzer", sessionKey: "agent:log-analyzer:telegram:on-demand:user-42" }));
+  }
+
+  // ── Stress test agents (only when MOCK_SCENARIO === "stress") ──
+  if (MOCK_SCENARIO === "stress") {
+    const stressAgents: Array<{
+      id: string; session: string; status: "active" | "idle"; tools: string[];
+      riskBase: number; riskVar: number; offsetBase: number; count: number;
+    }> = [
+      { id: "email-sender", session: "agent:email-sender:web:outreach:batch-7", status: "idle", tools: ["message", "read", "fetch_url"], riskBase: 55, riskVar: 15, offsetBase: 1 * hour, count: 8 },
+      { id: "db-migrator", session: "agent:db-migrator:web:schema-update:v3.2", status: "active", tools: ["exec", "read", "write"], riskBase: 82, riskVar: 12, offsetBase: 3 * min, count: 10 },
+      { id: "slack-notifier", session: "agent:slack-notifier:api:alerts:daily", status: "idle", tools: ["message", "fetch_url"], riskBase: 8, riskVar: 8, offsetBase: 3 * hour, count: 5 },
+      { id: "doc-generator", session: "agent:doc-generator:web:api-docs:sprint-14", status: "active", tools: ["read", "write", "grep"], riskBase: 22, riskVar: 10, offsetBase: 5 * min, count: 7 },
+      { id: "api-tester", session: "agent:api-tester:cron:regression:nightly", status: "active", tools: ["fetch_url", "exec", "read"], riskBase: 45, riskVar: 15, offsetBase: 2 * min, count: 9 },
+      { id: "backup-agent", session: "agent:backup-agent:cron:daily-backup", status: "idle", tools: ["exec", "read"], riskBase: 5, riskVar: 5, offsetBase: 10 * hour, count: 4 },
+      { id: "perf-monitor", session: "agent:perf-monitor:web:dashboard:perf-check", status: "active", tools: ["fetch_url", "exec", "read"], riskBase: 38, riskVar: 12, offsetBase: 4 * min, count: 8 },
+      { id: "secret-scanner", session: "agent:secret-scanner:cron:vault-audit", status: "active", tools: ["grep", "read", "glob"], riskBase: 67, riskVar: 18, offsetBase: 1 * min, count: 10 },
+      { id: "dependency-bot", session: "agent:dependency-bot:cron:dep-update", status: "idle", tools: ["read", "exec", "write"], riskBase: 15, riskVar: 10, offsetBase: 6 * hour, count: 6 },
+      { id: "release-manager", session: "agent:release-manager:web:release:v4.1.0", status: "active", tools: ["exec", "write", "read", "message"], riskBase: 52, riskVar: 15, offsetBase: 2 * min, count: 10 },
+      { id: "config-validator", session: "agent:config-validator:api:config-check:env-prod", status: "idle", tools: ["read", "grep"], riskBase: 10, riskVar: 8, offsetBase: 5 * hour, count: 5 },
+      { id: "incident-responder", session: "agent:incident-responder:web:incident:INC-892", status: "active", tools: ["exec", "read", "fetch_url", "message"], riskBase: 88, riskVar: 8, offsetBase: 1 * min, count: 12 },
+      { id: "cost-tracker", session: "agent:cost-tracker:cron:billing-check", status: "idle", tools: ["fetch_url", "read"], riskBase: 7, riskVar: 5, offsetBase: 8 * hour, count: 4 },
+      { id: "compliance-checker", session: "agent:compliance-checker:web:audit:q2-2026", status: "active", tools: ["read", "grep", "exec"], riskBase: 61, riskVar: 14, offsetBase: 3 * min, count: 9 },
+    ];
+
+    for (const sa of stressAgents) {
+      for (let i = 0; i < sa.count; i++) {
+        const tool = sa.tools[i % sa.tools.length];
+        const risk = Math.max(2, Math.min(98, sa.riskBase + Math.floor(Math.random() * sa.riskVar * 2) - sa.riskVar));
+        const isBlock = risk > 85 && i === sa.count - 1;
+        entries.push(buildEntry({
+          toolName: tool,
+          params: { path: `src/${sa.id}/file${i}.ts`, command: `task-${i}` },
+          riskScore: risk,
+          agentId: sa.id,
+          sessionKey: sa.session,
+          offsetMs: sa.offsetBase + i * min,
+          decision: isBlock ? "block" : risk > 70 ? "approval_required" : undefined,
+          userResponse: risk > 70 && !isBlock ? "approved" : undefined,
+          effectiveDecision: isBlock ? "block" : undefined,
+        }));
+      }
+    }
   }
 
   entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
