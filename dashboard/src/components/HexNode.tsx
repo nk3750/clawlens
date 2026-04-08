@@ -15,7 +15,7 @@ interface Props {
 
 export default function HexNode({ agent, position, tooltipAnchor, onHover, scale = 1 }: Props) {
   const [hovered, setHovered] = useState(false);
-  const tierColor = riskColorRaw(riskTierFromScore(agent.avgRiskScore));
+  const tierColor = riskColorRaw(riskTierFromScore(agent.peakRiskScore));
 
   const handleEnter = () => {
     setHovered(true);
@@ -32,6 +32,7 @@ export default function HexNode({ agent, position, tooltipAnchor, onHover, scale
       style={{
         left: `${position.x * 100}%`,
         top: `${position.y * 100}%`,
+        zIndex: hovered ? 10 : 1,
       }}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
@@ -96,7 +97,7 @@ export default function HexNode({ agent, position, tooltipAnchor, onHover, scale
               border: `1px solid ${tierColor}25`,
             }}
           >
-            {agent.avgRiskScore}
+            {agent.peakRiskScore}
           </span>
           <StatusDot agent={agent} />
         </div>

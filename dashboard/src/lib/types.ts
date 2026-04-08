@@ -84,6 +84,13 @@ export interface AgentInfo {
   latestActionTime?: string;
   needsAttention: boolean;
   attentionReason?: string;
+  blockedCount: number;
+  riskProfile: Record<RiskTier, number>;
+  topRisk?: {
+    description: string;
+    score: number;
+    tier: RiskTier;
+  };
 }
 
 export interface ToolSummaryItem {

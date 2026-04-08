@@ -409,6 +409,14 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
     const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
     const peak = scores.length ? Math.max(...scores) : 0;
 
+    const riskProfileData: Record<"low" | "medium" | "high" | "critical", number> = { low: 0, medium: 0, high: 0, critical: 0 };
+    for (const s of scores) {
+      if (s > 75) riskProfileData.critical++;
+      else if (s > 50) riskProfileData.high++;
+      else if (s > 25) riskProfileData.medium++;
+      else riskProfileData.low++;
+    }
+
     const todayCutoff = new Date();
     todayCutoff.setUTCHours(0, 0, 0, 0);
     const todayEntries = ae.filter((e) => new Date(e.timestamp) >= todayCutoff && e.decision);
@@ -458,6 +466,26 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
     // Today's activity breakdown (from today's entries, not session)
     const todayActivityBreakdown = computeBreakdown(todayEntries.length > 0 ? todayEntries : ae);
 
+    // Blocked count (today)
+    let blockedCount = 0;
+    for (const e of ae) {
+      if (e.effectiveDecision === "block" || e.effectiveDecision === "denied") {
+        blockedCount++;
+      }
+    }
+
+    // Top risk: single highest-risk action (score >= 25)
+    const topRiskEntry = [...ae]
+      .filter((e) => e.riskScore != null && e.riskScore >= 25)
+      .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0))[0];
+    const topRisk = topRiskEntry
+      ? {
+          description: describeAction(topRiskEntry),
+          score: topRiskEntry.riskScore!,
+          tier: riskTier(topRiskEntry.riskScore!) as "low" | "medium" | "high" | "critical",
+        }
+      : undefined;
+
     agents.push({
       id,
       name: id,
@@ -483,6 +511,9 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
       latestActionTime: latest.timestamp,
       needsAttention,
       attentionReason,
+      blockedCount,
+      riskProfile: riskProfileData,
+      topRisk,
     });
   }
 

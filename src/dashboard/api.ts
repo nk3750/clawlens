@@ -96,6 +96,13 @@ export interface AgentInfo {
   latestActionTime?: string;
   needsAttention: boolean;
   attentionReason?: string;
+  blockedCount: number;
+  riskProfile: Record<string, number>;
+  topRisk?: {
+    description: string;
+    score: number;
+    tier: string;
+  };
 }
 
 export interface ToolSummaryItem {
@@ -600,12 +607,17 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
     let riskSum = 0;
     let riskCount = 0;
     let peakRisk = 0;
+    const riskProfile: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     for (const e of agentEntries) {
       const score = getEffectiveScore(e, evalIdx);
       if (score !== undefined) {
         riskSum += score;
         riskCount++;
         if (score > peakRisk) peakRisk = score;
+        if (score > 75) riskProfile.critical++;
+        else if (score > 50) riskProfile.high++;
+        else if (score > 25) riskProfile.medium++;
+        else riskProfile.low++;
       }
     }
 
@@ -695,6 +707,34 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       attentionReason = "High risk activity detected";
     }
 
+    // Blocked count (today)
+    let blockedCount = 0;
+    for (const e of todayDecisions) {
+      const eff = getEffectiveDecision(e);
+      if (eff === "block" || eff === "denied") blockedCount++;
+    }
+
+    // Top risk: single highest-risk action (score >= 25)
+    let topRisk: AgentInfo["topRisk"];
+    const topRiskEntry = agentEntries
+      .filter(
+        (e) =>
+          isDecisionEntry(e) &&
+          getEffectiveScore(e, evalIdx) !== undefined &&
+          getEffectiveScore(e, evalIdx)! >= 25,
+      )
+      .sort(
+        (a, b) => (getEffectiveScore(b, evalIdx) ?? 0) - (getEffectiveScore(a, evalIdx) ?? 0),
+      )[0];
+    if (topRiskEntry) {
+      const score = getEffectiveScore(topRiskEntry, evalIdx)!;
+      topRisk = {
+        description: describeAction(topRiskEntry),
+        score,
+        tier: score > 75 ? "critical" : score > 50 ? "high" : score > 25 ? "medium" : "low",
+      };
+    }
+
     agents.push({
       id,
       name: id,
@@ -713,6 +753,9 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
       latestActionTime,
       needsAttention,
       attentionReason,
+      blockedCount,
+      riskProfile,
+      topRisk,
     });
   }
 

@@ -204,7 +204,7 @@ export default function HexConstellation({ agents }: Props) {
   const sortedAgents = useMemo(() => {
     return [...agents].sort((a, b) => {
       if (a.status !== b.status) return a.status === "active" ? -1 : 1;
-      return b.avgRiskScore - a.avgRiskScore;
+      return b.peakRiskScore - a.peakRiskScore;
     });
   }, [agents]);
 
@@ -225,7 +225,7 @@ export default function HexConstellation({ agents }: Props) {
     x: breathingPositions[i].x,
     y: breathingPositions[i].y,
     id: a.id,
-    riskScore: a.avgRiskScore,
+    riskScore: a.peakRiskScore,
     riskPosture: a.riskPosture,
     status: a.status,
     context: a.currentContext,
