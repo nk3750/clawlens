@@ -266,7 +266,7 @@ export default function AgentDetail() {
                   View full session &rarr;
                 </Link>
               </div>
-              <ActivityStream entries={recentActivity} />
+              <ActivityStream entries={streamEntries} />
             </>
           ) : null}
         </section>
