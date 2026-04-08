@@ -631,6 +631,121 @@ describe("getAgentDetail", () => {
     vi.useRealTimers();
   });
 
+  it("recentActivity uses split session keys for cron agents", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_a",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_b",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T12:00:00Z", // 2h gap → run #2
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    // recentActivity is reverse-chrono, so tc_b (run #2) comes first
+    expect(result!.recentActivity[0].sessionKey).toBe("agent:bot-1:cron:job-001#2");
+    expect(result!.recentActivity[1].sessionKey).toBe("agent:bot-1:cron:job-001");
+
+    vi.useRealTimers();
+  });
+
+  it("recentActivity preserves sessionKey for non-cron sessions", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:telegram:direct:123",
+        toolCallId: "tc_1",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:telegram:direct:123",
+        toolCallId: "tc_2",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T10:01:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    // Non-cron: no gap splitting, key stays the same
+    expect(result!.recentActivity[0].sessionKey).toBe("agent:bot-1:telegram:direct:123");
+    expect(result!.recentActivity[1].sessionKey).toBe("agent:bot-1:telegram:direct:123");
+    // Same in riskTrend (no scores so riskTrend empty, check sessions instead)
+    expect(result!.sessions[0].sessionKey).toBe("agent:bot-1:telegram:direct:123");
+
+    vi.useRealTimers();
+  });
+
+  it("split session keys match between recentActivity and sessions", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 30,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_2",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 40,
+        timestamp: "2026-03-29T12:00:00Z", // 2h gap → run #2
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_3",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: "2026-03-29T12:01:00Z", // same run as tc_2
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+
+    // Sessions should show both split sessions
+    const sessionKeys = result!.sessions.map((s) => s.sessionKey);
+    expect(sessionKeys).toContain("agent:bot-1:cron:job-001");
+    expect(sessionKeys).toContain("agent:bot-1:cron:job-001#2");
+
+    // Every recentActivity sessionKey should exist in the sessions list
+    for (const ra of result!.recentActivity) {
+      expect(sessionKeys).toContain(ra.sessionKey);
+    }
+
+    // Every riskTrend sessionKey should exist in the sessions list
+    for (const rt of result!.riskTrend) {
+      expect(sessionKeys).toContain(rt.sessionKey);
+    }
+
+    vi.useRealTimers();
+  });
+
   it("filters by range parameter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
