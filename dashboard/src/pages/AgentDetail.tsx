@@ -105,13 +105,16 @@ export default function AgentDetail() {
     : agent.peakRiskScore;
 
   // Merge live + initial entries for active agents
+  // For idle agents, show only entries from the most recent split session
+  const lastSession = sessions[0];
   const streamEntries = agent.status === "active"
     ? mergeLiveEntries(liveEntries, currentSessionActivity)
-    : recentActivity;
+    : lastSession
+      ? recentActivity.filter((e) => e.sessionKey === lastSession.sessionKey)
+      : recentActivity;
 
   // Dynamic section label
   const isActive = agent.status === "active";
-  const lastSession = sessions[0];
   const showSection = isActive || !!lastSession;
 
   // Sparkline dot click → navigate to session detail with highlight
