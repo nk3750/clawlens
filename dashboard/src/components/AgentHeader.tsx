@@ -5,9 +5,13 @@ import GradientAvatar from "./GradientAvatar";
 
 interface Props {
   agent: AgentInfo;
+  todayActions?: number;
+  avgRisk?: number;
+  peakRisk?: number;
+  totalSessions?: number;
 }
 
-export default function AgentHeader({ agent }: Props) {
+export default function AgentHeader({ agent, todayActions, avgRisk, peakRisk, totalSessions }: Props) {
   const tier = riskTierFromScore(agent.avgRiskScore);
   const haloColor = riskColorRaw(tier);
 
@@ -59,7 +63,7 @@ export default function AgentHeader({ agent }: Props) {
           <GradientAvatar agentId={agent.id} size="lg" />
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1
             className="font-display font-bold"
             style={{
@@ -85,9 +89,62 @@ export default function AgentHeader({ agent }: Props) {
             </p>
           )}
         </div>
+
+        {/* Stat pills */}
+        <div className="hidden md:flex items-center gap-6 shrink-0">
+          <StatPill value={todayActions ?? agent.todayToolCalls} label="actions" sublabel="today" />
+          <StatPill
+            value={avgRisk ?? agent.avgRiskScore}
+            label="avg"
+            sublabel={riskTierFromScore(avgRisk ?? agent.avgRiskScore).toUpperCase()}
+            color={riskColorRaw(riskTierFromScore(avgRisk ?? agent.avgRiskScore))}
+          />
+          <StatPill
+            value={peakRisk ?? agent.peakRiskScore}
+            label="peak"
+            sublabel={riskTierFromScore(peakRisk ?? agent.peakRiskScore).toUpperCase()}
+            color={riskColorRaw(riskTierFromScore(peakRisk ?? agent.peakRiskScore))}
+          />
+          <StatPill value={totalSessions ?? 0} label="sessions" sublabel="today" />
+        </div>
       </div>
 
       <div className="cl-divider mt-8" />
+    </div>
+  );
+}
+
+function StatPill({
+  value,
+  label,
+  sublabel,
+  color,
+}: {
+  value: number;
+  label: string;
+  sublabel: string;
+  color?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center text-center">
+      <span
+        className="font-mono text-lg font-bold"
+        style={{ color: color ?? "var(--cl-text-primary)", lineHeight: 1.2 }}
+      >
+        {value}
+      </span>
+      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}>
+        {label}
+      </span>
+      <span
+        className="label-mono"
+        style={{
+          color: color ?? "var(--cl-text-muted)",
+          fontSize: "9px",
+        }}
+      >
+        {sublabel}
+      </span>
     </div>
   );
 }

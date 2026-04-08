@@ -1,65 +1,153 @@
-import type { AgentInfo, RiskTrendPoint } from "../lib/types";
-import RiskArc from "./RiskArc";
+import { useState } from "react";
+import type { EntryResponse, RiskTrendPoint } from "../lib/types";
+import { riskTierFromScore, riskColorRaw, entryIcon } from "../lib/utils";
+import { describeEntry } from "../lib/groupEntries";
 import Sparkline from "./Sparkline";
+import RiskDetail from "./RiskDetail";
 
 interface Props {
-  agent: AgentInfo;
   riskTrend: RiskTrendPoint[];
-  /** All agents for fleet rank computation */
-  allAgents?: AgentInfo[];
-  /** Current session stats */
-  sessionStats?: {
-    avg: number;
-    peak: number;
-    count: number;
-  };
+  topRisks: EntryResponse[];
+  onDotClick?: (point: RiskTrendPoint, index: number) => void;
 }
 
-export default function RiskPanel({ agent, riskTrend, allAgents, sessionStats }: Props) {
-  // Fleet rank: sort all agents by avgRiskScore descending, find this agent's position
-  let fleetRank: string | null = null;
-  if (allAgents && allAgents.length > 1) {
-    const sorted = [...allAgents].sort((a, b) => b.avgRiskScore - a.avgRiskScore);
-    const idx = sorted.findIndex((a) => a.id === agent.id);
-    if (idx >= 0) {
-      fleetRank = `${idx + 1} of ${sorted.length}`;
-    }
-  }
+export default function RiskPanel({ riskTrend, topRisks, onDotClick }: Props) {
+  return (
+    <div>
+      {/* Top risks */}
+      <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
+        TOP RISKS
+      </h3>
 
-  const avg = sessionStats?.avg ?? agent.avgRiskScore;
-  const peak = sessionStats?.peak ?? agent.peakRiskScore;
+      {topRisks.length === 0 ? (
+        <p className="text-sm py-4" style={{ color: "var(--cl-text-muted)" }}>
+          No elevated risks in recent activity
+        </p>
+      ) : (
+        <div className="space-y-1 mb-6">
+          {topRisks.map((entry, i) => (
+            <RiskDriverRow key={entry.toolCallId ?? i} entry={entry} />
+          ))}
+        </div>
+      )}
+
+      {/* 24h trend */}
+      <div className="cl-divider mb-4" />
+      <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
+        24H TREND
+      </h3>
+      <Sparkline points={riskTrend} width={320} height={100} onDotClick={onDotClick} />
+    </div>
+  );
+}
+
+function RiskDriverRow({ entry }: { entry: EntryResponse }) {
+  const [expanded, setExpanded] = useState(false);
+  const icon = entryIcon(entry);
+  const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : "low";
+  const color = riskColorRaw(tier);
+  const description = describeEntry(entry);
+  const hasAi = entry.llmEvaluation && entry.llmEvaluation.confidence !== "none";
 
   return (
     <div>
-      {/* Large RiskArc */}
-      <div className="flex justify-center mb-6">
-        <RiskArc score={avg} size={140} />
-      </div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg transition-colors"
+        style={{
+          backgroundColor: expanded ? "var(--cl-elevated)" : "transparent",
+        }}
+      >
+        {/* Category icon */}
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={icon.color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0"
+        >
+          <path d={icon.path} />
+        </svg>
 
-      {/* Session stats */}
-      <div className="flex flex-wrap gap-x-6 gap-y-2 mb-6 justify-center">
-        <div>
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>session avg</span>
-          <span className="label-mono ml-2" style={{ color: "var(--cl-text-secondary)" }}>{avg}</span>
-        </div>
-        <div>
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>peak</span>
-          <span className="label-mono ml-2" style={{ color: "var(--cl-text-secondary)" }}>{peak}</span>
-        </div>
-        {fleetRank && (
-          <div>
-            <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>fleet rank</span>
-            <span className="label-mono ml-2" style={{ color: "var(--cl-text-secondary)" }}>{fleetRank}</span>
-          </div>
+        {/* Description */}
+        <span
+          className="text-sm flex-1 min-w-0 truncate"
+          style={{ color: "var(--cl-text-primary)" }}
+        >
+          {description}
+        </span>
+
+        {/* Risk score + tier */}
+        {entry.riskScore != null && (
+          <span className="flex items-center gap-1.5 shrink-0">
+            <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
+              {entry.riskScore}
+            </span>
+            <span className="label-mono" style={{ color }}>
+              {tier.toUpperCase()}
+            </span>
+          </span>
         )}
-      </div>
 
-      {/* 24h risk trend sparkline */}
-      <div>
-        <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
-          24H RISK TREND
-        </h3>
-        <Sparkline points={riskTrend} width={320} height={100} />
+        {/* AI label */}
+        {hasAi && (
+          <span
+            className="label-mono shrink-0"
+            style={{ color: "var(--cl-accent)", fontSize: "10px" }}
+          >
+            AI
+          </span>
+        )}
+
+        {/* Chevron */}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--cl-text-muted)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 transition-transform"
+          style={{
+            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+            transitionDuration: "var(--cl-spring-duration)",
+            transitionTimingFunction: "var(--cl-spring)",
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {/* AI reasoning preview (collapsed) */}
+      {!expanded && entry.llmEvaluation?.reasoning && (
+        <div
+          className="text-xs italic px-3 pb-1 truncate"
+          style={{ color: "var(--cl-text-muted)", paddingLeft: "2.25rem" }}
+        >
+          &ldquo;{entry.llmEvaluation.reasoning}&rdquo;
+        </div>
+      )}
+
+      {/* Expandable RiskDetail */}
+      <div
+        className="grid transition-all"
+        style={{
+          gridTemplateRows: expanded ? "1fr" : "0fr",
+          transitionDuration: "var(--cl-spring-duration)",
+          transitionTimingFunction: "var(--cl-spring)",
+        }}
+      >
+        <div className="overflow-hidden">
+          <div className="px-3 pb-3 pl-8">
+            <RiskDetail entry={entry} />
+          </div>
+        </div>
       </div>
     </div>
   );

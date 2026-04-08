@@ -86,16 +86,13 @@ export default function ActivityEntry({ entry, description }: Props) {
             <span className="label-mono shrink-0" style={{ color: dotColor }}>
               {tier.toUpperCase()}
             </span>
-            {entry.llmEvaluation && (
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="var(--cl-accent)"
-                className="shrink-0"
+            {entry.llmEvaluation && entry.llmEvaluation.confidence !== "none" && (
+              <span
+                className="label-mono shrink-0"
+                style={{ color: "var(--cl-accent)", fontSize: "10px" }}
               >
-                <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
-              </svg>
+                AI
+              </span>
             )}
           </span>
         )}

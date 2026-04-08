@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RiskTrendPoint } from "../lib/types";
 import { riskTierFromScore, riskColorRaw } from "../lib/utils";
 
@@ -5,9 +6,10 @@ interface Props {
   points: RiskTrendPoint[];
   width?: number;
   height?: number;
+  onDotClick?: (point: RiskTrendPoint, index: number) => void;
 }
 
-export default function Sparkline({ points, width = 320, height = 100 }: Props) {
+export default function Sparkline({ points, width = 320, height = 100, onDotClick }: Props) {
   if (points.length === 0) {
     return (
       <div
@@ -18,6 +20,8 @@ export default function Sparkline({ points, width = 320, height = 100 }: Props) 
       </div>
     );
   }
+
+  const [clickedIdx, setClickedIdx] = useState<number | null>(null);
 
   const pad = { top: 8, right: 12, bottom: 24, left: 32 };
   const plotW = width - pad.left - pad.right;
@@ -118,17 +122,44 @@ export default function Sparkline({ points, width = 320, height = 100 }: Props) 
         const color = riskColorRaw(tier);
         const px = x(new Date(p.timestamp).getTime());
         const py = y(p.score);
+        const clickable = !!onDotClick;
         return (
-          <circle
+          <g
             key={i}
-            cx={px}
-            cy={py}
-            r={3}
-            fill={color}
-            filter={p.score > 25 ? "url(#sparkle-glow)" : undefined}
+            style={clickable ? { cursor: "pointer" } : undefined}
+            onClick={
+              clickable
+                ? () => {
+                    setClickedIdx(i);
+                    onDotClick(p, i);
+                    setTimeout(() => setClickedIdx(null), 600);
+                  }
+                : undefined
+            }
           >
+            <circle
+              cx={px}
+              cy={py}
+              r={3}
+              fill={color}
+              filter={p.score > 25 ? "url(#sparkle-glow)" : undefined}
+            />
+            {/* Click highlight ring */}
+            {clickedIdx === i && (
+              <circle
+                cx={px}
+                cy={py}
+                r={3}
+                fill="none"
+                stroke={color}
+                strokeWidth="1.5"
+              >
+                <animate attributeName="r" from="3" to="12" dur="0.5s" fill="freeze" />
+                <animate attributeName="opacity" from="0.8" to="0" dur="0.5s" fill="freeze" />
+              </circle>
+            )}
             <title>{`${p.toolName}: ${p.score}`}</title>
-          </circle>
+          </g>
         );
       })}
 

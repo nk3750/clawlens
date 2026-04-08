@@ -101,6 +101,39 @@ export function riskLeftBorder(score: number | undefined): string | undefined {
   return `inset 2px 0 0 0 ${c}${hex}`;
 }
 
+// ── Live entry merging ──
+
+import type { EntryResponse } from "./types";
+
+/**
+ * Merge live SSE entries with initial API entries, deduplicating by toolCallId.
+ * Live entries come first (newest-first order).
+ */
+export function mergeLiveEntries(
+  live: EntryResponse[],
+  initial: EntryResponse[],
+): EntryResponse[] {
+  const seen = new Set<string>();
+  const result: EntryResponse[] = [];
+
+  for (const e of live) {
+    const key = e.toolCallId ?? e.timestamp;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(e);
+    }
+  }
+  for (const e of initial) {
+    const key = e.toolCallId ?? e.timestamp;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(e);
+    }
+  }
+
+  return result;
+}
+
 export function postureLabel(posture: RiskPosture): string {
   switch (posture) {
     case "calm": return "Calm";
