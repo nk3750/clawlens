@@ -1,0 +1,218 @@
+import { callLlmApi, DEFAULT_EVAL_MODELS, PROVIDER_ENDPOINTS } from "../risk/llm-evaluator";
+import { describeAction } from "./categories";
+/** Build index of eval entries keyed by the toolCallId they reference. */
+function buildEvalIndex(entries) {
+    const index = new Map();
+    for (const e of entries) {
+        if (e.refToolCallId && e.llmEvaluation) {
+            index.set(e.refToolCallId, e);
+        }
+    }
+    return index;
+}
+/** Get the effective risk score, preferring LLM-adjusted over Tier 1. */
+function getEffectiveScore(entry, evalIdx) {
+    if (entry.toolCallId) {
+        const evalEntry = evalIdx.get(entry.toolCallId);
+        if (evalEntry?.llmEvaluation)
+            return evalEntry.llmEvaluation.adjustedScore;
+    }
+    if (entry.llmEvaluation)
+        return entry.llmEvaluation.adjustedScore;
+    return entry.riskScore;
+}
+const summaryCache = new Map();
+const ACTIVE_SESSION_TTL_MS = 60_000; // 60s for active sessions
+/**
+ * Check if a session appears to still be active (last entry within 5 min).
+ */
+function isSessionActive(entries) {
+    if (entries.length === 0)
+        return false;
+    let latest = entries[0].timestamp;
+    for (const e of entries) {
+        if (e.timestamp > latest)
+            latest = e.timestamp;
+    }
+    return Date.now() - new Date(latest).getTime() < 5 * 60 * 1000;
+}
+/**
+ * Generate a template summary for sessions with few entries.
+ */
+function templateSummary(sessionKey, entries, evalIdx) {
+    const decisions = entries.filter((e) => e.decision !== undefined);
+    const count = decisions.length;
+    // Avg risk using LLM-adjusted scores
+    let riskSum = 0;
+    let riskCount = 0;
+    for (const e of entries) {
+        const score = getEffectiveScore(e, evalIdx);
+        if (score !== undefined) {
+            riskSum += score;
+            riskCount++;
+        }
+    }
+    const avgRisk = riskCount > 0 ? Math.round(riskSum / riskCount) : 0;
+    return {
+        sessionKey,
+        summary: `Ran ${count} action${count !== 1 ? "s" : ""}. Avg risk: ${avgRisk}.`,
+        generatedAt: new Date().toISOString(),
+        isLlmGenerated: false,
+    };
+}
+/**
+ * Build the LLM prompt for session summarization.
+ */
+function buildSummaryPrompt(sessionKey, entries, evalIdx) {
+    const decisions = entries
+        .filter((e) => e.decision !== undefined)
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const startTime = decisions[0]?.timestamp ?? "unknown";
+    const endTime = decisions[decisions.length - 1]?.timestamp ?? "unknown";
+    const startMs = new Date(startTime).getTime();
+    const endMs = new Date(endTime).getTime();
+    const durationMs = endMs - startMs;
+    const durationStr = durationMs > 60000 ? `${Math.round(durationMs / 60000)}m` : `${Math.round(durationMs / 1000)}s`;
+    let riskSum = 0;
+    let riskCount = 0;
+    let peakRisk = 0;
+    for (const e of entries) {
+        const score = getEffectiveScore(e, evalIdx);
+        if (score !== undefined) {
+            riskSum += score;
+            riskCount++;
+            if (score > peakRisk)
+                peakRisk = score;
+        }
+    }
+    const avgRisk = riskCount > 0 ? Math.round(riskSum / riskCount) : 0;
+    const toolLines = decisions
+        .slice(0, 30)
+        .map((e) => {
+        const desc = describeAction(e);
+        const score = getEffectiveScore(e, evalIdx);
+        const risk = score !== undefined ? `risk ${score}` : "no score";
+        const decision = e.decision || "unknown";
+        return `- ${e.timestamp} ${e.toolName} ${desc} → ${risk} ${decision}`;
+    })
+        .join("\n");
+    return `Summarize this agent session in 1-2 sentences. Focus on: what the agent did, whether anything was risky or blocked, and the outcome. Be concise and factual.
+
+Session: ${sessionKey}
+Duration: ${durationStr}
+Actions: ${decisions.length}
+Avg risk: ${avgRisk}, Peak: ${peakRisk}
+
+Tool calls:
+${toolLines}`;
+}
+/**
+ * Get or generate a session summary.
+ * Returns null if the session has no entries.
+ */
+export async function getSessionSummary(sessionKey, entries, config) {
+    let sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
+    // Handle split session keys (e.g., "agent:bot:cron:job#2")
+    if (sessionEntries.length === 0) {
+        const hashIdx = sessionKey.lastIndexOf("#");
+        if (hashIdx !== -1) {
+            const baseKey = sessionKey.slice(0, hashIdx);
+            const runNum = parseInt(sessionKey.slice(hashIdx + 1), 10);
+            const baseEntries = entries
+                .filter((e) => e.sessionKey === baseKey)
+                .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            // Split by 30-min gaps and pick the right run
+            const GAP_MS = 30 * 60 * 1000;
+            const runs = [];
+            let current = [];
+            for (const e of baseEntries) {
+                if (current.length > 0) {
+                    const gap = new Date(e.timestamp).getTime() -
+                        new Date(current[current.length - 1].timestamp).getTime();
+                    if (gap > GAP_MS) {
+                        runs.push(current);
+                        current = [];
+                    }
+                }
+                current.push(e);
+            }
+            if (current.length > 0)
+                runs.push(current);
+            sessionEntries = runs[runNum - 1] ?? [];
+        }
+    }
+    if (sessionEntries.length === 0)
+        return null;
+    // Check cache
+    const cached = summaryCache.get(sessionKey);
+    if (cached) {
+        if (cached.expiresAt === null || Date.now() < cached.expiresAt) {
+            return cached.summary;
+        }
+        // Expired — remove and regenerate
+        summaryCache.delete(sessionKey);
+    }
+    // Build eval index from ALL entries — eval entries may not share the session key
+    const evalIdx = buildEvalIndex(entries);
+    const decisions = sessionEntries.filter((e) => e.decision !== undefined);
+    const active = isSessionActive(sessionEntries);
+    let summary;
+    if (decisions.length < 3) {
+        summary = templateSummary(sessionKey, sessionEntries, evalIdx);
+    }
+    else {
+        // Try LLM generation
+        const llmSummary = await generateLlmSummary(sessionKey, sessionEntries, config, evalIdx);
+        summary = llmSummary ?? templateSummary(sessionKey, sessionEntries, evalIdx);
+    }
+    // Cache: permanent for ended sessions, TTL for active
+    summaryCache.set(sessionKey, {
+        summary,
+        expiresAt: active ? Date.now() + ACTIVE_SESSION_TTL_MS : null,
+    });
+    return summary;
+}
+async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
+    const prompt = buildSummaryPrompt(sessionKey, entries, evalIdx);
+    const provider = config.provider || "anthropic";
+    const model = config.llmModel || DEFAULT_EVAL_MODELS[provider];
+    // Need a known provider endpoint and a model to proceed
+    if (!model || !PROVIDER_ENDPOINTS[provider])
+        return null;
+    // Resolve API key: modelAuth first, then env var
+    let apiKey;
+    // Path 1: modelAuth-resolved key
+    if (config.modelAuth && config.provider) {
+        try {
+            apiKey = await config.modelAuth.resolveApiKeyForProvider(config.provider);
+        }
+        catch {
+            // Fall through to env var
+        }
+    }
+    // Path 2: explicit env var
+    if (!apiKey) {
+        apiKey = process.env[config.llmApiKeyEnv];
+    }
+    if (!apiKey)
+        return null;
+    const systemPrompt = "Summarize the agent session in 1-2 sentences. Be concise and factual. Focus on what the agent did, whether anything was risky or blocked, and the outcome.";
+    const text = await callLlmApi(provider, apiKey, model, systemPrompt, prompt);
+    if (!text)
+        return null;
+    return {
+        sessionKey,
+        summary: text.trim(),
+        generatedAt: new Date().toISOString(),
+        isLlmGenerated: true,
+    };
+}
+/** Exposed for testing — clears the summary cache. */
+export function clearSummaryCache() {
+    summaryCache.clear();
+}
+/** Exposed for testing — get cache size. */
+export function getSummaryCacheSize() {
+    return summaryCache.size;
+}
+//# sourceMappingURL=session-summary.js.map
