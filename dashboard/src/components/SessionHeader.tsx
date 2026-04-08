@@ -11,7 +11,7 @@ interface Props {
 export default function SessionHeader({ session }: Props) {
   const avgTier = riskTierFromScore(session.avgRisk);
   const peakTier = riskTierFromScore(session.peakRisk);
-  const { summary, loading: summaryLoading } = useSessionSummary(session.sessionKey);
+  const { summary, isLlmGenerated, loading: summaryLoading } = useSessionSummary(session.sessionKey);
 
   return (
     <div className="mb-8">
@@ -87,12 +87,14 @@ export default function SessionHeader({ session }: Props) {
           <p className="text-sm italic" style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}>
             &ldquo;{summary}&rdquo;
           </p>
-          <span
-            className="label-mono shrink-0"
-            style={{ fontSize: "9px", color: "var(--cl-text-muted)" }}
-          >
-            AI-GENERATED
-          </span>
+          {isLlmGenerated && (
+            <span
+              className="label-mono shrink-0"
+              style={{ fontSize: "9px", color: "var(--cl-text-muted)" }}
+            >
+              AI-GENERATED
+            </span>
+          )}
         </div>
       ) : null}
 
