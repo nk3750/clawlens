@@ -123,6 +123,20 @@ const DECISION_COLORS: Record<string, string> = {
   allow: "var(--cl-risk-low)",
   block: "var(--cl-risk-high)",
   approve: "var(--cl-accent)",
+  approved: "var(--cl-accent)",
+  pending: "var(--cl-text-secondary)",
+  denied: "var(--cl-risk-high)",
+  timeout: "var(--cl-text-muted)",
+};
+
+const DECISION_LABEL: Record<string, string> = {
+  allow: "allowed",
+  block: "blocked",
+  approve: "approved",
+  approved: "approved",
+  pending: "pending",
+  denied: "denied",
+  timeout: "timed out",
 };
 
 function DecisionItems({ counts }: { counts: Record<string, number> }) {
@@ -131,7 +145,7 @@ function DecisionItems({ counts }: { counts: Record<string, number> }) {
     <>
       {items.map(([decision, count], i) => {
         const color = DECISION_COLORS[decision] ?? "var(--cl-text-secondary)";
-        const label = `${decision}ed`;
+        const label = DECISION_LABEL[decision] ?? decision;
         const isBlocked = decision === "block" && count > 0;
         return (
           <span key={decision} className="flex items-center gap-1.5">
