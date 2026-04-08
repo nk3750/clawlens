@@ -770,6 +770,16 @@ export function getAgentDetail(
   }
   allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
 
+  // Build reverse lookup: entry timestamp → split session key
+  // so riskTrend points navigate to the correct sub-session (#2, #3, etc.)
+  const splitSessionIndex = new Map<string, string>();
+  for (const [splitKey, sEntries] of sessionMap) {
+    for (const e of sEntries) {
+      const entryKey = e.toolCallId ?? e.timestamp;
+      splitSessionIndex.set(entryKey, splitKey);
+    }
+  }
+
   // Risk trend: decision entries within range window with scores, chronological
   const riskTrend = agentEntries
     .filter((e) => isDecisionEntry(e) && e.timestamp >= windowCutoff && e.riskScore !== undefined)
@@ -778,11 +788,12 @@ export function getAgentDetail(
     .map((e) => {
       const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
       const score = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore ?? 0;
+      const entryKey = e.toolCallId ?? e.timestamp;
       return {
         timestamp: e.timestamp,
         score,
         toolName: e.toolName,
-        sessionKey: e.sessionKey,
+        sessionKey: splitSessionIndex.get(entryKey) ?? e.sessionKey,
         toolCallId: e.toolCallId,
       };
     });
