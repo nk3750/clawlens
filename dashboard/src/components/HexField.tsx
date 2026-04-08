@@ -45,10 +45,10 @@ export default function HexField({
     const pts: Array<{ x: number; y: number; r: number; o: number }> = [];
     let seed = 42;
     const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const angle = rand() * Math.PI * 2;
-      const dist = rand() * 280 + 30;
-      pts.push({ x: cx + Math.cos(angle) * dist, y: cy + Math.sin(angle) * dist, r: rand() * 1.5 + 0.3, o: rand() * 0.15 + 0.03 });
+      const dist = rand() * 340 + 20;
+      pts.push({ x: cx + Math.cos(angle) * dist, y: cy + Math.sin(angle) * dist, r: rand() * 1.6 + 0.2, o: rand() * 0.2 + 0.04 });
     }
     return pts;
   }, [cx, cy]);

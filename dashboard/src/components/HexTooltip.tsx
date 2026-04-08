@@ -26,7 +26,6 @@ export default function HexTooltip({ agent, anchor }: Props) {
   };
 
   const blockedCount = agent.blockedCount;
-  const allowedCount = Math.max(0, agent.todayToolCalls - blockedCount);
 
   return (
     <div
@@ -37,12 +36,22 @@ export default function HexTooltip({ agent, anchor }: Props) {
         animation: "cascade-in 0.3s var(--cl-spring) both",
       }}
     >
-      {/* Section header */}
-      <div
-        className="label-mono mb-2"
-        style={{ color: "var(--cl-text-muted)", fontSize: 9 }}
-      >
-        ACTIONS BY RISK
+      {/* Header: label + context */}
+      <div className="flex items-center justify-between mb-2">
+        <span
+          className="label-mono"
+          style={{ color: "var(--cl-text-muted)", fontSize: 9 }}
+        >
+          ACTIONS TODAY
+        </span>
+        {agent.currentContext && (
+          <span
+            className="text-[9px] italic truncate"
+            style={{ color: "var(--cl-text-muted)", maxWidth: 120 }}
+          >
+            {agent.currentContext}
+          </span>
+        )}
       </div>
 
       {/* Risk tier grid — always 4 columns, LOW → CRIT scale */}
@@ -64,39 +73,21 @@ export default function HexTooltip({ agent, anchor }: Props) {
         })}
       </div>
 
-      {/* Divider */}
-      <div style={{ borderTop: "1px solid var(--cl-border-subtle)", margin: "8px 0 7px" }} />
-
-      {/* Decision tally + context */}
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 font-mono text-[10px]">
-          <span style={{ color: "var(--cl-risk-low)" }}>
-            {allowedCount} allowed
-          </span>
-          {blockedCount > 0 && (
-            <>
-              <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-              <span
-                className="px-1 py-0.5 rounded"
-                style={{
-                  color: "var(--cl-risk-high)",
-                  backgroundColor: "rgba(248, 113, 113, 0.1)",
-                }}
-              >
-                {blockedCount} blocked
-              </span>
-            </>
-          )}
-        </span>
-        {agent.currentContext && (
+      {/* Blocked count — only when > 0 */}
+      {blockedCount > 0 && (
+        <>
+          <div style={{ borderTop: "1px solid var(--cl-border-subtle)", margin: "8px 0 7px" }} />
           <span
-            className="text-[10px] italic truncate ml-2"
-            style={{ color: "var(--cl-text-muted)", maxWidth: 90 }}
+            className="font-mono text-[10px] px-1.5 py-0.5 rounded"
+            style={{
+              color: "var(--cl-risk-high)",
+              backgroundColor: "rgba(248, 113, 113, 0.1)",
+            }}
           >
-            {agent.currentContext}
+            {blockedCount} blocked
           </span>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Attention callout */}
       {agent.needsAttention && agent.attentionReason && (

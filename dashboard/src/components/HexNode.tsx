@@ -49,17 +49,33 @@ export default function HexNode({ agent, position, tooltipAnchor, onHover, scale
       >
         {/* Avatar with risk glow ring */}
         <div className="relative">
-          {/* Attention badge */}
+          {/* Attention badge + ping ring */}
+          {agent.needsAttention && (
+            <>
+              {/* Radiating ping */}
+              <div
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full z-10 attention-ping"
+                style={{ border: "2px solid rgba(251, 191, 36, 0.6)" }}
+              />
+              {/* Badge */}
+              <div
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center z-10 attention-pulse"
+                style={{
+                  backgroundColor: "rgba(251, 191, 36, 0.25)",
+                  border: "1.5px solid rgba(251, 191, 36, 0.6)",
+                }}
+              >
+                <span className="text-[8px] text-yellow-400 font-bold">!</span>
+              </div>
+            </>
+          )}
+
+          {/* Node-level ping ring (attention agents) */}
           {agent.needsAttention && (
             <div
-              className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center z-10 attention-pulse"
-              style={{
-                backgroundColor: "rgba(251, 191, 36, 0.2)",
-                border: "1px solid rgba(251, 191, 36, 0.4)",
-              }}
-            >
-              <span className="text-[8px] text-yellow-400 font-bold">!</span>
-            </div>
+              className="absolute inset-0 rounded-full attention-ping-node"
+              style={{ margin: -4, border: "2px solid rgba(251, 191, 36, 0.5)" }}
+            />
           )}
 
           {/* Glow ring */}
