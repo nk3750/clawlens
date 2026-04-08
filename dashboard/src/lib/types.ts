@@ -27,6 +27,20 @@ export interface StatsResponse {
   activeAgents: number;
   activeSessions: number;
   riskPosture: RiskPosture;
+  historicDailyMax: number;
+}
+
+export interface InterventionEntry {
+  timestamp: string;
+  agentId: string;
+  agentName: string;
+  toolName: string;
+  description: string;
+  riskScore: number;
+  riskTier: RiskTier;
+  decision: string;
+  effectiveDecision: string;
+  sessionKey?: string;
 }
 
 export interface EntryResponse {

@@ -11,6 +11,7 @@ import {
   type EntryFilters,
   getAgentDetail,
   getAgents,
+  getInterventions,
   getRecentEntries,
   getSessionDetail,
   getSessions,
@@ -65,8 +66,9 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       // ── API routes ──────────────────────────────
 
       if (subPath === "api/stats") {
+        const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, computeEnhancedStats(entries));
+        sendJson(res, computeEnhancedStats(entries, date));
         return true;
       }
 
@@ -97,8 +99,16 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       }
 
       if (subPath === "api/agents") {
+        const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getAgents(entries));
+        sendJson(res, getAgents(entries, date));
+        return true;
+      }
+
+      if (subPath === "api/interventions") {
+        const date = url.searchParams.get("date") || undefined;
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, getInterventions(entries, date));
         return true;
       }
 
