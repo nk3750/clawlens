@@ -596,6 +596,41 @@ describe("getAgentDetail", () => {
     vi.useRealTimers();
   });
 
+  it("riskTrend uses split session keys for cron agents", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    // Two cron runs with same raw session key, 2h gap (> 30min SESSION_GAP_MS)
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_run1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 30,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_run2",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 50,
+        timestamp: "2026-03-29T12:00:00Z", // 2h gap → splits into run #2
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result!.riskTrend).toHaveLength(2);
+    // First run keeps the raw key (no suffix)
+    expect(result!.riskTrend[0].sessionKey).toBe("agent:bot-1:cron:job-001");
+    // Second run gets #2 suffix
+    expect(result!.riskTrend[1].sessionKey).toBe("agent:bot-1:cron:job-001#2");
+
+    vi.useRealTimers();
+  });
+
   it("filters by range parameter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
