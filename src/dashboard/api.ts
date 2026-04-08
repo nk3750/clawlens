@@ -779,13 +779,17 @@ export function getAgentDetail(
     .slice(0, 200)
     .map(mapAndPatchSession);
 
-  // Current session activity: entries filtered to current session only
+  // Current session activity: entries from the latest split sub-session only
+  // For cron agents, the raw sessionKey spans many runs — use the most recent split
   const currentSessionKey = agent.currentSession?.sessionKey;
-  const currentSessionActivity = currentSessionKey
-    ? agentEntries
-        .filter((e) => e.sessionKey === currentSessionKey && isDecisionEntry(e))
-        .reverse()
-        .map(mapAndPatchSession)
+  const latestSplitKey = currentSessionKey
+    ? allSessions.find(
+        (s) =>
+          s.sessionKey === currentSessionKey || s.sessionKey.startsWith(`${currentSessionKey}#`),
+      )?.sessionKey
+    : undefined;
+  const currentSessionActivity = latestSplitKey
+    ? recentActivity.filter((e) => e.sessionKey === latestSplitKey)
     : [];
 
   // Risk trend: decision entries within range window with scores, chronological

@@ -693,6 +693,51 @@ describe("getAgentDetail", () => {
     vi.useRealTimers();
   });
 
+  it("currentSessionActivity shows only latest split sub-session for active cron agents", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T13:02:00Z")); // 2min after last entry → agent active
+
+    // Two cron runs with same raw session key, 2h gap
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_old",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T10:00:00Z", // run 1
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_new1",
+        decision: "allow",
+        toolName: "read",
+        timestamp: "2026-03-29T13:00:00Z", // run 2 (2h gap)
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "agent:bot-1:cron:job-001",
+        toolCallId: "tc_new2",
+        decision: "allow",
+        toolName: "exec",
+        timestamp: "2026-03-29T13:01:00Z", // run 2 continued
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    // Agent should be active (last entry 1min ago)
+    expect(result!.agent.status).toBe("active");
+    // currentSessionActivity should only have entries from the latest run (#2)
+    expect(result!.currentSessionActivity).toHaveLength(2);
+    expect(result!.currentSessionActivity.map((e) => e.toolCallId)).toEqual(
+      expect.arrayContaining(["tc_new1", "tc_new2"]),
+    );
+    // Should NOT include tc_old from run 1
+    expect(result!.currentSessionActivity.find((e) => e.toolCallId === "tc_old")).toBeUndefined();
+
+    vi.useRealTimers();
+  });
+
   it("split session keys match between recentActivity and sessions", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));

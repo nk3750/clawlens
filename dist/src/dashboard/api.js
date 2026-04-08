@@ -534,27 +534,14 @@ export function getAgentDetail(entries, agentId, range) {
     const rangeMs = RANGE_MS[range ?? ""] ?? RANGE_MS["24h"];
     const windowCutoff = new Date(Date.now() - rangeMs).toISOString();
     const evalIdx = buildEvalIndex(entries);
-    const recentActivity = agentEntries
-        .filter((e) => isDecisionEntry(e) && e.timestamp >= windowCutoff)
-        .reverse()
-        .slice(0, 200)
-        .map((e) => mapEntry(e, evalIdx));
-    // Current session activity: entries filtered to current session only
-    const currentSessionKey = agent.currentSession?.sessionKey;
-    const currentSessionActivity = currentSessionKey
-        ? agentEntries
-            .filter((e) => e.sessionKey === currentSessionKey && isDecisionEntry(e))
-            .reverse()
-            .map((e) => mapEntry(e, evalIdx))
-        : [];
     const sessionMap = groupBySessions(agentEntries);
     const allSessions = [];
     for (const [key, sEntries] of sessionMap) {
         allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
     }
     allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
-    // Build reverse lookup: entry timestamp → split session key
-    // so riskTrend points navigate to the correct sub-session (#2, #3, etc.)
+    // Build reverse lookup: entry key → split session key
+    // so entries and riskTrend points use the correct sub-session (#2, #3, etc.)
     const splitSessionIndex = new Map();
     for (const [splitKey, sEntries] of sessionMap) {
         for (const e of sEntries) {
@@ -562,6 +549,26 @@ export function getAgentDetail(entries, agentId, range) {
             splitSessionIndex.set(entryKey, splitKey);
         }
     }
+    const mapAndPatchSession = (e) => {
+        const mapped = mapEntry(e, evalIdx);
+        const entryKey = e.toolCallId ?? e.timestamp;
+        mapped.sessionKey = splitSessionIndex.get(entryKey) ?? mapped.sessionKey;
+        return mapped;
+    };
+    const recentActivity = agentEntries
+        .filter((e) => isDecisionEntry(e) && e.timestamp >= windowCutoff)
+        .reverse()
+        .slice(0, 200)
+        .map(mapAndPatchSession);
+    // Current session activity: entries from the latest split sub-session only
+    // For cron agents, the raw sessionKey spans many runs — use the most recent split
+    const currentSessionKey = agent.currentSession?.sessionKey;
+    const latestSplitKey = currentSessionKey
+        ? allSessions.find((s) => s.sessionKey === currentSessionKey || s.sessionKey.startsWith(`${currentSessionKey}#`))?.sessionKey
+        : undefined;
+    const currentSessionActivity = latestSplitKey
+        ? recentActivity.filter((e) => e.sessionKey === latestSplitKey)
+        : [];
     // Risk trend: decision entries within range window with scores, chronological
     const riskTrend = agentEntries
         .filter((e) => isDecisionEntry(e) && e.timestamp >= windowCutoff && e.riskScore !== undefined)
