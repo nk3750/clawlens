@@ -8,7 +8,7 @@
  * Switch to "stress" to test the shape-from-count algorithm at scale.
  */
 
-export const MOCK_SCENARIO: "standard" | "stress" = "standard";
+export const MOCK_SCENARIO: "standard" | "stress" = "stress";
 
 import type {
   AgentInfo,
@@ -403,7 +403,7 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
   const agents: AgentInfo[] = [];
   for (const [id, ae] of agentMap) {
     const latest = ae[0];
-    const isActive = Date.now() - new Date(latest.timestamp).getTime() < 5 * 60_000;
+    const isActive = now - new Date(latest.timestamp).getTime() < 5 * 60_000;
 
     const scores = ae.filter((e) => e.riskScore != null).map((e) => e.riskScore!);
     const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
@@ -439,7 +439,7 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
       }
     }
     if (!needsAttention) {
-      const thirtyMinAgo = Date.now() - 30 * 60_000;
+      const thirtyMinAgo = now - 30 * 60_000;
       for (const e of ae) {
         if (new Date(e.timestamp).getTime() >= thirtyMinAgo) {
           if (e.effectiveDecision === "block" || e.effectiveDecision === "denied") {
@@ -558,8 +558,8 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
 
   // Fleet posture with overrides
   let posture = riskPosture(avgRisk);
-  const oneHourAgo = Date.now() - 60 * 60_000;
-  const thirtyMinAgo = Date.now() - 30 * 60_000;
+  const oneHourAgo = now - 60 * 60_000;
+  const thirtyMinAgo = now - 30 * 60_000;
   for (const e of today) {
     if (new Date(e.timestamp).getTime() >= oneHourAgo && e.riskScore && e.riskScore > 75 && posture !== "critical") {
       posture = "high";
@@ -570,10 +570,10 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
   }
 
   const activeAgents = new Set(
-    entries.filter((e) => Date.now() - new Date(e.timestamp).getTime() < 5 * 60_000).map((e) => e.agentId),
+    entries.filter((e) => now - new Date(e.timestamp).getTime() < 5 * 60_000).map((e) => e.agentId),
   );
   const activeSessions = new Set(
-    entries.filter((e) => Date.now() - new Date(e.timestamp).getTime() < 5 * 60_000).map((e) => e.sessionKey),
+    entries.filter((e) => now - new Date(e.timestamp).getTime() < 5 * 60_000).map((e) => e.sessionKey),
   );
 
   return {
@@ -671,7 +671,7 @@ export function generateRiskTrend(
   entries: EntryResponse[],
   agentId: string,
 ): Array<{ timestamp: string; score: number; toolName: string }> {
-  const cutoff = Date.now() - 24 * 60 * 60_000;
+  const cutoff = now - 24 * 60 * 60_000;
   return entries
     .filter(
       (e) =>

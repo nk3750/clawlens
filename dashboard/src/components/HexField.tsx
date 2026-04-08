@@ -45,10 +45,10 @@ export default function HexField({
     const pts: Array<{ x: number; y: number; r: number; o: number }> = [];
     let seed = 42;
     const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 200; i++) {
       const angle = rand() * Math.PI * 2;
-      const dist = rand() * 340 + 20;
-      pts.push({ x: cx + Math.cos(angle) * dist, y: cy + Math.sin(angle) * dist, r: rand() * 1.6 + 0.2, o: rand() * 0.2 + 0.04 });
+      const dist = rand() * 500 + 15;
+      pts.push({ x: cx + Math.cos(angle) * dist, y: cy + Math.sin(angle) * dist, r: rand() * 1.3 + 0.1, o: rand() * 0.16 + 0.02 });
     }
     return pts;
   }, [cx, cy]);
@@ -132,13 +132,13 @@ export default function HexField({
               key={`edge-${key}`}
               x1={a.x * width} y1={a.y * height}
               x2={b.x * width} y2={b.y * height}
-              stroke={isHighlit ? edgeColor : "#d4a574"}
+              stroke={edgeColor}
               strokeWidth={isHighlit ? 1.8 : 1}
               strokeLinecap="round"
               className={isHighlit || isDimmed ? "" : "conn-fade"}
-              opacity={isHighlit ? 0.45 : isDimmed ? 0.06 : undefined}
+              opacity={isHighlit ? 0.5 : isDimmed ? 0.05 : undefined}
               style={{
-                "--conn-opacity": 0.18,
+                "--conn-opacity": 0.2,
                 transition: "opacity 0.35s ease, stroke-width 0.35s ease, stroke 0.35s ease",
               } as React.CSSProperties}
             />

@@ -36,7 +36,6 @@ export interface WireframeShape {
 
 const CX = 0.50;
 const CY = 0.48;
-const ASPECT = 1.2;
 
 /* ─── Helpers ─── */
 
@@ -61,74 +60,57 @@ function seededRng(seed: number) {
   };
 }
 
-/* ─── Polygon ring (N ≤ 6) ─── */
+/* ─── Organic spread layout ─── */
+/*
+ * Golden-angle spiral + repulsion.  Fills the container like a star field.
+ * No edges — deferred until OpenClaw exposes sub-agent / related-agent data.
+ */
 
-function polygonRing(cx: number, cy: number, r: number, sides: number): NodePosition[] {
-  return Array.from({ length: sides }, (_, i) => {
-    const angle = -Math.PI / 2 + (2 * Math.PI / sides) * i;
-    return makePos(cx + r * Math.cos(angle) * ASPECT, cy + r * Math.sin(angle), 0, i, angle);
-  });
-}
-
-/* ─── Force-directed layout (N ≥ 7) ─── */
-
-function forceLayout(count: number): NodePosition[] {
+function organicLayout(count: number): NodePosition[] {
   const rand = seededRng(42 + count);
 
-  // Target spread: constellation fills ~65% of the 3:2 container
-  const spread = Math.min(0.32, 0.12 * Math.sqrt(count));
-  // 7 agents: spread = 0.317   → fills nicely
-  // 12 agents: spread = 0.32   → capped
-  // 21 agents: spread = 0.32   → capped
-
-  // Golden-angle spiral: organic initial positions that fill the target area
+  const SPREAD = 0.32 + 0.03 * Math.sqrt(count / 7);
+  const GOLDEN = 2.399963;
   const pos = Array.from({ length: count }, (_, i) => {
-    const angle = i * 2.399963 + (rand() - 0.5) * 0.5; // slight angle jitter
-    const r = spread * Math.sqrt((i + 0.5) / count);
-    return {
-      x: CX + r * Math.cos(angle) * ASPECT,
-      y: CY + r * Math.sin(angle),
-    };
+    const angle = i * GOLDEN + (rand() - 0.5) * 0.4;
+    const r = SPREAD * Math.sqrt((i + 0.5) / count) * (0.8 + rand() * 0.4);
+    return { x: CX + Math.cos(angle) * r, y: CY + Math.sin(angle) * r };
   });
 
-  // Minimum distance: no two nodes closer than this
-  // ~100px on 720px-tall container = 0.14 in 0-1 coords
-  const minDist = Math.max(0.10, 0.09 + 0.05 / Math.sqrt(count / 7));
-  // 7 agents: 0.14    (generous)
-  // 12 agents: 0.128
-  // 21 agents: 0.119
+  const minDist = Math.max(0.12, 0.10 + 0.05 / Math.sqrt(count / 7));
 
-  // Relaxation: push apart overlapping pairs, gentle centering
-  for (let iter = 0; iter < 60; iter++) {
+  for (let iter = 0; iter < 80; iter++) {
     for (let i = 0; i < count; i++) {
       let fx = 0, fy = 0;
-
       for (let j = 0; j < count; j++) {
         if (i === j) continue;
         const dx = pos[i].x - pos[j].x;
         const dy = pos[i].y - pos[j].y;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < minDist && d > 0.0001) {
-          // Push apart proportional to overlap
-          const push = (minDist - d) / d * 0.15;
+          const push = ((minDist - d) / d) * 0.2;
           fx += dx * push;
           fy += dy * push;
         }
       }
-
-      // Very gentle gravity — just prevents drift, doesn't crush
       fx += (CX - pos[i].x) * 0.003;
       fy += (CY - pos[i].y) * 0.003;
-
       pos[i].x += fx;
       pos[i].y += fy;
     }
   }
 
+  // Re-center by centroid (center of mass) — accounts for density bias,
+  // not just bounding-box edges, so a left-heavy cloud shifts right.
+  let sumX = 0, sumY = 0;
+  for (const p of pos) { sumX += p.x; sumY += p.y; }
+  const shiftX = CX - sumX / count;
+  const shiftY = CY - sumY / count;
+  for (const p of pos) { p.x += shiftX; p.y += shiftY; }
+
   return pos.map((p, i) => {
     const angle = Math.atan2(p.y - CY, p.x - CX);
-    const dist = Math.sqrt((p.x - CX) ** 2 + (p.y - CY) ** 2);
-    return makePos(p.x, p.y, Math.round(dist * 20), i, angle);
+    return makePos(p.x, p.y, 0, i, angle);
   });
 }
 
@@ -137,47 +119,7 @@ function forceLayout(count: number): NodePosition[] {
 function generatePositions(count: number): NodePosition[] {
   if (count === 0) return [];
   if (count === 1) return [makePos(CX, CY, 0, 0, 0)];
-  if (count <= 6) return polygonRing(CX, CY, 0.22, count);
-  return forceLayout(count);
-}
-
-/* ─── KNN edges (K=2 for clean mesh) ─── */
-
-function buildEdges(positions: NodePosition[]): Edge[] {
-  const n = positions.length;
-  if (n < 2) return [];
-  if (n === 2) return [{ from: 0, to: 1, type: "perimeter" }];
-  if (n <= 6) {
-    return positions.map((_, i) => ({
-      from: i, to: (i + 1) % n, type: "perimeter" as const,
-    }));
-  }
-
-  // KNN: each node connects to its 2 nearest
-  const K = 2;
-  const edges: Edge[] = [];
-  const seen = new Set<string>();
-
-  for (let i = 0; i < n; i++) {
-    const dists: Array<{ j: number; d: number }> = [];
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
-      const dx = positions[i].x - positions[j].x;
-      const dy = positions[i].y - positions[j].y;
-      dists.push({ j, d: dx * dx + dy * dy });
-    }
-    dists.sort((a, b) => a.d - b.d);
-    for (let k = 0; k < Math.min(K, dists.length); k++) {
-      const j = dists[k].j;
-      const lo = Math.min(i, j), hi = Math.max(i, j);
-      const key = `${lo}-${hi}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        edges.push({ from: lo, to: hi, type: "perimeter" });
-      }
-    }
-  }
-  return edges;
+  return organicLayout(count);
 }
 
 /* ─── Node scale ─── */
@@ -213,7 +155,7 @@ export default function HexConstellation({ agents }: Props) {
     [sortedAgents.length],
   );
 
-  const edges = useMemo(() => buildEdges(equilibriumPositions), [equilibriumPositions]);
+  const edges: Edge[] = []; // deferred until OpenClaw exposes agent relationships
   const scale = nodeScale(sortedAgents.length);
 
   const nodeIds = useMemo(() => sortedAgents.map((a) => a.id), [sortedAgents]);
