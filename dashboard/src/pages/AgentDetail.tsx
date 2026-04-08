@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
-import type { AgentDetailResponse, EntryResponse, RiskTrendPoint } from "../lib/types";
-import { relTime, formatDuration, mergeLiveEntries } from "../lib/utils";
+import type { AgentDetailResponse, EntryResponse, RiskTrendPoint, RiskTier } from "../lib/types";
+import { relTime, formatDuration, mergeLiveEntries, riskTierFromScore } from "../lib/utils";
+import { describeEntry } from "../lib/groupEntries";
 import AgentHeader from "../components/AgentHeader";
 import RiskPanel from "../components/RiskPanel";
 import ActivityProfile from "../components/ActivityProfile";
@@ -15,8 +16,10 @@ import { AgentDetailSkeleton } from "../components/Skeleton";
 
 export default function AgentDetail() {
   const { agentId } = useParams<{ agentId: string }>();
+  const navigate = useNavigate();
+  const [range, setRange] = useState<"3h" | "6h" | "12h" | "24h">("24h");
   const { data, loading, error, refetch } = useApi<AgentDetailResponse>(
-    `api/agent/${encodeURIComponent(agentId || "")}`,
+    `api/agent/${encodeURIComponent(agentId || "")}?range=${range}`,
   );
 
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -56,11 +59,36 @@ export default function AgentDetail() {
 
   const { agent, currentSessionActivity, recentActivity, sessions, riskTrend } = data;
 
-  // Compute top risks from recent activity
-  const topRisks = recentActivity
-    .filter((e) => e.riskScore != null && e.riskScore >= 25)
-    .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0))
-    .slice(0, 5);
+  // Compute top risks from recent activity — deduplicate by description
+  const topRisks = (() => {
+    const elevated = recentActivity
+      .filter((e) => e.riskScore != null && e.riskScore >= 25)
+      .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0));
+    const groups = new Map<string, { entry: EntryResponse; count: number }>();
+    for (const e of elevated) {
+      const key = describeEntry(e);
+      const existing = groups.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        groups.set(key, { entry: e, count: 1 });
+      }
+    }
+    return [...groups.values()].slice(0, 5);
+  })();
+
+  // Decision counts for activity profile
+  const decisionCounts = recentActivity.reduce<Record<string, number>>((acc, e) => {
+    const d = e.effectiveDecision || "allow";
+    acc[d] = (acc[d] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Risk tier distribution for activity profile
+  const tierCounts: Record<RiskTier, number> = { low: 0, medium: 0, high: 0, critical: 0 };
+  for (const e of recentActivity) {
+    tierCounts[riskTierFromScore(e.riskScore ?? 0)]++;
+  }
 
   // Session stats for header
   const sessionEntries = currentSessionActivity.length > 0
@@ -86,16 +114,12 @@ export default function AgentDetail() {
   const lastSession = sessions[0];
   const showSection = isActive || !!lastSession;
 
-  // Sparkline dot click → scroll to matching entry
-  const handleDotClick = (point: RiskTrendPoint, _index: number) => {
-    // Find entry by matching timestamp+toolName in the stream
-    const match = streamEntries.find(
-      (e) => e.timestamp === point.timestamp && e.toolName === point.toolName,
-    );
-    if (match?.toolCallId) {
-      document
-        .getElementById(`entry-${match.toolCallId}`)
-        ?.scrollIntoView({ behavior: "smooth" });
+  // Sparkline dot click → navigate to session detail with highlight
+  const handleDotClick = (point: RiskTrendPoint) => {
+    if (point.sessionKey) {
+      navigate(`/session/${encodeURIComponent(point.sessionKey)}`, {
+        state: { highlightToolCallId: point.toolCallId },
+      });
     }
   };
 
@@ -122,12 +146,29 @@ export default function AgentDetail() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-10">
         {/* Left: Risk drivers */}
         <div className="cl-card p-6">
-          <h2
-            className="label-mono mb-5"
-            style={{ color: "var(--cl-text-muted)" }}
-          >
-            RISK DRIVERS
-          </h2>
+          <div className="flex items-center justify-between mb-5">
+            <h2
+              className="label-mono"
+              style={{ color: "var(--cl-text-muted)" }}
+            >
+              RISK DRIVERS
+            </h2>
+            <div className="flex gap-1">
+              {(["3h", "6h", "12h", "24h"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  className="label-mono px-2 py-0.5 rounded transition-colors"
+                  style={{
+                    color: range === r ? "var(--cl-accent)" : "var(--cl-text-muted)",
+                    backgroundColor: range === r ? "var(--cl-accent-7)" : "transparent",
+                  }}
+                >
+                  {r.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
           <RiskPanel
             riskTrend={riskTrend}
             topRisks={topRisks}
@@ -147,6 +188,8 @@ export default function AgentDetail() {
             breakdown={agent.todayActivityBreakdown}
             sessionActions={agent.currentSession?.toolCallCount}
             todayActions={agent.todayToolCalls}
+            decisionCounts={decisionCounts}
+            tierCounts={tierCounts}
           />
         </div>
       </div>

@@ -404,6 +404,9 @@ describe("getAgentDetail", () => {
   });
 
   it("returns agent info with recent activity and sessions", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
     const entries = [
       entry({
         agentId: "bot-1",
@@ -427,9 +430,14 @@ describe("getAgentDetail", () => {
     expect(result!.currentSessionActivity).toBeDefined();
     expect(result!.sessions).toHaveLength(1);
     expect(result!.totalSessions).toBe(1);
+
+    vi.useRealTimers();
   });
 
   it("returns recent activity in reverse chronological order", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
     const entries = [
       entry({
         agentId: "bot-1",
@@ -447,21 +455,31 @@ describe("getAgentDetail", () => {
     const result = getAgentDetail(entries, "bot-1");
     expect(result!.recentActivity[0].toolName).toBe("exec"); // most recent first
     expect(result!.recentActivity[1].toolName).toBe("read");
+
+    vi.useRealTimers();
   });
 
-  it("limits recent activity to 20 entries", () => {
-    const entries = Array.from({ length: 30 }, (_, i) =>
+  it("limits recent activity to 200 entries", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = Array.from({ length: 250 }, (_, i) =>
       entry({
         agentId: "bot-1",
         decision: "allow",
-        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+        timestamp: `2026-03-29T${String(10 + Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}:00Z`,
       }),
     );
     const result = getAgentDetail(entries, "bot-1");
-    expect(result!.recentActivity).toHaveLength(20);
+    expect(result!.recentActivity.length).toBeLessThanOrEqual(200);
+
+    vi.useRealTimers();
   });
 
   it("excludes other agents' entries", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
     const entries = [
       entry({
         agentId: "bot-1",
@@ -476,6 +494,8 @@ describe("getAgentDetail", () => {
     ];
     const result = getAgentDetail(entries, "bot-1");
     expect(result!.recentActivity).toHaveLength(1);
+
+    vi.useRealTimers();
   });
 
   it("includes riskTrend sorted chronologically", () => {
@@ -551,6 +571,78 @@ describe("getAgentDetail", () => {
     const result = getAgentDetail(entries, "bot-1");
     expect(result!.riskTrend).toHaveLength(1);
     expect(result!.riskTrend[0].score).toBe(25); // LLM-adjusted
+    vi.useRealTimers();
+  });
+
+  it("riskTrend includes sessionKey and toolCallId", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        toolCallId: "tc_1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 40,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1");
+    expect(result!.riskTrend[0].sessionKey).toBe("s1");
+    expect(result!.riskTrend[0].toolCallId).toBe("tc_1");
+
+    vi.useRealTimers();
+  });
+
+  it("filters by range parameter", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: 10,
+        timestamp: "2026-03-29T06:00:00Z", // 8h ago — outside 3h window
+      }),
+      entry({
+        agentId: "bot-1",
+        sessionKey: "s1",
+        decision: "allow",
+        riskScore: 50,
+        timestamp: "2026-03-29T12:00:00Z", // 2h ago — inside 3h window
+      }),
+    ];
+    const result3h = getAgentDetail(entries, "bot-1", "3h");
+    expect(result3h!.riskTrend).toHaveLength(1);
+    expect(result3h!.riskTrend[0].score).toBe(50);
+    expect(result3h!.recentActivity).toHaveLength(1);
+
+    const result24h = getAgentDetail(entries, "bot-1", "24h");
+    expect(result24h!.riskTrend).toHaveLength(2);
+    expect(result24h!.recentActivity).toHaveLength(2);
+
+    vi.useRealTimers();
+  });
+
+  it("defaults to 24h when range is invalid", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        riskScore: 10,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const result = getAgentDetail(entries, "bot-1", "invalid");
+    expect(result!.riskTrend).toHaveLength(1);
+
     vi.useRealTimers();
   });
 

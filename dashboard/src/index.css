@@ -376,6 +376,15 @@ select:focus {
   50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5); }
 }
 
+@keyframes highlight-fade {
+  0% { background-color: var(--cl-accent-7); }
+  100% { background-color: transparent; }
+}
+.highlight-flash {
+  animation: highlight-fade 2s var(--cl-ease) forwards;
+  border-radius: 8px;
+}
+
 /* ── Glow utilities ── */
 .cl-glow-low { filter: drop-shadow(0 0 6px rgba(74, 222, 128, 0.3)); }
 .cl-glow-medium { filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.3)); }

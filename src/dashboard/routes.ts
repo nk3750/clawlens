@@ -103,8 +103,9 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       const agentMatch = subPath.match(/^api\/agent\/([^/]+)$/);
       if (agentMatch) {
         const agentId = decodeURIComponent(agentMatch[1]);
+        const range = url.searchParams.get("range") || undefined;
         const entries = deps.auditLogger.readEntries();
-        const detail = getAgentDetail(entries, agentId);
+        const detail = getAgentDetail(entries, agentId, range);
         if (!detail) {
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Agent not found" }));

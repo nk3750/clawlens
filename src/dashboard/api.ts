@@ -725,7 +725,18 @@ export function getAgents(entries: AuditEntry[]): AgentInfo[] {
 }
 
 /** Get detailed info for a single agent. */
-export function getAgentDetail(entries: AuditEntry[], agentId: string): AgentDetailResponse | null {
+const RANGE_MS: Record<string, number> = {
+  "3h": 3 * 3600000,
+  "6h": 6 * 3600000,
+  "12h": 12 * 3600000,
+  "24h": 24 * 3600000,
+};
+
+export function getAgentDetail(
+  entries: AuditEntry[],
+  agentId: string,
+  range?: string,
+): AgentDetailResponse | null {
   const agentEntries = entries.filter((e) => (e.agentId || "default") === agentId);
   if (agentEntries.length === 0) return null;
 
@@ -733,11 +744,14 @@ export function getAgentDetail(entries: AuditEntry[], agentId: string): AgentDet
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return null;
 
+  const rangeMs = RANGE_MS[range ?? ""] ?? RANGE_MS["24h"];
+  const windowCutoff = new Date(Date.now() - rangeMs).toISOString();
+
   const evalIdx = buildEvalIndex(entries);
   const recentActivity = agentEntries
-    .filter(isDecisionEntry)
+    .filter((e) => isDecisionEntry(e) && e.timestamp >= windowCutoff)
     .reverse()
-    .slice(0, 20)
+    .slice(0, 200)
     .map((e) => mapEntry(e, evalIdx));
 
   // Current session activity: entries filtered to current session only
@@ -756,12 +770,9 @@ export function getAgentDetail(entries: AuditEntry[], agentId: string): AgentDet
   }
   allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
 
-  // Risk trend: last 24h decision entries with scores, chronological
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // Risk trend: decision entries within range window with scores, chronological
   const riskTrend = agentEntries
-    .filter(
-      (e) => isDecisionEntry(e) && e.timestamp >= twentyFourHoursAgo && e.riskScore !== undefined,
-    )
+    .filter((e) => isDecisionEntry(e) && e.timestamp >= windowCutoff && e.riskScore !== undefined)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
     .slice(0, 200)
     .map((e) => {
@@ -771,6 +782,8 @@ export function getAgentDetail(entries: AuditEntry[], agentId: string): AgentDet
         timestamp: e.timestamp,
         score,
         toolName: e.toolName,
+        sessionKey: e.sessionKey,
+        toolCallId: e.toolCallId,
       };
     });
 

@@ -1,17 +1,38 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { EntryResponse, RiskTrendPoint } from "../lib/types";
 import { riskTierFromScore, riskColorRaw, entryIcon } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
 import Sparkline from "./Sparkline";
 import RiskDetail from "./RiskDetail";
 
+interface DedupedRisk {
+  entry: EntryResponse;
+  count: number;
+}
+
 interface Props {
   riskTrend: RiskTrendPoint[];
-  topRisks: EntryResponse[];
+  topRisks: DedupedRisk[];
   onDotClick?: (point: RiskTrendPoint, index: number) => void;
 }
 
 export default function RiskPanel({ riskTrend, topRisks, onDotClick }: Props) {
+  const sparkRef = useRef<HTMLDivElement>(null);
+  const [sparkWidth, setSparkWidth] = useState(320);
+
+  useEffect(() => {
+    const el = sparkRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setSparkWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    setSparkWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div>
       {/* Top risks */}
@@ -25,23 +46,25 @@ export default function RiskPanel({ riskTrend, topRisks, onDotClick }: Props) {
         </p>
       ) : (
         <div className="space-y-1 mb-6">
-          {topRisks.map((entry, i) => (
-            <RiskDriverRow key={entry.toolCallId ?? i} entry={entry} />
+          {topRisks.map(({ entry, count }, i) => (
+            <RiskDriverRow key={entry.toolCallId ?? i} entry={entry} count={count} />
           ))}
         </div>
       )}
 
-      {/* 24h trend */}
+      {/* Trend */}
       <div className="cl-divider mb-4" />
       <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
-        24H TREND
+        TREND
       </h3>
-      <Sparkline points={riskTrend} width={320} height={100} onDotClick={onDotClick} />
+      <div ref={sparkRef}>
+        <Sparkline points={riskTrend} width={sparkWidth} height={100} onDotClick={onDotClick} />
+      </div>
     </div>
   );
 }
 
-function RiskDriverRow({ entry }: { entry: EntryResponse }) {
+function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number }) {
   const [expanded, setExpanded] = useState(false);
   const icon = entryIcon(entry);
   const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : "low";
@@ -80,6 +103,13 @@ function RiskDriverRow({ entry }: { entry: EntryResponse }) {
         >
           {description}
         </span>
+
+        {/* Count badge */}
+        {count != null && count > 1 && (
+          <span className="label-mono shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+            &times;{count}
+          </span>
+        )}
 
         {/* Risk score + tier */}
         {entry.riskScore != null && (

@@ -112,6 +112,8 @@ export interface RiskTrendPoint {
   timestamp: string;
   score: number;
   toolName: string;
+  sessionKey?: string;
+  toolCallId?: string;
 }
 
 export interface AgentDetailResponse {

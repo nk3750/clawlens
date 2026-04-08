@@ -1,4 +1,5 @@
-import { useParams, Link } from "react-router-dom";
+import { useEffect } from "react";
+import { useParams, Link, useLocation } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import type { SessionDetailResponse } from "../lib/types";
 import { groupEntries } from "../lib/groupEntries";
@@ -9,6 +10,9 @@ import { SessionDetailSkeleton } from "../components/Skeleton";
 
 export default function SessionDetail() {
   const { sessionKey } = useParams<{ sessionKey: string }>();
+  const location = useLocation();
+  const highlightToolCallId = (location.state as { highlightToolCallId?: string } | null)
+    ?.highlightToolCallId;
   const { data, loading, error, refetch } = useApi<SessionDetailResponse>(
     `api/session/${encodeURIComponent(sessionKey || "")}`,
   );
@@ -37,6 +41,11 @@ export default function SessionDetail() {
   const sorted = [...entries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   const groups = groupEntries(sorted);
 
+  // Find the flat entry index matching the highlighted toolCallId
+  const highlightIndex = highlightToolCallId
+    ? sorted.findIndex((e) => e.toolCallId === highlightToolCallId)
+    : -1;
+
   return (
     <div className="page-enter stagger">
       {/* Lean header: identity + summary + stat strip */}
@@ -52,6 +61,23 @@ export default function SessionDetail() {
         blockedCount={session.blockedCount}
         peakRisk={session.peakRisk}
       />
+
+      {/* Scroll to + highlight entry from sparkline navigation */}
+      {highlightIndex >= 0 && (
+        <ScrollToHighlight index={highlightIndex} />
+      )}
     </div>
   );
+}
+
+function ScrollToHighlight({ index }: { index: number }) {
+  useEffect(() => {
+    const el = document.getElementById(`entry-${index}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("highlight-flash");
+    const timer = setTimeout(() => el.classList.remove("highlight-flash"), 2000);
+    return () => clearTimeout(timer);
+  }, [index]);
+  return null;
 }
