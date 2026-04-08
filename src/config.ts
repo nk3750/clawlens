@@ -43,7 +43,7 @@ export const DEFAULT_CONFIG: ClawLensConfig = {
   risk: {
     llmEvalThreshold: 50,
     llmEnabled: true,
-    llmModel: "claude-haiku-4-5-20251001",
+    llmModel: "",
     llmApiKeyEnv: "ANTHROPIC_API_KEY",
     llmProvider: "anthropic",
   },

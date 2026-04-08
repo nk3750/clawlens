@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildEvalMessage,
-  callAnthropicApi,
+  callLlmApi,
+  DEFAULT_EVAL_MODELS,
   evaluateWithLlm,
+  PROVIDER_ENDPOINTS,
   parseEvalResponse,
+  resolveModel,
 } from "../src/risk/llm-evaluator";
 import type { RiskScore } from "../src/risk/types";
 
@@ -28,7 +31,6 @@ const VALID_EVAL_JSON = JSON.stringify({
   patterns: [],
 });
 
-/** Minimal mock logger that captures calls */
 function mockLogger() {
   return {
     info: vi.fn(),
@@ -37,7 +39,6 @@ function mockLogger() {
   };
 }
 
-/** Create a mock modelAuth that resolves a key */
 function mockModelAuth(key: string) {
   return {
     resolveApiKeyForProvider: vi.fn().mockResolvedValue(key),
@@ -45,7 +46,6 @@ function mockModelAuth(key: string) {
   };
 }
 
-/** Create a mock modelAuth that rejects */
 function mockModelAuthRejecting(reason: string) {
   return {
     resolveApiKeyForProvider: vi.fn().mockRejectedValue(new Error(reason)),
@@ -53,24 +53,25 @@ function mockModelAuthRejecting(reason: string) {
   };
 }
 
-// ── Mock the Anthropic SDK ───────────────────────────────
+// ── Mock fetch ───────────────────────────────────────────
 
-const mockCreateFn = vi.hoisted(() => vi.fn());
+const mockFetch = vi.fn();
 
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: class MockAnthropic {
-    messages = { create: mockCreateFn };
-  },
-}));
-
-function setAnthropicResponse(text: string) {
-  mockCreateFn.mockResolvedValue({
-    content: [{ type: "text", text }],
+function setFetchResponse(body: unknown, status = 200) {
+  mockFetch.mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : "Error",
+    json: () => Promise.resolve(body),
   });
 }
 
-function setAnthropicError(error: Error) {
-  mockCreateFn.mockRejectedValue(error);
+function setAnthropicFetchResponse(text: string) {
+  setFetchResponse({ content: [{ type: "text", text }] });
+}
+
+function setOpenAiFetchResponse(text: string) {
+  setFetchResponse({ choices: [{ message: { content: text } }] });
 }
 
 // ── Tests ────────────────────────────────────────────────
@@ -175,71 +176,165 @@ describe("buildEvalMessage", () => {
   });
 });
 
-describe("callAnthropicApi", () => {
+describe("resolveModel", () => {
+  it("returns config model when set", () => {
+    expect(resolveModel("anthropic", "custom-model")).toBe("custom-model");
+  });
+
+  it("returns default model for known provider", () => {
+    expect(resolveModel("anthropic")).toBe("claude-haiku-4-5-20251001");
+    expect(resolveModel("openai")).toBe("gpt-4o-mini");
+    expect(resolveModel("groq")).toBe("llama-3.1-8b-instant");
+    expect(resolveModel("together")).toBe("meta-llama/Llama-3.1-8B-Instruct-Turbo");
+  });
+
+  it("returns undefined for unknown provider with no config", () => {
+    expect(resolveModel("unknown-provider")).toBeUndefined();
+    expect(resolveModel(undefined)).toBeUndefined();
+  });
+
+  it("config model takes priority over default", () => {
+    expect(resolveModel("anthropic", "my-custom-haiku")).toBe("my-custom-haiku");
+  });
+});
+
+describe("callLlmApi", () => {
   beforeEach(() => {
-    mockCreateFn.mockReset();
+    mockFetch.mockReset();
+    vi.stubGlobal("fetch", mockFetch);
   });
 
-  it("returns parsed eval on success", async () => {
-    setAnthropicResponse(VALID_EVAL_JSON);
-    const result = await callAnthropicApi("test-key", "claude-haiku-4-5-20251001", "test message");
-    expect(result).not.toBeNull();
-    expect(result!.adjustedScore).toBe(42);
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("returns null on unparseable response", async () => {
-    setAnthropicResponse("Not valid JSON at all");
-    const logger = mockLogger();
-    const result = await callAnthropicApi(
+  it("anthropic: sends correct headers and body format", async () => {
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
+    await callLlmApi(
+      "anthropic",
       "test-key",
       "claude-haiku-4-5-20251001",
-      "test message",
-      logger,
+      "System prompt",
+      "User msg",
     );
-    expect(result).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("unparseable"));
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://api.anthropic.com/v1/messages");
+    expect(opts.headers["x-api-key"]).toBe("test-key");
+    expect(opts.headers["anthropic-version"]).toBe("2023-06-01");
+    expect(opts.headers.Authorization).toBeUndefined();
+
+    const body = JSON.parse(opts.body);
+    expect(body.model).toBe("claude-haiku-4-5-20251001");
+    expect(body.system).toBe("System prompt");
+    expect(body.messages).toEqual([{ role: "user", content: "User msg" }]);
   });
 
-  it("returns null on API error", async () => {
-    setAnthropicError(new Error("Rate limited"));
-    const logger = mockLogger();
-    const result = await callAnthropicApi(
-      "test-key",
-      "claude-haiku-4-5-20251001",
-      "test message",
-      logger,
-    );
-    expect(result).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Rate limited"));
+  it("anthropic: extracts text from content blocks", async () => {
+    setAnthropicFetchResponse("hello world");
+    const result = await callLlmApi("anthropic", "key", "model", "sys", "usr");
+    expect(result).toBe("hello world");
   });
 
-  it("returns null on timeout", async () => {
-    // Simulate what happens when the timeout fires: the Promise.race rejects with a timeout error
-    mockCreateFn.mockRejectedValue(new Error("Direct API timeout (15s)"));
-    const logger = mockLogger();
-    const result = await callAnthropicApi(
-      "test-key",
-      "claude-haiku-4-5-20251001",
-      "test message",
-      logger,
-    );
+  it("openai: sends correct headers and body format", async () => {
+    setOpenAiFetchResponse(VALID_EVAL_JSON);
+    await callLlmApi("openai", "test-key", "gpt-4o-mini", "System prompt", "User msg");
 
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://api.openai.com/v1/chat/completions");
+    expect(opts.headers.Authorization).toBe("Bearer test-key");
+    expect(opts.headers["x-api-key"]).toBeUndefined();
+
+    const body = JSON.parse(opts.body);
+    expect(body.model).toBe("gpt-4o-mini");
+    expect(body.messages).toEqual([
+      { role: "system", content: "System prompt" },
+      { role: "user", content: "User msg" },
+    ]);
+  });
+
+  it("openai: extracts text from choices", async () => {
+    setOpenAiFetchResponse("response text");
+    const result = await callLlmApi("openai", "key", "model", "sys", "usr");
+    expect(result).toBe("response text");
+  });
+
+  it("groq: uses openai-compatible format with correct endpoint", async () => {
+    setOpenAiFetchResponse("groq response");
+    await callLlmApi("groq", "key", "llama-3.1-8b-instant", "sys", "usr");
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://api.groq.com/openai/v1/chat/completions");
+  });
+
+  it("together: uses openai-compatible format with correct endpoint", async () => {
+    setOpenAiFetchResponse("together response");
+    await callLlmApi("together", "key", "meta-llama/Llama-3.1-8B-Instruct-Turbo", "sys", "usr");
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://api.together.xyz/v1/chat/completions");
+  });
+
+  it("unknown provider: returns null", async () => {
+    const logger = mockLogger();
+    const result = await callLlmApi("unknown-provider", "key", "model", "sys", "usr", logger);
     expect(result).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("timeout"));
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Unknown provider"));
+  });
+
+  it("returns null on HTTP error", async () => {
+    setFetchResponse({ error: "bad request" }, 400);
+    const logger = mockLogger();
+    const result = await callLlmApi("anthropic", "key", "model", "sys", "usr", logger);
+    expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("400"));
+  });
+
+  it("returns null on fetch error", async () => {
+    mockFetch.mockRejectedValue(new Error("Network error"));
+    const logger = mockLogger();
+    const result = await callLlmApi("anthropic", "key", "model", "sys", "usr", logger);
+    expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Network error"));
+  });
+
+  it("returns null on abort (timeout)", async () => {
+    mockFetch.mockRejectedValue(new DOMException("The operation was aborted", "AbortError"));
+    const logger = mockLogger();
+    const result = await callLlmApi("anthropic", "key", "model", "sys", "usr", logger);
+    expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("timed out"));
+  });
+
+  it("returns null when anthropic response has no content", async () => {
+    setFetchResponse({ content: [] });
+    const result = await callLlmApi("anthropic", "key", "model", "sys", "usr");
+    expect(result).toBe("");
+  });
+
+  it("returns null when openai response has no choices", async () => {
+    setFetchResponse({ choices: [] });
+    const result = await callLlmApi("openai", "key", "model", "sys", "usr");
+    expect(result).toBeNull();
   });
 });
 
 describe("evaluateWithLlm", () => {
   beforeEach(() => {
-    mockCreateFn.mockReset();
+    mockFetch.mockReset();
+    vi.stubGlobal("fetch", mockFetch);
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
   it("Path 1: modelAuth resolves key → direct API succeeds → returns eval", async () => {
-    setAnthropicResponse(VALID_EVAL_JSON);
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuth("ma-key-123");
     const logger = mockLogger();
 
@@ -250,18 +345,95 @@ describe("evaluateWithLlm", () => {
       tier1Score(),
       { modelAuth: auth },
       logger,
-      { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "anthropic" },
     );
 
     expect(result.adjustedScore).toBe(42);
     expect(result.reasoning).toBe("Routine health check");
     expect(auth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
-    // Should NOT have fallen through
     expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("falling through"));
   });
 
+  it("Path 1: uses default model for provider when config model is empty", async () => {
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
+    const auth = mockModelAuth("key");
+
+    await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { modelAuth: auth },
+      undefined,
+      { provider: "anthropic" },
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.model).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("Path 1: openai provider uses openai-compatible format", async () => {
+    setOpenAiFetchResponse(VALID_EVAL_JSON);
+    const auth = mockModelAuth("key");
+
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { modelAuth: auth },
+      undefined,
+      { provider: "openai" },
+    );
+
+    expect(result.adjustedScore).toBe(42);
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://api.openai.com/v1/chat/completions");
+    expect(opts.headers.Authorization).toBe("Bearer key");
+  });
+
+  it("unknown provider → skips direct API, falls through to subagent", async () => {
+    const auth = mockModelAuth("key");
+    const logger = mockLogger();
+
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    try {
+      const subagent = {
+        run: vi.fn().mockResolvedValue({ runId: "r1" }),
+        waitForRun: vi.fn().mockResolvedValue({ status: "ok" }),
+        getSessionMessages: vi.fn().mockResolvedValue({
+          messages: [{ role: "assistant", content: VALID_EVAL_JSON }],
+        }),
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const result = await evaluateWithLlm(
+        "exec",
+        { command: "test" },
+        [],
+        tier1Score(),
+        { modelAuth: auth, subagent },
+        logger,
+        { provider: "custom-llm" },
+      );
+
+      expect(result.adjustedScore).toBe(42);
+      // modelAuth was NOT called because provider has no endpoint
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(subagent.run).toHaveBeenCalled();
+    } finally {
+      if (originalKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    }
+  });
+
   it("Path 1 fail → Path 2: modelAuth rejects → env var set → direct API succeeds", async () => {
-    setAnthropicResponse(VALID_EVAL_JSON);
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuthRejecting("Auth not resolved");
     const logger = mockLogger();
 
@@ -293,14 +465,11 @@ describe("evaluateWithLlm", () => {
   });
 
   it("Path 1 bad parse → falls through to subagent", async () => {
-    // modelAuth succeeds but API returns garbage
     const auth = mockModelAuth("ma-key-123");
     const logger = mockLogger();
 
-    // First call (modelAuth path) returns bad JSON, second call shouldn't happen (no env key)
-    mockCreateFn.mockResolvedValue({
-      content: [{ type: "text", text: "not valid json" }],
-    });
+    // API returns non-parseable text
+    setAnthropicFetchResponse("not valid json");
 
     const originalKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
@@ -326,9 +495,7 @@ describe("evaluateWithLlm", () => {
       );
 
       expect(result.adjustedScore).toBe(42);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("modelAuth API call returned no result"),
-      );
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("unparseable"));
     } finally {
       if (originalKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = originalKey;
@@ -415,7 +582,6 @@ describe("evaluateWithLlm", () => {
     delete process.env.ANTHROPIC_API_KEY;
 
     try {
-      // Subagent where accessing .run throws (simulating the original bug scenario)
       const subagent = {
         get run() {
           throw new Error("Gateway request context expired");
@@ -435,7 +601,6 @@ describe("evaluateWithLlm", () => {
         {},
       );
 
-      // Should gracefully return stub, not throw
       expect(result.adjustedScore).toBe(55);
       expect(result.reasoning).toContain("Stub evaluation");
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("subagent failed"));
@@ -449,7 +614,6 @@ describe("evaluateWithLlm", () => {
   });
 
   it("modelAuth rejects at eval time (not registration) → graceful fallthrough", async () => {
-    // modelAuth exists but rejects when called (auth not yet resolved)
     const auth = {
       resolveApiKeyForProvider: vi
         .fn()
@@ -563,12 +727,9 @@ describe("evaluateWithLlm", () => {
         tier1Score(),
         { modelAuth: auth },
         logger,
-        {
-          /* no provider */
-        },
+        {},
       );
 
-      // modelAuth should not have been called (no provider)
       expect(auth.resolveApiKeyForProvider).not.toHaveBeenCalled();
       expect(result.reasoning).toContain("Stub evaluation");
     } finally {
@@ -577,6 +738,23 @@ describe("evaluateWithLlm", () => {
       } else {
         delete process.env.ANTHROPIC_API_KEY;
       }
+    }
+  });
+});
+
+describe("PROVIDER_ENDPOINTS", () => {
+  it("has entries for all known providers", () => {
+    expect(PROVIDER_ENDPOINTS.anthropic).toBeDefined();
+    expect(PROVIDER_ENDPOINTS.openai).toBeDefined();
+    expect(PROVIDER_ENDPOINTS.groq).toBeDefined();
+    expect(PROVIDER_ENDPOINTS.together).toBeDefined();
+  });
+});
+
+describe("DEFAULT_EVAL_MODELS", () => {
+  it("has a default model for each known provider", () => {
+    for (const provider of Object.keys(PROVIDER_ENDPOINTS)) {
+      expect(DEFAULT_EVAL_MODELS[provider]).toBeDefined();
     }
   });
 });

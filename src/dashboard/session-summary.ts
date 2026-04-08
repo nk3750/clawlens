@@ -1,4 +1,5 @@
 import type { AuditEntry } from "../audit/logger";
+import { callLlmApi, DEFAULT_EVAL_MODELS, PROVIDER_ENDPOINTS } from "../risk/llm-evaluator";
 import type { ModelAuth } from "../types";
 import { describeAction, getCategory } from "./categories";
 
@@ -209,6 +210,11 @@ async function generateLlmSummary(
   config: { llmModel: string; llmApiKeyEnv: string; modelAuth?: ModelAuth; provider?: string },
 ): Promise<SessionSummary | null> {
   const prompt = buildSummaryPrompt(sessionKey, entries);
+  const provider = config.provider || "anthropic";
+  const model = config.llmModel || DEFAULT_EVAL_MODELS[provider];
+
+  // Need a known provider endpoint and a model to proceed
+  if (!model || !PROVIDER_ENDPOINTS[provider]) return null;
 
   // Resolve API key: modelAuth first, then env var
   let apiKey: string | undefined;
@@ -229,39 +235,17 @@ async function generateLlmSummary(
 
   if (!apiKey) return null;
 
-  try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic({ apiKey });
+  const systemPrompt =
+    "Summarize the agent session in 1-2 sentences. Be concise and factual. Focus on what the agent did, whether anything was risky or blocked, and the outcome.";
 
-    const response = await Promise.race([
-      client.messages.create({
-        model: config.llmModel,
-        max_tokens: 256,
-        messages: [{ role: "user", content: prompt }],
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Summary generation timeout (10s)")), 10_000),
-      ),
-    ]);
+  const text = await callLlmApi(provider, apiKey, model, systemPrompt, prompt);
+  if (!text) return null;
 
-    const textBlocks = response.content.filter(
-      (b): b is { type: "text"; text: string } => b.type === "text",
-    );
-    const text = textBlocks
-      .map((b) => b.text)
-      .join(" ")
-      .trim();
-
-    if (!text) return null;
-
-    return {
-      sessionKey,
-      summary: text,
-      generatedAt: new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
+  return {
+    sessionKey,
+    summary: text.trim(),
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 /** Exposed for testing — clears the summary cache. */

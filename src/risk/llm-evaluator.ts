@@ -18,6 +18,24 @@ Respond ONLY with JSON, no explanation outside the JSON:
   "patterns": ["<pattern1>"]
 }`;
 
+// ── Provider maps ───────────────────────────────────────
+
+export const PROVIDER_ENDPOINTS: Record<string, string> = {
+  anthropic: "https://api.anthropic.com",
+  openai: "https://api.openai.com",
+  groq: "https://api.groq.com/openai",
+  together: "https://api.together.xyz",
+};
+
+export const DEFAULT_EVAL_MODELS: Record<string, string> = {
+  anthropic: "claude-haiku-4-5-20251001",
+  openai: "gpt-4o-mini",
+  groq: "llama-3.1-8b-instant",
+  together: "meta-llama/Llama-3.1-8B-Instruct-Turbo",
+};
+
+// ── Core helpers ────────────────────────────────────────
+
 /**
  * Build the user message for the LLM risk evaluator.
  */
@@ -68,52 +86,120 @@ export function parseEvalResponse(raw: string): LlmRiskEvaluation | null {
 }
 
 /**
- * Shared helper: call the Anthropic API with a given key and return parsed eval.
- * Returns null if the call fails or the response can't be parsed.
+ * Provider-agnostic LLM API call via raw fetch().
+ *
+ * - provider === "anthropic": POST /v1/messages, x-api-key header, Anthropic response format
+ * - Everything else: OpenAI-compatible POST /v1/chat/completions, Bearer auth
+ *
+ * Returns raw text response or null on failure. Callers parse the result.
  */
-export async function callAnthropicApi(
+export async function callLlmApi(
+  provider: string,
   apiKey: string,
   model: string,
-  message: string,
+  systemPrompt: string,
+  userMessage: string,
   logger?: PluginLogger,
-): Promise<LlmRiskEvaluation | null> {
-  try {
-    // Dynamic import to avoid hard failure if SDK not installed
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic({ apiKey });
-
-    const response = await Promise.race([
-      client.messages.create({
-        model,
-        max_tokens: 512,
-        system: EVAL_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: message }],
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Direct API timeout (15s)")), 15_000),
-      ),
-    ]);
-
-    // Extract text from response
-    const textBlocks = response.content.filter(
-      (b): b is { type: "text"; text: string } => b.type === "text",
-    );
-    const raw = textBlocks.map((b) => b.text).join("\n");
-
-    const parsed = parseEvalResponse(raw);
-    if (parsed) {
-      return parsed;
-    }
-
-    logger?.warn("ClawLens: Direct API returned unparseable response");
-    return null;
-  } catch (err) {
-    logger?.warn(
-      `ClawLens: Direct API eval failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+): Promise<string | null> {
+  const baseUrl = PROVIDER_ENDPOINTS[provider];
+  if (!baseUrl) {
+    logger?.warn(`ClawLens: Unknown provider "${provider}", no endpoint mapped`);
     return null;
   }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
+  try {
+    let url: string;
+    let headers: Record<string, string>;
+    let body: string;
+
+    if (provider === "anthropic") {
+      url = `${baseUrl}/v1/messages`;
+      headers = {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      };
+      body = JSON.stringify({
+        model,
+        max_tokens: 512,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+      });
+    } else {
+      // OpenAI-compatible format (openai, groq, together, etc.)
+      url = `${baseUrl}/v1/chat/completions`;
+      headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      };
+      body = JSON.stringify({
+        model,
+        max_tokens: 512,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+      });
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      logger?.warn(`ClawLens: LLM API returned ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+
+    // Extract text from response
+    if (provider === "anthropic") {
+      // Anthropic: { content: [{ type: "text", text: "..." }] }
+      const content = data.content as Array<Record<string, unknown>> | undefined;
+      if (!content || !Array.isArray(content)) return null;
+      return content
+        .filter((b) => b.type === "text" && typeof b.text === "string")
+        .map((b) => b.text as string)
+        .join("\n");
+    }
+
+    // OpenAI-compatible: { choices: [{ message: { content: "..." } }] }
+    const choices = data.choices as Array<Record<string, unknown>> | undefined;
+    if (!choices || !Array.isArray(choices) || choices.length === 0) return null;
+    const msg = choices[0].message as Record<string, unknown> | undefined;
+    if (!msg || typeof msg.content !== "string") return null;
+    return msg.content;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes("abort")) {
+      logger?.warn("ClawLens: LLM API call timed out (15s)");
+    } else {
+      logger?.warn(`ClawLens: LLM API call failed: ${errMsg}`);
+    }
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
+
+/**
+ * Resolve the model to use for eval calls.
+ * Priority: explicit config override → default for provider → undefined (skip).
+ */
+export function resolveModel(provider?: string, configModel?: string): string | undefined {
+  if (configModel) return configModel;
+  if (provider && DEFAULT_EVAL_MODELS[provider]) return DEFAULT_EVAL_MODELS[provider];
+  return undefined;
+}
+
+// ── Main eval function ──────────────────────────────────
 
 /**
  * Evaluate a tool call with an LLM for deeper risk analysis.
@@ -149,15 +235,21 @@ export async function evaluateWithLlm(
   },
 ): Promise<LlmRiskEvaluation> {
   const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
-  const model = directApiConfig?.model || "claude-haiku-4-5-20251001";
+  const provider = directApiConfig?.provider;
+  const model = resolveModel(provider, directApiConfig?.model || undefined);
 
   // Path 1: Direct API via modelAuth-resolved key (works everywhere, any point in the turn)
-  if (runtime?.modelAuth && directApiConfig?.provider) {
+  if (runtime?.modelAuth && provider && model && PROVIDER_ENDPOINTS[provider]) {
     try {
-      const apiKey = await runtime.modelAuth.resolveApiKeyForProvider(directApiConfig.provider);
-      const result = await callAnthropicApi(apiKey, model, message, logger);
-      if (result) return result;
-      logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+      const apiKey = await runtime.modelAuth.resolveApiKeyForProvider(provider);
+      const text = await callLlmApi(provider, apiKey, model, EVAL_SYSTEM_PROMPT, message, logger);
+      if (text) {
+        const result = parseEvalResponse(text);
+        if (result) return result;
+        logger?.warn("ClawLens: modelAuth API returned unparseable response, falling through");
+      } else {
+        logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+      }
     } catch (err) {
       logger?.warn(
         `ClawLens: modelAuth key resolution failed: ${err instanceof Error ? err.message : String(err)}, falling through to env var`,
@@ -168,11 +260,27 @@ export async function evaluateWithLlm(
   // Path 2: Direct API via explicit env var (backward compat / optional override)
   const envVar = directApiConfig?.apiKeyEnv || "ANTHROPIC_API_KEY";
   const envApiKey = process.env[envVar];
-  if (envApiKey) {
-    const result = await callAnthropicApi(envApiKey, model, message, logger);
-    if (result) return result;
-    logger?.warn("ClawLens: env var API call returned no result, falling through to subagent");
-  } else {
+  const envProvider = provider || "anthropic";
+  const envModel = model || DEFAULT_EVAL_MODELS[envProvider];
+  if (envApiKey && envModel && PROVIDER_ENDPOINTS[envProvider]) {
+    const text = await callLlmApi(
+      envProvider,
+      envApiKey,
+      envModel,
+      EVAL_SYSTEM_PROMPT,
+      message,
+      logger,
+    );
+    if (text) {
+      const result = parseEvalResponse(text);
+      if (result) return result;
+      logger?.warn(
+        "ClawLens: env var API call returned unparseable response, falling through to subagent",
+      );
+    } else {
+      logger?.warn("ClawLens: env var API call returned no result, falling through to subagent");
+    }
+  } else if (!envApiKey) {
     logger?.warn(`ClawLens: ${envVar} not set, falling through to subagent`);
   }
 
