@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { EntryResponse } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon } from "../lib/utils";
+import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon, riskLeftBorder, mediumSubTierOpacity } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
 import DecisionBadge from "./DecisionBadge";
 import RiskDetail from "./RiskDetail";
@@ -42,11 +42,26 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
   else if (tier === "critical") rowBg = "rgba(239, 68, 68, 0.05)";
   else if (tier === "high") rowBg = "rgba(248, 113, 113, 0.03)";
 
+  const leftBorder = riskLeftBorder(entry.riskScore);
+  const showReasoning =
+    entry.llmEvaluation && entry.riskScore != null && entry.riskScore >= 30;
+  const dotOpacity =
+    tier === "medium" ? mediumSubTierOpacity(entry.riskScore ?? 0) : undefined;
+  const dotGlow =
+    tier === "medium" && (entry.riskScore ?? 0) >= 46
+      ? `0 0 8px ${color}80`
+      : tier !== "low"
+        ? `0 0 6px ${color}60`
+        : undefined;
+
   return (
     <div
       id={`entry-${index}`}
       className="relative"
-      style={{ backgroundColor: expanded ? "var(--cl-elevated)" : rowBg }}
+      style={{
+        backgroundColor: expanded ? "var(--cl-elevated)" : rowBg,
+        boxShadow: leftBorder,
+      }}
     >
       {/* Risk-encoded node on spine */}
       <div
@@ -131,14 +146,15 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             </span>
           )}
 
-          {/* Risk dot + score + tier label + AI sparkle */}
+          {/* Risk dot + score + tier label + AI label */}
           {entry.riskScore != null && (
             <span className="flex items-center gap-1.5 shrink-0">
               <span
                 className="inline-block w-2 h-2 rounded-full"
                 style={{
                   backgroundColor: color,
-                  boxShadow: tier !== "low" ? `0 0 6px ${color}60` : undefined,
+                  opacity: dotOpacity,
+                  boxShadow: dotGlow,
                 }}
               />
               <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
@@ -147,16 +163,17 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
               <span className="label-mono shrink-0" style={{ color }}>
                 {tier.toUpperCase()}
               </span>
-              {entry.llmEvaluation && (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="var(--cl-accent)"
-                  className="shrink-0"
+              {entry.llmEvaluation && entry.llmEvaluation.confidence !== "none" && (
+                <span
+                  className="label-mono px-1 py-0.5 rounded shrink-0"
+                  style={{
+                    fontSize: "10px",
+                    backgroundColor: "var(--cl-accent-7)",
+                    color: "var(--cl-accent)",
+                  }}
                 >
-                  <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
-                </svg>
+                  AI
+                </span>
               )}
             </span>
           )}
@@ -193,6 +210,16 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
             <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
               rule: {entry.policyRule}
             </span>
+          </div>
+        )}
+
+        {/* AI reasoning preview (medium+ only) */}
+        {showReasoning && (
+          <div
+            className="mt-1 text-xs truncate"
+            style={{ color: "var(--cl-text-muted)", lineHeight: 1.4 }}
+          >
+            &ldquo;{entry.llmEvaluation!.reasoning}&rdquo;
           </div>
         )}
       </button>

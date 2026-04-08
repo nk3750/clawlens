@@ -1,8 +1,31 @@
+import { useState } from "react";
 import type { EntryResponse } from "../lib/types";
 import { riskTierFromScore, riskColor, riskColorRaw, formatDuration } from "../lib/utils";
 
 interface Props {
   entry: EntryResponse;
+}
+
+function paramSummary(entry: EntryResponse): string {
+  const p = entry.params;
+  if (entry.toolName === "exec" || entry.toolName === "process") {
+    const cmd = typeof p.command === "string" ? p.command : "";
+    return cmd.length > 80 ? `${cmd.slice(0, 77)}...` : cmd;
+  }
+  if (entry.toolName === "read" || entry.toolName === "write" || entry.toolName === "edit") {
+    return String(p.file_path ?? p.path ?? "");
+  }
+  if (entry.toolName === "web_fetch" || entry.toolName === "fetch_url") {
+    return String(p.url ?? "");
+  }
+  if (entry.toolName === "web_search" || entry.toolName === "search") {
+    return String(p.query ?? "");
+  }
+  const keys = Object.keys(p);
+  if (keys.length === 0) return "{}";
+  const val = typeof p[keys[0]] === "string" ? p[keys[0]] : JSON.stringify(p[keys[0]]);
+  const str = `${keys[0]}: ${val}`;
+  return str.length > 80 ? `${str.slice(0, 77)}...` : str;
 }
 
 export default function RiskDetail({ entry }: Props) {
@@ -96,22 +119,8 @@ export default function RiskDetail({ entry }: Props) {
         </div>
       )}
 
-      {/* Full params */}
-      <div>
-        <h4 className="label-mono mb-1.5" style={{ color: "var(--cl-text-muted)" }}>
-          PARAMETERS
-        </h4>
-        <pre
-          className="text-xs font-mono p-3 rounded-lg overflow-x-auto"
-          style={{
-            backgroundColor: "var(--cl-elevated)",
-            color: "var(--cl-text-secondary)",
-            lineHeight: 1.5,
-          }}
-        >
-          {JSON.stringify(entry.params, null, 2)}
-        </pre>
-      </div>
+      {/* Collapsible params */}
+      <ParamsSection entry={entry} />
 
       {/* Metadata row */}
       <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -130,6 +139,75 @@ export default function RiskDetail({ entry }: Props) {
             {entry.toolCallId}
           </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ParamsSection({ entry }: { entry: EntryResponse }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = paramSummary(entry);
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        <h4 className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+          PARAMETERS
+        </h4>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--cl-text-muted)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 transition-transform"
+          style={{
+            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+            transitionDuration: "var(--cl-spring-duration)",
+            transitionTimingFunction: "var(--cl-spring)",
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {/* One-liner summary (always visible) */}
+      {!expanded && summary && (
+        <div
+          className="text-xs font-mono mt-1.5 truncate"
+          style={{ color: "var(--cl-text-secondary)" }}
+        >
+          {summary}
+        </div>
+      )}
+
+      {/* Full JSON (toggle) */}
+      <div
+        className="grid transition-all"
+        style={{
+          gridTemplateRows: expanded ? "1fr" : "0fr",
+          transitionDuration: "var(--cl-spring-duration)",
+          transitionTimingFunction: "var(--cl-spring)",
+        }}
+      >
+        <div className="overflow-hidden">
+          <pre
+            className="text-xs font-mono p-3 rounded-lg overflow-x-auto mt-1.5"
+            style={{
+              backgroundColor: "var(--cl-elevated)",
+              color: "var(--cl-text-secondary)",
+              lineHeight: 1.5,
+            }}
+          >
+            {JSON.stringify(entry.params, null, 2)}
+          </pre>
+        </div>
       </div>
     </div>
   );

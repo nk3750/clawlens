@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { EntryGroup } from "../lib/groupEntries";
 import { describeEntry, groupVerb } from "../lib/groupEntries";
-import { riskTierFromScore, riskColorRaw, formatDuration, deriveTags, entryIcon } from "../lib/utils";
+import { riskTierFromScore, riskColorRaw, formatDuration, deriveTags, entryIcon, riskLeftBorder, mediumSubTierOpacity } from "../lib/utils";
 
 interface Props {
   group: EntryGroup;
@@ -170,16 +170,22 @@ export default function TimelineGroup({ group, startIndex }: Props) {
               const text = describeEntry(entry);
               const tag = deriveTags(entry)[0];
 
+              const entryDotOpacity =
+                entryTier === "medium"
+                  ? mediumSubTierOpacity(score) * 0.6
+                  : 0.6;
+
               return (
                 <div
                   key={entry.toolCallId ?? i}
                   id={`entry-${startIndex + i}`}
                   className="flex items-center gap-2.5 py-1.5"
+                  style={{ boxShadow: riskLeftBorder(score) }}
                 >
                   {/* Small dot */}
                   <span
                     className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: entryColor, opacity: 0.6 }}
+                    style={{ backgroundColor: entryColor, opacity: entryDotOpacity }}
                   />
                   <span
                     className="text-xs flex-1 min-w-0 truncate"

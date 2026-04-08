@@ -83,9 +83,17 @@ export default function SessionHeader({ session }: Props) {
           }}
         />
       ) : summary ? (
-        <p className="text-sm italic mb-4" style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}>
-          &ldquo;{summary}&rdquo;
-        </p>
+        <div className="flex items-baseline gap-2 mb-4">
+          <p className="text-sm italic" style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}>
+            &ldquo;{summary}&rdquo;
+          </p>
+          <span
+            className="label-mono shrink-0"
+            style={{ fontSize: "9px", color: "var(--cl-text-muted)" }}
+          >
+            AI-GENERATED
+          </span>
+        </div>
       ) : null}
 
       {/* Inline stat strip */}

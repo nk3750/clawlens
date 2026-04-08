@@ -1,7 +1,31 @@
 import type { AuditEntry } from "../audit/logger";
 import { callLlmApi, DEFAULT_EVAL_MODELS, PROVIDER_ENDPOINTS } from "../risk/llm-evaluator";
 import type { ModelAuth } from "../types";
-import { describeAction, getCategory } from "./categories";
+import { describeAction } from "./categories";
+
+/** Build index of eval entries keyed by the toolCallId they reference. */
+function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {
+  const index = new Map<string, AuditEntry>();
+  for (const e of entries) {
+    if (e.refToolCallId && e.llmEvaluation) {
+      index.set(e.refToolCallId, e);
+    }
+  }
+  return index;
+}
+
+/** Get the effective risk score, preferring LLM-adjusted over Tier 1. */
+function getEffectiveScore(
+  entry: AuditEntry,
+  evalIdx: Map<string, AuditEntry>,
+): number | undefined {
+  if (entry.toolCallId) {
+    const evalEntry = evalIdx.get(entry.toolCallId);
+    if (evalEntry?.llmEvaluation) return evalEntry.llmEvaluation.adjustedScore;
+  }
+  if (entry.llmEvaluation) return entry.llmEvaluation.adjustedScore;
+  return entry.riskScore;
+}
 
 export interface SessionSummary {
   sessionKey: string;
@@ -33,41 +57,21 @@ function isSessionActive(entries: AuditEntry[]): boolean {
 /**
  * Generate a template summary for sessions with few entries.
  */
-function templateSummary(sessionKey: string, entries: AuditEntry[]): SessionSummary {
+function templateSummary(
+  sessionKey: string,
+  entries: AuditEntry[],
+  evalIdx: Map<string, AuditEntry>,
+): SessionSummary {
   const decisions = entries.filter((e) => e.decision !== undefined);
   const count = decisions.length;
 
-  // Find dominant category
-  const catCounts = new Map<string, number>();
-  for (const e of decisions) {
-    const cat = getCategory(e.toolName);
-    catCounts.set(cat, (catCounts.get(cat) || 0) + 1);
-  }
-  let topCat = "commands";
-  let topCount = 0;
-  for (const [cat, c] of catCounts) {
-    if (c > topCount) {
-      topCat = cat;
-      topCount = c;
-    }
-  }
-
-  const catLabels: Record<string, string> = {
-    exploring: "exploration",
-    changes: "file change",
-    commands: "command",
-    web: "web",
-    comms: "communication",
-    data: "data",
-  };
-  const catLabel = catLabels[topCat] || topCat;
-
-  // Avg risk
+  // Avg risk using LLM-adjusted scores
   let riskSum = 0;
   let riskCount = 0;
   for (const e of entries) {
-    if (e.riskScore !== undefined) {
-      riskSum += e.riskScore;
+    const score = getEffectiveScore(e, evalIdx);
+    if (score !== undefined) {
+      riskSum += score;
       riskCount++;
     }
   }
@@ -75,7 +79,7 @@ function templateSummary(sessionKey: string, entries: AuditEntry[]): SessionSumm
 
   return {
     sessionKey,
-    summary: `Ran ${count} ${catLabel} action${count !== 1 ? "s" : ""}. Avg risk: ${avgRisk}.`,
+    summary: `Ran ${count} action${count !== 1 ? "s" : ""}. Avg risk: ${avgRisk}.`,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -83,7 +87,11 @@ function templateSummary(sessionKey: string, entries: AuditEntry[]): SessionSumm
 /**
  * Build the LLM prompt for session summarization.
  */
-function buildSummaryPrompt(sessionKey: string, entries: AuditEntry[]): string {
+function buildSummaryPrompt(
+  sessionKey: string,
+  entries: AuditEntry[],
+  evalIdx: Map<string, AuditEntry>,
+): string {
   const decisions = entries
     .filter((e) => e.decision !== undefined)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -100,10 +108,11 @@ function buildSummaryPrompt(sessionKey: string, entries: AuditEntry[]): string {
   let riskCount = 0;
   let peakRisk = 0;
   for (const e of entries) {
-    if (e.riskScore !== undefined) {
-      riskSum += e.riskScore;
+    const score = getEffectiveScore(e, evalIdx);
+    if (score !== undefined) {
+      riskSum += score;
       riskCount++;
-      if (e.riskScore > peakRisk) peakRisk = e.riskScore;
+      if (score > peakRisk) peakRisk = score;
     }
   }
   const avgRisk = riskCount > 0 ? Math.round(riskSum / riskCount) : 0;
@@ -112,7 +121,8 @@ function buildSummaryPrompt(sessionKey: string, entries: AuditEntry[]): string {
     .slice(0, 30)
     .map((e) => {
       const desc = describeAction(e);
-      const risk = e.riskScore !== undefined ? `risk ${e.riskScore}` : "no score";
+      const score = getEffectiveScore(e, evalIdx);
+      const risk = score !== undefined ? `risk ${score}` : "no score";
       const decision = e.decision || "unknown";
       return `- ${e.timestamp} ${e.toolName} ${desc} → ${risk} ${decision}`;
     })
@@ -182,17 +192,18 @@ export async function getSessionSummary(
     summaryCache.delete(sessionKey);
   }
 
+  const evalIdx = buildEvalIndex(sessionEntries);
   const decisions = sessionEntries.filter((e) => e.decision !== undefined);
   const active = isSessionActive(sessionEntries);
 
   let summary: SessionSummary;
 
   if (decisions.length < 3) {
-    summary = templateSummary(sessionKey, sessionEntries);
+    summary = templateSummary(sessionKey, sessionEntries, evalIdx);
   } else {
     // Try LLM generation
-    const llmSummary = await generateLlmSummary(sessionKey, sessionEntries, config);
-    summary = llmSummary ?? templateSummary(sessionKey, sessionEntries);
+    const llmSummary = await generateLlmSummary(sessionKey, sessionEntries, config, evalIdx);
+    summary = llmSummary ?? templateSummary(sessionKey, sessionEntries, evalIdx);
   }
 
   // Cache: permanent for ended sessions, TTL for active
@@ -208,8 +219,9 @@ async function generateLlmSummary(
   sessionKey: string,
   entries: AuditEntry[],
   config: { llmModel: string; llmApiKeyEnv: string; modelAuth?: ModelAuth; provider?: string },
+  evalIdx: Map<string, AuditEntry>,
 ): Promise<SessionSummary | null> {
-  const prompt = buildSummaryPrompt(sessionKey, entries);
+  const prompt = buildSummaryPrompt(sessionKey, entries, evalIdx);
   const provider = config.provider || "anthropic";
   const model = config.llmModel || DEFAULT_EVAL_MODELS[provider];
 

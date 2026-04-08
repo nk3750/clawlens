@@ -63,7 +63,7 @@ describe("getSessionSummary", () => {
     });
     expect(result).not.toBeNull();
     expect(result!.sessionKey).toBe("s1");
-    expect(result!.summary).toMatch(/Ran \d+ .+ action/);
+    expect(result!.summary).toMatch(/Ran \d+ action/);
     expect(result!.summary).toMatch(/Avg risk: \d+/);
     expect(result!.generatedAt).toBeDefined();
   });
@@ -91,7 +91,7 @@ describe("getSessionSummary", () => {
     expect(second).toEqual(first);
   });
 
-  it("template summary uses dominant category", async () => {
+  it("template summary uses generic action count (no category label)", async () => {
     const entries = [
       entry({
         sessionKey: "s1",
@@ -113,7 +113,9 @@ describe("getSessionSummary", () => {
       llmModel: "claude-haiku-4-5-20251001",
       llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
-    expect(result!.summary).toContain("exploration");
+    // Template now says "Ran N actions" — matches stat strip format
+    expect(result!.summary).toMatch(/Ran 2 action/);
+    expect(result!.summary).toMatch(/Avg risk: \d+/);
   });
 
   it("falls back to template when no API key and no modelAuth", async () => {
@@ -137,7 +139,7 @@ describe("getSessionSummary", () => {
       llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result).not.toBeNull();
-    expect(result!.summary).toMatch(/Ran \d+ command action/);
+    expect(result!.summary).toMatch(/Ran \d+ action/);
 
     // Restore
     if (original !== undefined) {
@@ -176,7 +178,7 @@ describe("getSessionSummary", () => {
     expect(modelAuth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
     // Falls back to template
     expect(result).not.toBeNull();
-    expect(result!.summary).toMatch(/Ran \d+ command action/);
+    expect(result!.summary).toMatch(/Ran \d+ action/);
 
     if (original !== undefined) {
       process.env.ANTHROPIC_API_KEY = original;

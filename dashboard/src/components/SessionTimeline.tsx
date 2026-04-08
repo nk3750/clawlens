@@ -8,9 +8,20 @@ interface Props {
   sessionStart: string;
   sessionEnd?: string | null;
   sessionDuration?: number | null;
+  sessionContext?: string;
+  blockedCount?: number;
+  peakRisk?: number;
 }
 
-export default function SessionTimeline({ groups, sessionStart, sessionEnd, sessionDuration }: Props) {
+export default function SessionTimeline({
+  groups,
+  sessionStart,
+  sessionEnd,
+  sessionDuration,
+  sessionContext,
+  blockedCount,
+  peakRisk,
+}: Props) {
   // Build a flat index so each entry's position in the sorted array maps to entry-{index}
   let entryIndex = 0;
 
@@ -26,7 +37,7 @@ export default function SessionTimeline({ groups, sessionStart, sessionEnd, sess
       />
 
       {/* Session start */}
-      <TimelineMarker label="SESSION START" time={sessionStart} />
+      <TimelineMarker label="SESSION START" time={sessionStart} context={sessionContext} />
 
       {/* Entries — grouped or individual */}
       {groups.map((group) => {
@@ -65,6 +76,8 @@ export default function SessionTimeline({ groups, sessionStart, sessionEnd, sess
           label="SESSION END"
           time={sessionEnd}
           duration={sessionDuration}
+          blockedCount={blockedCount}
+          peakRisk={peakRisk}
         />
       )}
     </div>

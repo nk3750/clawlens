@@ -74,6 +74,33 @@ export function riskColorRaw(tier: RiskTier | string | undefined): string {
   }
 }
 
+/** Sub-tier opacity for MEDIUM range (26-50). */
+export function mediumSubTierOpacity(score: number): number {
+  if (score <= 35) return 0.6;
+  if (score <= 45) return 0.8;
+  return 1.0;
+}
+
+/** Inset box-shadow simulating a risk-colored left border (no layout shift). */
+export function riskLeftBorder(score: number | undefined): string | undefined {
+  if (score == null || score <= 25) return undefined;
+
+  const tier = riskTierFromScore(score);
+  const c = riskColorRaw(tier);
+
+  if (tier === "critical") return `inset 3px 0 0 0 ${c}`;
+  if (tier === "high") return `inset 3px 0 0 0 ${c}b3`; // 70%
+
+  // Medium sub-tier
+  const op = mediumSubTierOpacity(score);
+  const hex = Math.round(op * 255).toString(16).padStart(2, "0");
+  if (score >= 46) {
+    // Approaching high — full opacity + subtle glow
+    return `inset 2px 0 0 0 ${c}, inset 6px 0 8px -4px ${c}30`;
+  }
+  return `inset 2px 0 0 0 ${c}${hex}`;
+}
+
 export function postureLabel(posture: RiskPosture): string {
   switch (posture) {
     case "calm": return "Calm";

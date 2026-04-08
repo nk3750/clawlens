@@ -48,6 +48,9 @@ export default function SessionDetail() {
         sessionStart={session.startTime}
         sessionEnd={session.endTime}
         sessionDuration={session.duration}
+        sessionContext={session.context}
+        blockedCount={session.blockedCount}
+        peakRisk={session.peakRisk}
       />
     </div>
   );
