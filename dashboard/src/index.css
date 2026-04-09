@@ -123,35 +123,6 @@
     100% { transform: translate(-200px, -200px); }
   }
 
-  /* ── Ambient glow blobs ── */
-  #root { position: relative; }
-  #root::before,
-  #root::after {
-    content: "";
-    position: fixed;
-    border-radius: 50%;
-    pointer-events: none;
-    z-index: -1;
-    filter: blur(100px);
-    animation: blob-drift 25s ease-in-out infinite alternate;
-  }
-  #root::before {
-    width: 600px; height: 500px;
-    top: -150px; left: -100px;
-    background: radial-gradient(circle, rgba(212, 165, 116, 0.055) 0%, transparent 70%);
-  }
-  #root::after {
-    width: 450px; height: 400px;
-    bottom: 5%; right: -80px;
-    background: radial-gradient(circle, rgba(167, 139, 250, 0.035) 0%, transparent 70%);
-    animation-delay: -12s;
-    animation-direction: alternate-reverse;
-  }
-  @keyframes blob-drift {
-    0% { transform: translate(0, 0) scale(1); }
-    50% { transform: translate(40px, 25px) scale(1.08); }
-    100% { transform: translate(-25px, 35px) scale(0.94); }
-  }
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
