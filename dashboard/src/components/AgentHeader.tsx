@@ -39,23 +39,17 @@ function useCountUp(target: number, duration = 400): number {
 function StatCell({ value, label, sublabel }: { value: number; label: string; sublabel: string }) {
   const display = useCountUp(value);
   return (
-    <div className="flex flex-col items-center text-center py-4 px-3">
+    <div className="flex flex-col items-center text-center">
       <span
-        className="font-mono text-xl font-bold"
+        className="font-mono text-lg font-bold"
         style={{ color: "var(--cl-text-primary)", lineHeight: 1.2 }}
       >
         {display}
       </span>
-      <span
-        className="label-mono mt-1"
-        style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}
-      >
+      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}>
         {label}
       </span>
-      <span
-        className="label-mono"
-        style={{ color: "var(--cl-text-muted)", fontSize: "9px" }}
-      >
+      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "9px" }}>
         {sublabel}
       </span>
     </div>
@@ -68,29 +62,20 @@ function RiskStatCell({ value, label }: { value: number; label: string }) {
   const color = riskColorRaw(tier);
 
   return (
-    <div
-      className="flex flex-col items-center text-center py-4 px-3"
-      style={{ borderTop: `2px solid ${color}` }}
-    >
+    <div className="flex flex-col items-center text-center">
       <span
-        className="font-mono text-xl font-bold"
+        className="font-mono text-lg font-bold"
         style={{ color, lineHeight: 1.2 }}
       >
         {display}
       </span>
-      <span
-        className="label-mono mt-1"
-        style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}
-      >
+      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}>
         {label}
       </span>
-      <div className="w-full max-w-[80px] mt-1.5">
+      <div className="mt-1.5" style={{ width: 120 }}>
         <RiskBar score={display} />
       </div>
-      <span
-        className="label-mono mt-1"
-        style={{ color, fontSize: "9px" }}
-      >
+      <span className="label-mono mt-1" style={{ color, fontSize: "9px" }}>
         {tier.toUpperCase()}
       </span>
     </div>
@@ -115,7 +100,7 @@ function RiskBar({ score }: { score: number }) {
         style={{
           width: `${pct}%`,
           backgroundColor: color,
-          boxShadow: `0 0 8px ${color}40`,
+          /* no glow — clean bar */
         }}
       />
       {/* Score marker */}
@@ -181,7 +166,7 @@ export default function AgentHeader({ agent, todayActions, avgRisk, peakRisk, to
         Back to Agents
       </Link>
 
-      {/* Identity row */}
+      {/* Identity + stats row */}
       <div className="flex items-center gap-5 relative">
         {/* Atmospheric halo behind avatar */}
         <div className="relative shrink-0">
@@ -222,22 +207,20 @@ export default function AgentHeader({ agent, todayActions, avgRisk, peakRisk, to
             </p>
           )}
         </div>
-      </div>
 
-      {/* Stat grid — replaces cl-divider */}
-      <div className="grid grid-cols-2 md:grid-cols-4 mt-8">
-        <StatCell value={todayActions ?? agent.todayToolCalls} label="ACTIONS" sublabel="today" />
-        <div style={{ borderLeft: "1px solid var(--cl-border-subtle)" }}>
+        {/* Stats — right-aligned, compact */}
+        <div className="hidden md:flex items-center gap-6 shrink-0">
+          <StatCell value={todayActions ?? agent.todayToolCalls} label="ACTIONS" sublabel="today" />
+          <div className="w-px self-stretch" style={{ backgroundColor: "var(--cl-border-subtle)" }} />
           <RiskStatCell value={avgRisk ?? agent.avgRiskScore} label="AVG RISK" />
-        </div>
-        <div style={{ borderLeft: "1px solid var(--cl-border-subtle)" }}>
+          <div className="w-px self-stretch" style={{ backgroundColor: "var(--cl-border-subtle)" }} />
           <RiskStatCell value={peakRisk ?? agent.peakRiskScore} label="PEAK RISK" />
-        </div>
-        <div style={{ borderLeft: "1px solid var(--cl-border-subtle)" }}>
+          <div className="w-px self-stretch" style={{ backgroundColor: "var(--cl-border-subtle)" }} />
           <StatCell value={totalSessions ?? 0} label="SESSIONS" sublabel="today" />
         </div>
       </div>
-      <div className="cl-divider mt-0" />
+
+      <div className="cl-divider mt-8" />
     </div>
   );
 }
