@@ -145,33 +145,44 @@ export default function AgentDetail() {
         totalSessions={data.totalSessions}
       />
 
+      {/* Page-level time range bar */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+            LAST
+          </span>
+          <div className="flex gap-1">
+            {(["3h", "6h", "12h", "24h"] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className="label-mono px-2 py-0.5 rounded transition-colors"
+                style={{
+                  color: range === r ? "var(--cl-accent)" : "var(--cl-text-muted)",
+                  backgroundColor: range === r ? "var(--cl-accent-7)" : "transparent",
+                }}
+              >
+                {r.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+        <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+          {recentActivity.length} entries
+        </span>
+      </div>
+      <div className="cl-divider mb-10" />
+
       {/* Two-column layout: Risk Drivers (left) + Activity Profile (right) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-10">
         {/* Left: Risk drivers */}
         <div className="cl-card p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2
-              className="label-mono"
-              style={{ color: "var(--cl-text-muted)" }}
-            >
-              RISK DRIVERS
-            </h2>
-            <div className="flex gap-1">
-              {(["3h", "6h", "12h", "24h"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRange(r)}
-                  className="label-mono px-2 py-0.5 rounded transition-colors"
-                  style={{
-                    color: range === r ? "var(--cl-accent)" : "var(--cl-text-muted)",
-                    backgroundColor: range === r ? "var(--cl-accent-7)" : "transparent",
-                  }}
-                >
-                  {r.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h2
+            className="label-mono mb-5"
+            style={{ color: "var(--cl-text-muted)" }}
+          >
+            RISK DRIVERS
+          </h2>
           <RiskPanel
             riskTrend={riskTrend}
             topRisks={topRisks}

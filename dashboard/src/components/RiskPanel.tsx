@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { EntryResponse, RiskTrendPoint } from "../lib/types";
-import { riskTierFromScore, riskColorRaw, entryIcon } from "../lib/utils";
+import { riskTierFromScore, riskColorRaw, riskLeftBorder, entryIcon } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
 import Sparkline from "./Sparkline";
 import RiskDetail from "./RiskDetail";
@@ -79,6 +79,7 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
         className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg transition-colors"
         style={{
           backgroundColor: expanded ? "var(--cl-elevated)" : "transparent",
+          boxShadow: riskLeftBorder(entry.riskScore),
         }}
       >
         {/* Category icon */}
