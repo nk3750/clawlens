@@ -63,8 +63,8 @@ export interface OpenClawPluginDefinition {
 }
 
 export interface ModelAuth {
-  resolveApiKeyForProvider(provider: string): Promise<string>;
-  getApiKeyForModel(model: string): Promise<string>;
+  resolveApiKeyForProvider(provider: string): Promise<string | undefined>;
+  getApiKeyForModel(model: string): Promise<string | undefined>;
 }
 
 export interface BeforeToolCallEvent {

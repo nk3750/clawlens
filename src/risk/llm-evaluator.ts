@@ -242,13 +242,17 @@ export async function evaluateWithLlm(
   if (runtime?.modelAuth && provider && model && PROVIDER_ENDPOINTS[provider]) {
     try {
       const apiKey = await runtime.modelAuth.resolveApiKeyForProvider(provider);
-      const text = await callLlmApi(provider, apiKey, model, EVAL_SYSTEM_PROMPT, message, logger);
-      if (text) {
-        const result = parseEvalResponse(text);
-        if (result) return result;
-        logger?.warn("ClawLens: modelAuth API returned unparseable response, falling through");
+      if (!apiKey) {
+        logger?.warn("ClawLens: modelAuth resolved undefined key, falling through to env var");
       } else {
-        logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+        const text = await callLlmApi(provider, apiKey, model, EVAL_SYSTEM_PROMPT, message, logger);
+        if (text) {
+          const result = parseEvalResponse(text);
+          if (result) return result;
+          logger?.warn("ClawLens: modelAuth API returned unparseable response, falling through");
+        } else {
+          logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+        }
       }
     } catch (err) {
       logger?.warn(

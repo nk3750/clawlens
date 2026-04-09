@@ -432,6 +432,45 @@ describe("evaluateWithLlm", () => {
     }
   });
 
+  it("Path 1: modelAuth resolves undefined → falls through without calling fetch", async () => {
+    const auth = {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue(undefined),
+      getApiKeyForModel: vi.fn().mockResolvedValue(undefined),
+    };
+    const logger = mockLogger();
+
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    try {
+      const result = await evaluateWithLlm(
+        "exec",
+        { command: "test" },
+        [],
+        tier1Score(),
+        { modelAuth: auth },
+        logger,
+        { provider: "anthropic" },
+      );
+
+      // Should fall through to stub (no env var, no subagent)
+      expect(result.reasoning).toContain("Stub evaluation");
+      expect(auth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
+      // Should warn about undefined key
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("modelAuth resolved undefined"),
+      );
+      // Should NOT have called fetch (key was undefined)
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      if (originalKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    }
+  });
+
   it("Path 1 fail → Path 2: modelAuth rejects → env var set → direct API succeeds", async () => {
     setAnthropicFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuthRejecting("Auth not resolved");

@@ -32,23 +32,15 @@ export interface BeforeToolCallDeps {
 }
 
 export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
-  const {
-    engine,
-    auditLogger,
-    rateLimiter,
-    config,
-    sessionContext,
-    evalCache,
-    alertSend,
-    logger,
-    runtime,
-    provider,
-  } = deps;
+  const { engine, auditLogger, rateLimiter, config, sessionContext, evalCache, alertSend } = deps;
 
-  return (
+  return async (
     event: BeforeToolCallEvent,
     ctx: Record<string, unknown>,
-  ): BeforeToolCallResult | undefined => {
+  ): Promise<BeforeToolCallResult | undefined> => {
+    // Read session-scoped deps at call time — may be refreshed between sessions
+    const { runtime, provider, logger } = deps;
+
     const { toolName, params, toolCallId } = event;
     const sessionKey = (ctx?.sessionKey as string) || "default";
 
@@ -121,32 +113,39 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
           });
         } else {
           const recentActions = sessionContext.getRecent(sessionKey, 5);
-          evaluateWithLlm(toolName, params, recentActions, risk, runtime, logger, {
-            apiKeyEnv: config.risk.llmApiKeyEnv,
-            model: config.risk.llmModel,
-            provider,
-          })
-            .then((evaluation) => {
-              // For stub evaluations, write a minimal entry so the dashboard
-              // can show "AI assessment unavailable" rather than nothing
-              if (evaluation.reasoning?.includes("Stub evaluation")) {
-                auditLogger.appendEvaluation({
-                  refToolCallId: toolCallId,
-                  toolName,
-                  llmEvaluation: {
-                    adjustedScore: risk.score,
-                    reasoning: "LLM evaluation unavailable",
-                    tags: risk.tags,
-                    confidence: "none" as string,
-                    patterns: [],
-                  },
-                  riskScore: risk.score,
-                  riskTier: getTierFromScore(risk.score),
-                  riskTags: risk.tags,
-                });
-                return;
-              }
+          try {
+            const evaluation = await evaluateWithLlm(
+              toolName,
+              params,
+              recentActions,
+              risk,
+              runtime,
+              logger,
+              {
+                apiKeyEnv: config.risk.llmApiKeyEnv,
+                model: config.risk.llmModel,
+                provider,
+              },
+            );
 
+            // For stub evaluations, write a minimal entry so the dashboard
+            // can show "AI assessment unavailable" rather than nothing
+            if (evaluation.reasoning?.includes("Stub evaluation")) {
+              auditLogger.appendEvaluation({
+                refToolCallId: toolCallId,
+                toolName,
+                llmEvaluation: {
+                  adjustedScore: risk.score,
+                  reasoning: "LLM evaluation unavailable",
+                  tags: risk.tags,
+                  confidence: "none" as string,
+                  patterns: [],
+                },
+                riskScore: risk.score,
+                riskTier: getTierFromScore(risk.score),
+                riskTags: risk.tags,
+              });
+            } else {
               auditLogger.appendEvaluation({
                 refToolCallId: toolCallId,
                 toolName,
@@ -174,29 +173,29 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 const msg = formatAlert(toolName, params, adjustedRisk, config.dashboardUrl || "");
                 sendAlert(msg, alertSend);
               }
-            })
-            .catch((err) => {
-              const errMsg = err instanceof Error ? err.message : String(err);
-              logger?.warn(`ClawLens: LLM eval failed for ${toolName}: ${errMsg}`);
-              try {
-                auditLogger.appendEvaluation({
-                  refToolCallId: toolCallId,
-                  toolName,
-                  llmEvaluation: {
-                    adjustedScore: risk.score,
-                    reasoning: `LLM evaluation failed: ${errMsg}`,
-                    tags: risk.tags,
-                    confidence: "none" as string,
-                    patterns: [],
-                  },
-                  riskScore: risk.score,
-                  riskTier: getTierFromScore(risk.score),
-                  riskTags: risk.tags,
-                });
-              } catch {
-                // Last resort — don't let audit write failure crash the process
-              }
-            });
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logger?.warn(`ClawLens: LLM eval failed for ${toolName}: ${errMsg}`);
+            try {
+              auditLogger.appendEvaluation({
+                refToolCallId: toolCallId,
+                toolName,
+                llmEvaluation: {
+                  adjustedScore: risk.score,
+                  reasoning: `LLM evaluation failed: ${errMsg}`,
+                  tags: risk.tags,
+                  confidence: "none" as string,
+                  patterns: [],
+                },
+                riskScore: risk.score,
+                riskTier: getTierFromScore(risk.score),
+                riskTags: risk.tags,
+              });
+            } catch {
+              // Last resort — don't let audit write failure crash the process
+            }
+          }
         }
       }
 

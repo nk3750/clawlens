@@ -6,7 +6,7 @@ import { resolveConfig } from "./src/config";
 import { registerDashboardRoutes } from "./src/dashboard/routes";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { createBeforePromptBuildHandler } from "./src/hooks/before-prompt-build";
-import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
+import { type BeforeToolCallDeps, createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createSessionEndHandler } from "./src/hooks/session-end";
 import { createSessionStartHandler } from "./src/hooks/session-start";
 import { PolicyEngine } from "./src/policy/engine";
@@ -15,6 +15,10 @@ import { RateLimiter } from "./src/rate/limiter";
 import { EvalCache } from "./src/risk/eval-cache";
 import { SessionContext } from "./src/risk/session-context";
 import type { ModelAuth, OpenClawPluginApi, OpenClawPluginDefinition } from "./src/types";
+
+// ── Module-level state — hooks/services/CLI/dashboard wired exactly once ──
+let _registered = false;
+let _handlerDeps: BeforeToolCallDeps | undefined;
 
 const plugin: OpenClawPluginDefinition = {
   id: "clawlens",
@@ -25,7 +29,44 @@ const plugin: OpenClawPluginDefinition = {
   register(api: OpenClawPluginApi) {
     const config = resolveConfig(api.pluginConfig, api.resolvePath);
 
-    // Core components
+    // Resolve runtime from OpenClaw plugin API (may differ per session)
+    const runtime = (api as unknown as Record<string, unknown>).runtime as
+      | { subagent?: Record<string, unknown>; modelAuth?: ModelAuth }
+      | undefined;
+
+    // Resolve provider from OpenClaw auth config (e.g., "anthropic")
+    const authProfiles = (
+      (api.config as Record<string, unknown>).auth as
+        | { profiles?: Record<string, { provider?: string }> }
+        | undefined
+    )?.profiles;
+    const detectedProvider = authProfiles
+      ? Object.values(authProfiles).find((p) => p.provider)?.provider
+      : undefined;
+    const provider = detectedProvider || config.risk.llmProvider;
+
+    const typedRuntime = runtime as
+      | {
+          subagent?: {
+            run?: (opts: unknown) => Promise<unknown>;
+            waitForRun?: (opts: unknown) => Promise<unknown>;
+            getSessionMessages?: (opts: unknown) => Promise<unknown>;
+            deleteSession?: (opts: unknown) => Promise<void>;
+          };
+          modelAuth?: ModelAuth;
+        }
+      | undefined;
+
+    // ── Subsequent call: refresh session-scoped state only ──
+    if (_registered && _handlerDeps) {
+      _handlerDeps.runtime = typedRuntime;
+      _handlerDeps.provider = provider;
+      _handlerDeps.logger = api.logger;
+      api.logger.info("ClawLens: Plugin already registered, refreshed runtime");
+      return;
+    }
+
+    // ── First call: create all components and wire everything ──
     const engine = new PolicyEngine();
     const loader = new PolicyLoader(engine, config.policiesPath, api.logger);
     const auditLogger = new AuditLogger(config.auditLogPath);
@@ -50,7 +91,6 @@ const plugin: OpenClawPluginDefinition = {
     }
 
     // Load policy eagerly so hooks work even if service.start() hasn't run yet
-    // (OpenClaw may call register() per-session but service.start() only once)
     try {
       loader.load();
     } catch (err) {
@@ -59,48 +99,21 @@ const plugin: OpenClawPluginDefinition = {
       );
     }
 
-    // Resolve runtime from OpenClaw plugin API
-    const runtime = (api as unknown as Record<string, unknown>).runtime as
-      | { subagent?: Record<string, unknown>; modelAuth?: ModelAuth }
-      | undefined;
-
-    // Resolve provider from OpenClaw auth config (e.g., "anthropic")
-    const authProfiles = (
-      (api.config as Record<string, unknown>).auth as
-        | { profiles?: Record<string, { provider?: string }> }
-        | undefined
-    )?.profiles;
-    const detectedProvider = authProfiles
-      ? Object.values(authProfiles).find((p) => p.provider)?.provider
-      : undefined;
+    _handlerDeps = {
+      engine,
+      auditLogger,
+      rateLimiter,
+      config,
+      sessionContext,
+      evalCache,
+      alertSend,
+      logger: api.logger,
+      runtime: typedRuntime,
+      provider,
+    };
 
     // Wire hooks
-    api.on(
-      "before_tool_call",
-      createBeforeToolCallHandler({
-        engine,
-        auditLogger,
-        rateLimiter,
-        config,
-        sessionContext,
-        evalCache,
-        alertSend,
-        logger: api.logger,
-        runtime: runtime as
-          | {
-              subagent?: {
-                run?: (opts: unknown) => Promise<unknown>;
-                waitForRun?: (opts: unknown) => Promise<unknown>;
-                getSessionMessages?: (opts: unknown) => Promise<unknown>;
-                deleteSession?: (opts: unknown) => Promise<void>;
-              };
-              modelAuth?: ModelAuth;
-            }
-          | undefined,
-        provider: detectedProvider || config.risk.llmProvider,
-      }),
-      { priority: 100 },
-    );
+    api.on("before_tool_call", createBeforeToolCallHandler(_handlerDeps), { priority: 100 });
 
     api.on("after_tool_call", createAfterToolCallHandler(auditLogger, rateLimiter));
 
@@ -260,9 +273,10 @@ const plugin: OpenClawPluginDefinition = {
       pluginDir: __dirname,
       config,
       modelAuth: runtime?.modelAuth,
-      provider: detectedProvider || config.risk.llmProvider,
+      provider,
     });
 
+    _registered = true;
     api.logger.info("ClawLens: Plugin registered");
   },
 };
