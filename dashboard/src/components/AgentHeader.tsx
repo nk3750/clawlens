@@ -39,24 +39,21 @@ function useCountUp(target: number, duration = 400): number {
 function StatCell({ value, label, sublabel }: { value: number; label: string; sublabel: string }) {
   const display = useCountUp(value);
   return (
-    <div
-      className="px-4 py-3"
-      style={{ backgroundColor: "var(--cl-elevated)" }}
-    >
+    <div className="flex flex-col items-center text-center py-4 px-3">
       <span
-        className="font-mono text-lg font-bold block"
+        className="font-mono text-xl font-bold"
         style={{ color: "var(--cl-text-primary)", lineHeight: 1.2 }}
       >
         {display}
       </span>
       <span
-        className="label-mono block mt-0.5"
+        className="label-mono mt-1"
         style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}
       >
         {label}
       </span>
       <span
-        className="label-mono block"
+        className="label-mono"
         style={{ color: "var(--cl-text-muted)", fontSize: "9px" }}
       >
         {sublabel}
@@ -72,33 +69,30 @@ function RiskStatCell({ value, label }: { value: number; label: string }) {
 
   return (
     <div
-      className="px-4 py-3"
-      style={{
-        backgroundColor: "var(--cl-elevated)",
-        borderTop: `2px solid ${color}`,
-      }}
+      className="flex flex-col items-center text-center py-4 px-3"
+      style={{ borderTop: `2px solid ${color}` }}
     >
       <span
-        className="font-mono text-lg font-bold block"
-        style={{ color: "var(--cl-text-primary)", lineHeight: 1.2 }}
+        className="font-mono text-xl font-bold"
+        style={{ color, lineHeight: 1.2 }}
       >
         {display}
       </span>
       <span
-        className="label-mono block mt-0.5"
+        className="label-mono mt-1"
         style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}
       >
         {label}
       </span>
-      <div className="flex items-center gap-2 mt-1.5">
+      <div className="w-full max-w-[80px] mt-1.5">
         <RiskBar score={display} />
-        <span
-          className="label-mono shrink-0"
-          style={{ color, fontSize: "9px" }}
-        >
-          {tier.toUpperCase()}
-        </span>
       </div>
+      <span
+        className="label-mono mt-1"
+        style={{ color, fontSize: "9px" }}
+      >
+        {tier.toUpperCase()}
+      </span>
     </div>
   );
 }
@@ -230,16 +224,20 @@ export default function AgentHeader({ agent, todayActions, avgRisk, peakRisk, to
         </div>
       </div>
 
-      {/* Stat grid */}
-      <div
-        className="grid grid-cols-2 md:grid-cols-4 mt-8 rounded-xl overflow-hidden"
-        style={{ border: "1px solid var(--cl-border-subtle)" }}
-      >
+      {/* Stat grid — replaces cl-divider */}
+      <div className="grid grid-cols-2 md:grid-cols-4 mt-8">
         <StatCell value={todayActions ?? agent.todayToolCalls} label="ACTIONS" sublabel="today" />
-        <RiskStatCell value={avgRisk ?? agent.avgRiskScore} label="AVG RISK" />
-        <RiskStatCell value={peakRisk ?? agent.peakRiskScore} label="PEAK RISK" />
-        <StatCell value={totalSessions ?? 0} label="SESSIONS" sublabel="today" />
+        <div style={{ borderLeft: "1px solid var(--cl-border-subtle)" }}>
+          <RiskStatCell value={avgRisk ?? agent.avgRiskScore} label="AVG RISK" />
+        </div>
+        <div style={{ borderLeft: "1px solid var(--cl-border-subtle)" }}>
+          <RiskStatCell value={peakRisk ?? agent.peakRiskScore} label="PEAK RISK" />
+        </div>
+        <div style={{ borderLeft: "1px solid var(--cl-border-subtle)" }}>
+          <StatCell value={totalSessions ?? 0} label="SESSIONS" sublabel="today" />
+        </div>
       </div>
+      <div className="cl-divider mt-0" />
     </div>
   );
 }
