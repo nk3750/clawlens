@@ -1,6 +1,14 @@
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { AuditEntry } from "../audit/logger";
-import { callLlmApi, DEFAULT_EVAL_MODELS, PROVIDER_ENDPOINTS } from "../risk/llm-evaluator";
-import type { ModelAuth } from "../types";
+import {
+  callLlmApi,
+  collectEmbeddedText,
+  DEFAULT_EVAL_MODELS,
+  PROVIDER_ENDPOINTS,
+} from "../risk/llm-evaluator";
+import type { EmbeddedAgentRuntime, ModelAuth } from "../types";
 import { describeAction } from "./categories";
 
 /** Build index of eval entries keyed by the toolCallId they reference. */
@@ -149,7 +157,14 @@ ${toolLines}`;
 export async function getSessionSummary(
   sessionKey: string,
   entries: AuditEntry[],
-  config: { llmModel: string; llmApiKeyEnv: string; modelAuth?: ModelAuth; provider?: string },
+  config: {
+    llmModel: string;
+    llmApiKeyEnv: string;
+    modelAuth?: ModelAuth;
+    provider?: string;
+    agent?: EmbeddedAgentRuntime;
+    openClawConfig?: Record<string, unknown>;
+  },
 ): Promise<SessionSummary | null> {
   let sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
 
@@ -222,39 +237,89 @@ export async function getSessionSummary(
 async function generateLlmSummary(
   sessionKey: string,
   entries: AuditEntry[],
-  config: { llmModel: string; llmApiKeyEnv: string; modelAuth?: ModelAuth; provider?: string },
+  config: {
+    llmModel: string;
+    llmApiKeyEnv: string;
+    modelAuth?: ModelAuth;
+    provider?: string;
+    agent?: EmbeddedAgentRuntime;
+    openClawConfig?: Record<string, unknown>;
+  },
   evalIdx: Map<string, AuditEntry>,
 ): Promise<SessionSummary | null> {
   const prompt = buildSummaryPrompt(sessionKey, entries, evalIdx);
   const provider = config.provider || "anthropic";
   const model = config.llmModel || DEFAULT_EVAL_MODELS[provider];
 
-  // Need a known provider endpoint and a model to proceed
-  if (!model || !PROVIDER_ENDPOINTS[provider]) return null;
+  // Need a known provider and a model to proceed (for direct API paths)
+  const needsDirectApi = model && PROVIDER_ENDPOINTS[provider];
+
+  const systemPrompt =
+    "Summarize the agent session in 1-2 sentences. Be concise and factual. Focus on what the agent did, whether anything was risky or blocked, and the outcome.";
+
+  // Path 1: Embedded agent (handles auth internally)
+  if (config.agent?.runEmbeddedPiAgent) {
+    try {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawlens-summary-"));
+      const sessionFile = path.join(tmpDir, "session.json");
+      try {
+        const result = await config.agent.runEmbeddedPiAgent({
+          sessionId: `clawlens:summary:${Date.now()}`,
+          sessionFile,
+          workspaceDir: process.cwd(),
+          config: config.openClawConfig,
+          prompt,
+          extraSystemPrompt: systemPrompt,
+          timeoutMs: 15_000,
+          runId: `clawlens-summary-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          provider: provider || undefined,
+          model: model || undefined,
+          disableTools: true,
+          streamParams: { maxTokens: 256 },
+        });
+        const text = collectEmbeddedText(result.payloads);
+        if (text) {
+          return {
+            sessionKey,
+            summary: text.trim(),
+            generatedAt: new Date().toISOString(),
+            isLlmGenerated: true,
+          };
+        }
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      }
+    } catch {
+      // Fall through to direct API paths
+    }
+  }
+
+  if (!needsDirectApi) return null;
 
   // Resolve API key: modelAuth first, then env var
   let apiKey: string | undefined;
 
-  // Path 1: modelAuth-resolved key
+  // Path 2: modelAuth-resolved key (fixed: object param, reads .apiKey)
   if (config.modelAuth && config.provider) {
     try {
-      apiKey = await config.modelAuth.resolveApiKeyForProvider(config.provider);
+      const auth = await config.modelAuth.resolveApiKeyForProvider({
+        provider: config.provider,
+        cfg: config.openClawConfig,
+      });
+      apiKey = auth?.apiKey;
     } catch {
       // Fall through to env var
     }
   }
 
-  // Path 2: explicit env var
+  // Path 3: explicit env var
   if (!apiKey) {
     apiKey = process.env[config.llmApiKeyEnv];
   }
 
   if (!apiKey) return null;
 
-  const systemPrompt =
-    "Summarize the agent session in 1-2 sentences. Be concise and factual. Focus on what the agent did, whether anything was risky or blocked, and the outcome.";
-
-  const text = await callLlmApi(provider, apiKey, model, systemPrompt, prompt);
+  const text = await callLlmApi(provider, apiKey, model!, systemPrompt, prompt);
   if (!text) return null;
 
   return {

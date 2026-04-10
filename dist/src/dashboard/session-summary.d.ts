@@ -1,5 +1,5 @@
 import type { AuditEntry } from "../audit/logger";
-import type { ModelAuth } from "../types";
+import type { EmbeddedAgentRuntime, ModelAuth } from "../types";
 export interface SessionSummary {
     sessionKey: string;
     summary: string;
@@ -16,6 +16,8 @@ export declare function getSessionSummary(sessionKey: string, entries: AuditEntr
     llmApiKeyEnv: string;
     modelAuth?: ModelAuth;
     provider?: string;
+    agent?: EmbeddedAgentRuntime;
+    openClawConfig?: Record<string, unknown>;
 }): Promise<SessionSummary | null>;
 /** Exposed for testing — clears the summary cache. */
 export declare function clearSummaryCache(): void;

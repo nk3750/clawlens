@@ -14,6 +14,23 @@ import { PolicyLoader } from "./src/policy/loader";
 import { RateLimiter } from "./src/rate/limiter";
 import { EvalCache } from "./src/risk/eval-cache";
 import { SessionContext } from "./src/risk/session-context";
+// ── Module-level state ──────────────────────────────────────────────────────
+// Components + handler created once. Hooks registered per unique api object
+// (gateway dispatches tool calls through different api contexts).
+let _handlerDeps;
+let _serviceRegistered = false;
+// biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
+const _hookedApis = new WeakSet();
+// biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
+let _beforeToolCallHandler;
+// biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
+let _afterToolCallHandler;
+// biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
+let _beforePromptBuildHandler;
+// biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
+let _sessionStartHandler;
+// biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
+let _sessionEndHandler;
 const plugin = {
     id: "clawlens",
     name: "ClawLens",
@@ -21,190 +38,215 @@ const plugin = {
     version: "0.2.0",
     register(api) {
         const config = resolveConfig(api.pluginConfig, api.resolvePath);
-        // Core components
-        const engine = new PolicyEngine();
-        const loader = new PolicyLoader(engine, config.policiesPath, api.logger);
-        const auditLogger = new AuditLogger(config.auditLogPath);
-        const rateLimiter = new RateLimiter(config.rateStatePath);
-        const sessionContext = new SessionContext();
-        const evalCache = new EvalCache();
-        // Alert send function — uses gateway method if available
-        let alertSend;
-        try {
-            api.registerGatewayMethod("clawlens.alert", (msg) => {
-                api.logger.info(`ClawLens Alert: ${String(msg)}`);
-            });
-            alertSend = (msg) => {
-                api.logger.info(`ClawLens Alert:\n${msg}`);
-            };
-        }
-        catch {
-            // Gateway method registration may not be available — alerts degrade to logs
-            alertSend = (msg) => {
-                api.logger.warn(`ClawLens Alert (no gateway):\n${msg}`);
-            };
-        }
-        // Load policy eagerly so hooks work even if service.start() hasn't run yet
-        // (OpenClaw may call register() per-session but service.start() only once)
-        try {
-            loader.load();
-        }
-        catch (err) {
-            api.logger.warn(`ClawLens: Failed to load policy during register: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        // Resolve runtime from OpenClaw plugin API
+        // Resolve runtime from OpenClaw plugin API (may differ per session)
         const runtime = api.runtime;
         // Resolve provider from OpenClaw auth config (e.g., "anthropic")
         const authProfiles = api.config.auth?.profiles;
         const detectedProvider = authProfiles
             ? Object.values(authProfiles).find((p) => p.provider)?.provider
             : undefined;
-        // Wire hooks
-        api.on("before_tool_call", createBeforeToolCallHandler({
-            engine,
-            auditLogger,
-            rateLimiter,
-            config,
-            sessionContext,
-            evalCache,
-            alertSend,
-            logger: api.logger,
-            runtime: runtime,
-            provider: detectedProvider || config.risk.llmProvider,
-        }), { priority: 100 });
-        api.on("after_tool_call", createAfterToolCallHandler(auditLogger, rateLimiter));
-        api.on("before_prompt_build", createBeforePromptBuildHandler(engine));
-        api.on("session_start", createSessionStartHandler(engine, loader, auditLogger, rateLimiter, api.logger));
-        api.on("session_end", createSessionEndHandler(auditLogger, rateLimiter, config, api.logger, sessionContext));
-        // Register service for lifecycle management
-        api.registerService({
-            id: "clawlens",
-            start: async () => {
-                if (!engine.getPolicy()) {
-                    loader.load();
-                }
-                await auditLogger.init();
-                // Pre-warm eval cache from audit log entries with real LLM evaluations
-                try {
-                    const entries = auditLogger.readEntries();
-                    const warmed = evalCache.warmFromAuditLog(entries);
-                    if (warmed > 0) {
-                        api.logger.info(`ClawLens: Pre-warmed eval cache with ${warmed} entries`);
+        const provider = detectedProvider || config.risk.llmProvider;
+        const typedRuntime = runtime;
+        // ── First call: create all components and handler instances ──
+        if (!_handlerDeps) {
+            const engine = new PolicyEngine();
+            const loader = new PolicyLoader(engine, config.policiesPath, api.logger);
+            const auditLogger = new AuditLogger(config.auditLogPath);
+            const rateLimiter = new RateLimiter(config.rateStatePath);
+            const sessionContext = new SessionContext();
+            const evalCache = new EvalCache();
+            // Alert send function — uses gateway method if available
+            let alertSend;
+            try {
+                api.registerGatewayMethod("clawlens.alert", (msg) => {
+                    api.logger.info(`ClawLens Alert: ${String(msg)}`);
+                });
+                alertSend = (msg) => {
+                    api.logger.info(`ClawLens Alert:\n${msg}`);
+                };
+            }
+            catch {
+                // Gateway method registration may not be available — alerts degrade to logs
+                alertSend = (msg) => {
+                    api.logger.warn(`ClawLens Alert (no gateway):\n${msg}`);
+                };
+            }
+            // Load policy eagerly so hooks work even if service.start() hasn't run yet
+            try {
+                loader.load();
+            }
+            catch (err) {
+                api.logger.warn(`ClawLens: Failed to load policy during register: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            _handlerDeps = {
+                engine,
+                auditLogger,
+                rateLimiter,
+                config,
+                sessionContext,
+                evalCache,
+                alertSend,
+                logger: api.logger,
+                runtime: typedRuntime,
+                provider,
+                openClawConfig: api.config,
+            };
+            // Create handler instances once — reused across api registrations
+            _beforeToolCallHandler = createBeforeToolCallHandler(_handlerDeps);
+            _afterToolCallHandler = createAfterToolCallHandler(auditLogger, rateLimiter);
+            _beforePromptBuildHandler = createBeforePromptBuildHandler(engine);
+            _sessionStartHandler = createSessionStartHandler(engine, loader, auditLogger, rateLimiter, api.logger);
+            _sessionEndHandler = createSessionEndHandler(auditLogger, rateLimiter, config, api.logger, sessionContext);
+        }
+        else {
+            // Subsequent init: refresh session-scoped state on shared deps
+            _handlerDeps.runtime = typedRuntime;
+            _handlerDeps.provider = provider;
+            _handlerDeps.logger = api.logger;
+        }
+        // ── Register hooks on each unique api object ──
+        // Gateway dispatches tool calls through different api contexts;
+        // hooks must be wired on each to ensure they fire.
+        if (!_hookedApis.has(api)) {
+            api.on("before_tool_call", _beforeToolCallHandler, { priority: 100 });
+            api.on("after_tool_call", _afterToolCallHandler);
+            api.on("before_prompt_build", _beforePromptBuildHandler);
+            api.on("session_start", _sessionStartHandler);
+            api.on("session_end", _sessionEndHandler);
+            _hookedApis.add(api);
+        }
+        // ── One-time registrations: service, CLI, dashboard ──
+        if (!_serviceRegistered) {
+            const { engine, auditLogger, rateLimiter, evalCache } = _handlerDeps;
+            const loader = new PolicyLoader(engine, config.policiesPath, api.logger);
+            api.registerService({
+                id: "clawlens",
+                start: async () => {
+                    if (!engine.getPolicy()) {
+                        loader.load();
                     }
-                }
-                catch (err) {
-                    api.logger.warn(`ClawLens: Cache pre-warming failed: ${err instanceof Error ? err.message : String(err)}`);
-                }
-                rateLimiter.restore();
-                loader.startWatching();
-                api.logger.info("ClawLens: Service started");
-            },
-            stop: async () => {
-                loader.stopWatching();
-                await auditLogger.flush();
-                rateLimiter.persist();
-                rateLimiter.cleanup();
-                api.logger.info("ClawLens: Service stopped");
-            },
-        });
-        // Register CLI commands
-        api.registerCli((cli) => {
-            cli
-                .command("clawlens init")
-                .description("Initialize ClawLens with default config and policies")
-                .action(async () => {
-                const configDir = path.dirname(config.policiesPath);
-                if (!fs.existsSync(configDir)) {
-                    fs.mkdirSync(configDir, { recursive: true });
-                }
-                // Copy standard policy to config location
-                if (!fs.existsSync(config.policiesPath)) {
-                    const defaultPolicy = path.join(__dirname, "policies", "standard.yaml");
-                    if (fs.existsSync(defaultPolicy)) {
-                        fs.copyFileSync(defaultPolicy, config.policiesPath);
+                    await auditLogger.init();
+                    // Pre-warm eval cache from audit log entries with real LLM evaluations
+                    try {
+                        const entries = auditLogger.readEntries();
+                        const warmed = evalCache.warmFromAuditLog(entries);
+                        if (warmed > 0) {
+                            api.logger.info(`ClawLens: Pre-warmed eval cache with ${warmed} entries`);
+                        }
+                    }
+                    catch (err) {
+                        api.logger.warn(`ClawLens: Cache pre-warming failed: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                    rateLimiter.restore();
+                    loader.startWatching();
+                    api.logger.info("ClawLens: Service started");
+                },
+                stop: async () => {
+                    loader.stopWatching();
+                    await auditLogger.flush();
+                    rateLimiter.persist();
+                    rateLimiter.cleanup();
+                    api.logger.info("ClawLens: Service stopped");
+                },
+            });
+            api.registerCli((cli) => {
+                cli
+                    .command("clawlens init")
+                    .description("Initialize ClawLens with default config and policies")
+                    .action(async () => {
+                    const configDir = path.dirname(config.policiesPath);
+                    if (!fs.existsSync(configDir)) {
+                        fs.mkdirSync(configDir, { recursive: true });
+                    }
+                    if (!fs.existsSync(config.policiesPath)) {
+                        const defaultPolicy = path.join(__dirname, "policies", "standard.yaml");
+                        if (fs.existsSync(defaultPolicy)) {
+                            fs.copyFileSync(defaultPolicy, config.policiesPath);
+                        }
+                        else {
+                            fs.writeFileSync(config.policiesPath, `${[
+                                'version: "1"',
+                                "",
+                                "defaults:",
+                                "  unknown_actions: approval_required",
+                                "  approval_timeout: 300",
+                                "  timeout_action: deny",
+                                "  digest: daily",
+                                "",
+                                "rules:",
+                                '  - name: "Block rm -rf"',
+                                "    match:",
+                                "      tool: exec",
+                                "      params:",
+                                '        command: "*rm -rf*"',
+                                "    action: block",
+                                '    reason: "Destructive command blocked"',
+                                "",
+                                '  - name: "Approve shell commands"',
+                                "    match:",
+                                "      tool: exec",
+                                "    action: approval_required",
+                                "",
+                                '  - name: "Allow reads"',
+                                "    match:",
+                                "      tool: read",
+                                "    action: allow",
+                                "",
+                                '  - name: "Default"',
+                                "    match: {}",
+                                "    action: approval_required",
+                            ].join("\n")}\n`);
+                        }
+                        console.log(`ClawLens initialized. Edit policies at ${config.policiesPath}`);
                     }
                     else {
-                        // Fallback: write a minimal default policy inline
-                        fs.writeFileSync(config.policiesPath, `${[
-                            'version: "1"',
-                            "",
-                            "defaults:",
-                            "  unknown_actions: approval_required",
-                            "  approval_timeout: 300",
-                            "  timeout_action: deny",
-                            "  digest: daily",
-                            "",
-                            "rules:",
-                            '  - name: "Block rm -rf"',
-                            "    match:",
-                            "      tool: exec",
-                            "      params:",
-                            '        command: "*rm -rf*"',
-                            "    action: block",
-                            '    reason: "Destructive command blocked"',
-                            "",
-                            '  - name: "Approve shell commands"',
-                            "    match:",
-                            "      tool: exec",
-                            "    action: approval_required",
-                            "",
-                            '  - name: "Allow reads"',
-                            "    match:",
-                            "      tool: read",
-                            "    action: allow",
-                            "",
-                            '  - name: "Default"',
-                            "    match: {}",
-                            "    action: approval_required",
-                        ].join("\n")}\n`);
+                        console.log(`Policies already exist at ${config.policiesPath} — skipping.`);
                     }
-                    console.log(`ClawLens initialized. Edit policies at ${config.policiesPath}`);
-                }
-                else {
-                    console.log(`Policies already exist at ${config.policiesPath} — skipping.`);
-                }
-                console.log("\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:");
-                console.log(JSON.stringify({
-                    plugins: {
-                        load: { paths: ["~/code/clawLens"] },
-                        entries: {
-                            clawlens: {
-                                enabled: true,
-                                config: {
-                                    policiesPath: config.policiesPath,
-                                    auditLogPath: config.auditLogPath,
+                    console.log("\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:");
+                    console.log(JSON.stringify({
+                        plugins: {
+                            load: { paths: ["~/code/clawLens"] },
+                            entries: {
+                                clawlens: {
+                                    enabled: true,
+                                    config: {
+                                        policiesPath: config.policiesPath,
+                                        auditLogPath: config.auditLogPath,
+                                    },
                                 },
                             },
                         },
-                    },
-                }, null, 2));
+                    }, null, 2));
+                });
+                cli
+                    .command("clawlens audit export")
+                    .description("Export audit log")
+                    .option("--format <format>", "json or csv", "json")
+                    .option("--since <duration>", "time range, e.g. 7d, 24h, 1h")
+                    .action(async (opts) => {
+                    const format = opts.format || "json";
+                    const since = opts.since;
+                    const entries = auditLogger.readEntries();
+                    if (format === "csv") {
+                        console.log(exportToCSV(entries, since));
+                    }
+                    else {
+                        console.log(exportToJSON(entries, since));
+                    }
+                });
             });
-            cli
-                .command("clawlens audit export")
-                .description("Export audit log")
-                .option("--format <format>", "json or csv", "json")
-                .option("--since <duration>", "time range, e.g. 7d, 24h, 1h")
-                .action(async (opts) => {
-                const format = opts.format || "json";
-                const since = opts.since;
-                const entries = auditLogger.readEntries();
-                if (format === "csv") {
-                    console.log(exportToCSV(entries, since));
-                }
-                else {
-                    console.log(exportToJSON(entries, since));
-                }
+            registerDashboardRoutes(api, {
+                engine: engine,
+                auditLogger: auditLogger,
+                pluginDir: __dirname,
+                config,
+                modelAuth: runtime?.modelAuth,
+                provider,
+                agent: typedRuntime?.agent,
+                openClawConfig: api.config,
             });
-        });
-        // Dashboard
-        registerDashboardRoutes(api, {
-            engine,
-            auditLogger,
-            pluginDir: __dirname,
-            config,
-            modelAuth: runtime?.modelAuth,
-            provider: detectedProvider || config.risk.llmProvider,
-        });
+            _serviceRegistered = true;
+        }
         api.logger.info("ClawLens: Plugin registered");
     },
 };

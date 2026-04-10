@@ -4,7 +4,7 @@ import type { PolicyEngine } from "../policy/engine";
 import type { RateLimiter } from "../rate/limiter";
 import type { EvalCache } from "../risk/eval-cache";
 import type { SessionContext } from "../risk/session-context";
-import type { BeforeToolCallEvent, BeforeToolCallResult, ModelAuth } from "../types";
+import type { BeforeToolCallEvent, BeforeToolCallResult, EmbeddedAgentRuntime, ModelAuth } from "../types";
 export interface BeforeToolCallDeps {
     engine: PolicyEngine;
     auditLogger: AuditLogger;
@@ -15,14 +15,10 @@ export interface BeforeToolCallDeps {
     alertSend?: (msg: string) => Promise<void> | void;
     logger?: import("../types").PluginLogger;
     runtime?: {
-        subagent?: {
-            run?: (opts: unknown) => Promise<unknown>;
-            waitForRun?: (opts: unknown) => Promise<unknown>;
-            getSessionMessages?: (opts: unknown) => Promise<unknown>;
-            deleteSession?: (opts: unknown) => Promise<void>;
-        };
+        agent?: EmbeddedAgentRuntime;
         modelAuth?: ModelAuth;
     };
     provider?: string;
+    openClawConfig?: Record<string, unknown>;
 }
-export declare function createBeforeToolCallHandler(deps: BeforeToolCallDeps): (event: BeforeToolCallEvent, ctx: Record<string, unknown>) => BeforeToolCallResult | undefined;
+export declare function createBeforeToolCallHandler(deps: BeforeToolCallDeps): (event: BeforeToolCallEvent, ctx: Record<string, unknown>) => Promise<BeforeToolCallResult | undefined>;

@@ -334,6 +334,7 @@ describe("createBeforeToolCallHandler", () => {
       undefined, // runtime
       expect.anything(),
       expect.anything(),
+      undefined, // openClawConfig
     );
 
     vi.clearAllMocks();
@@ -344,7 +345,6 @@ describe("createBeforeToolCallHandler", () => {
     const newRuntime = {
       modelAuth: {
         resolveApiKeyForProvider: vi.fn(),
-        getApiKeyForModel: vi.fn(),
       },
     };
     deps.runtime = newRuntime;
@@ -359,6 +359,7 @@ describe("createBeforeToolCallHandler", () => {
       newRuntime, // updated runtime
       expect.anything(),
       expect.anything(),
+      undefined, // openClawConfig
     );
   });
 

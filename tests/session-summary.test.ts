@@ -175,7 +175,10 @@ describe("getSessionSummary", () => {
     });
 
     // modelAuth was attempted
-    expect(modelAuth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
+    expect(modelAuth.resolveApiKeyForProvider).toHaveBeenCalledWith({
+      provider: "anthropic",
+      cfg: undefined,
+    });
     // Falls back to template
     expect(result).not.toBeNull();
     expect(result!.summary).toMatch(/Ran \d+ action/);

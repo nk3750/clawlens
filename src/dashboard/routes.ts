@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { AuditEntry, AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
 import type { PolicyEngine } from "../policy/engine";
-import type { ModelAuth, OpenClawPluginApi } from "../types";
+import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
 import {
   checkHealth,
   computeEnhancedStats,
@@ -27,6 +27,8 @@ export interface DashboardDeps {
   config?: ClawLensConfig;
   modelAuth?: ModelAuth;
   provider?: string;
+  agent?: EmbeddedAgentRuntime;
+  openClawConfig?: Record<string, unknown>;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -137,6 +139,8 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           llmApiKeyEnv: riskConfig.llmApiKeyEnv,
           modelAuth: deps.modelAuth,
           provider: deps.provider,
+          agent: deps.agent,
+          openClawConfig: deps.openClawConfig,
         });
         if (!summary) {
           res.writeHead(404, { "Content-Type": "application/json" });

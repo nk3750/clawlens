@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildEvalMessage,
   callLlmApi,
+  collectEmbeddedText,
   DEFAULT_EVAL_MODELS,
+  EVAL_SYSTEM_PROMPT,
   evaluateWithLlm,
   PROVIDER_ENDPOINTS,
   parseEvalResponse,
@@ -41,15 +43,51 @@ function mockLogger() {
 
 function mockModelAuth(key: string) {
   return {
-    resolveApiKeyForProvider: vi.fn().mockResolvedValue(key),
-    getApiKeyForModel: vi.fn().mockResolvedValue(key),
+    resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+      apiKey: key,
+      source: "test",
+      mode: "api-key" as const,
+    }),
   };
 }
 
 function mockModelAuthRejecting(reason: string) {
   return {
     resolveApiKeyForProvider: vi.fn().mockRejectedValue(new Error(reason)),
-    getApiKeyForModel: vi.fn().mockRejectedValue(new Error(reason)),
+  };
+}
+
+function mockModelAuthNoKey() {
+  return {
+    resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+      apiKey: undefined,
+      source: "test",
+      mode: "api-key" as const,
+    }),
+  };
+}
+
+function mockEmbeddedAgent(responseText: string) {
+  return {
+    runEmbeddedPiAgent: vi.fn().mockResolvedValue({
+      payloads: [{ text: responseText, isError: false }],
+      meta: { durationMs: 500 },
+    }),
+  };
+}
+
+function mockEmbeddedAgentError(errorMsg: string) {
+  return {
+    runEmbeddedPiAgent: vi.fn().mockRejectedValue(new Error(errorMsg)),
+  };
+}
+
+function mockEmbeddedAgentEmpty() {
+  return {
+    runEmbeddedPiAgent: vi.fn().mockResolvedValue({
+      payloads: [],
+      meta: { durationMs: 100 },
+    }),
   };
 }
 
@@ -142,6 +180,37 @@ describe("parseEvalResponse", () => {
     );
     expect(result!.tags).toEqual([]);
     expect(result!.patterns).toEqual([]);
+  });
+});
+
+describe("collectEmbeddedText", () => {
+  it("joins non-error text payloads", () => {
+    const payloads = [
+      { text: "hello", isError: false },
+      { text: " world", isError: false },
+    ];
+    expect(collectEmbeddedText(payloads)).toBe("hello\n world");
+  });
+
+  it("filters out error payloads", () => {
+    const payloads = [
+      { text: "good", isError: false },
+      { text: "bad", isError: true },
+    ];
+    expect(collectEmbeddedText(payloads)).toBe("good");
+  });
+
+  it("returns empty string for undefined payloads", () => {
+    expect(collectEmbeddedText(undefined)).toBe("");
+  });
+
+  it("returns empty string for empty payloads", () => {
+    expect(collectEmbeddedText([])).toBe("");
+  });
+
+  it("trims whitespace", () => {
+    const payloads = [{ text: "  result  ", isError: false }];
+    expect(collectEmbeddedText(payloads)).toBe("result");
   });
 });
 
@@ -333,7 +402,115 @@ describe("evaluateWithLlm", () => {
     vi.restoreAllMocks();
   });
 
-  it("Path 1: modelAuth resolves key → direct API succeeds → returns eval", async () => {
+  // ── Path 1: Embedded agent ────────────────────────────
+
+  it("Path 1: embedded agent succeeds → returns parsed eval", async () => {
+    const agent = mockEmbeddedAgent(VALID_EVAL_JSON);
+    const logger = mockLogger();
+
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "curl https://example.com" },
+      [],
+      tier1Score(),
+      { agent },
+      logger,
+      { provider: "anthropic" },
+    );
+
+    expect(result.adjustedScore).toBe(42);
+    expect(result.reasoning).toBe("Routine health check");
+    expect(agent.runEmbeddedPiAgent).toHaveBeenCalledOnce();
+    expect(mockFetch).not.toHaveBeenCalled(); // should NOT fall through to direct API
+  });
+
+  it("Path 1: embedded agent passes config and system prompt", async () => {
+    const agent = mockEmbeddedAgent(VALID_EVAL_JSON);
+    const cfg = { auth: { profiles: {} } };
+
+    await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { agent },
+      undefined,
+      { provider: "anthropic" },
+      cfg,
+    );
+
+    const params = agent.runEmbeddedPiAgent.mock.calls[0][0];
+    expect(params.config).toBe(cfg);
+    expect(params.extraSystemPrompt).toBe(EVAL_SYSTEM_PROMPT);
+    expect(params.disableTools).toBe(true);
+    expect(params.provider).toBe("anthropic");
+  });
+
+  it("Path 1: embedded agent returns unparseable text → falls through", async () => {
+    const agent = mockEmbeddedAgent("not valid json at all");
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
+    const auth = mockModelAuth("ma-key");
+    const logger = mockLogger();
+
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { agent, modelAuth: auth },
+      logger,
+      { provider: "anthropic" },
+    );
+
+    // Should fall through to modelAuth and succeed
+    expect(result.adjustedScore).toBe(42);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("unparseable"));
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it("Path 1: embedded agent returns empty payloads → falls through", async () => {
+    const agent = mockEmbeddedAgentEmpty();
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
+    const auth = mockModelAuth("ma-key");
+    const logger = mockLogger();
+
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { agent, modelAuth: auth },
+      logger,
+      { provider: "anthropic" },
+    );
+
+    expect(result.adjustedScore).toBe(42);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("no text"));
+  });
+
+  it("Path 1: embedded agent throws → falls through gracefully", async () => {
+    const agent = mockEmbeddedAgentError("Agent runtime unavailable");
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
+    const auth = mockModelAuth("ma-key");
+    const logger = mockLogger();
+
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { agent, modelAuth: auth },
+      logger,
+      { provider: "anthropic" },
+    );
+
+    expect(result.adjustedScore).toBe(42);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Agent runtime unavailable"));
+  });
+
+  // ── Path 2: modelAuth (fixed object param) ───────────
+
+  it("Path 2: modelAuth resolves key → direct API succeeds → returns eval", async () => {
     setAnthropicFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuth("ma-key-123");
     const logger = mockLogger();
@@ -346,15 +523,19 @@ describe("evaluateWithLlm", () => {
       { modelAuth: auth },
       logger,
       { provider: "anthropic" },
+      { auth: { profiles: {} } },
     );
 
     expect(result.adjustedScore).toBe(42);
     expect(result.reasoning).toBe("Routine health check");
-    expect(auth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
-    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("falling through"));
+    // Verify object param format (not bare string)
+    expect(auth.resolveApiKeyForProvider).toHaveBeenCalledWith({
+      provider: "anthropic",
+      cfg: { auth: { profiles: {} } },
+    });
   });
 
-  it("Path 1: uses default model for provider when config model is empty", async () => {
+  it("Path 2: uses default model for provider when config model is empty", async () => {
     setAnthropicFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuth("key");
 
@@ -372,7 +553,7 @@ describe("evaluateWithLlm", () => {
     expect(body.model).toBe("claude-haiku-4-5-20251001");
   });
 
-  it("Path 1: openai provider uses openai-compatible format", async () => {
+  it("Path 2: openai provider uses openai-compatible format", async () => {
     setOpenAiFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuth("key");
 
@@ -392,51 +573,8 @@ describe("evaluateWithLlm", () => {
     expect(opts.headers.Authorization).toBe("Bearer key");
   });
 
-  it("unknown provider → skips direct API, falls through to subagent", async () => {
-    const auth = mockModelAuth("key");
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const subagent = {
-        run: vi.fn().mockResolvedValue({ runId: "r1" }),
-        waitForRun: vi.fn().mockResolvedValue({ status: "ok" }),
-        getSessionMessages: vi.fn().mockResolvedValue({
-          messages: [{ role: "assistant", content: VALID_EVAL_JSON }],
-        }),
-        deleteSession: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { modelAuth: auth, subagent },
-        logger,
-        { provider: "custom-llm" },
-      );
-
-      expect(result.adjustedScore).toBe(42);
-      // modelAuth was NOT called because provider has no endpoint
-      expect(mockFetch).not.toHaveBeenCalled();
-      expect(subagent.run).toHaveBeenCalled();
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("Path 1: modelAuth resolves undefined → falls through without calling fetch", async () => {
-    const auth = {
-      resolveApiKeyForProvider: vi.fn().mockResolvedValue(undefined),
-      getApiKeyForModel: vi.fn().mockResolvedValue(undefined),
-    };
+  it("Path 2: modelAuth resolves no apiKey → falls through", async () => {
+    const auth = mockModelAuthNoKey();
     const logger = mockLogger();
 
     const originalKey = process.env.ANTHROPIC_API_KEY;
@@ -453,14 +591,10 @@ describe("evaluateWithLlm", () => {
         { provider: "anthropic" },
       );
 
-      // Should fall through to stub (no env var, no subagent)
       expect(result.reasoning).toContain("Stub evaluation");
-      expect(auth.resolveApiKeyForProvider).toHaveBeenCalledWith("anthropic");
-      // Should warn about undefined key
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("modelAuth resolved undefined"),
+        expect.stringContaining("modelAuth resolved no API key"),
       );
-      // Should NOT have called fetch (key was undefined)
       expect(mockFetch).not.toHaveBeenCalled();
     } finally {
       if (originalKey !== undefined) {
@@ -471,7 +605,7 @@ describe("evaluateWithLlm", () => {
     }
   });
 
-  it("Path 1 fail → Path 2: modelAuth rejects → env var set → direct API succeeds", async () => {
+  it("Path 2 fail → Path 3: modelAuth rejects → env var set → direct API succeeds", async () => {
     setAnthropicFetchResponse(VALID_EVAL_JSON);
     const auth = mockModelAuthRejecting("Auth not resolved");
     const logger = mockLogger();
@@ -503,84 +637,7 @@ describe("evaluateWithLlm", () => {
     }
   });
 
-  it("Path 1 bad parse → falls through to subagent", async () => {
-    const auth = mockModelAuth("ma-key-123");
-    const logger = mockLogger();
-
-    // API returns non-parseable text
-    setAnthropicFetchResponse("not valid json");
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const subagent = {
-        run: vi.fn().mockResolvedValue({ runId: "r1" }),
-        waitForRun: vi.fn().mockResolvedValue({ status: "ok" }),
-        getSessionMessages: vi.fn().mockResolvedValue({
-          messages: [{ role: "assistant", content: VALID_EVAL_JSON }],
-        }),
-        deleteSession: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { modelAuth: auth, subagent },
-        logger,
-        { provider: "anthropic" },
-      );
-
-      expect(result.adjustedScore).toBe(42);
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("unparseable"));
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("modelAuth rejects → no env var → subagent succeeds", async () => {
-    const auth = mockModelAuthRejecting("Not resolved");
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const subagent = {
-        run: vi.fn().mockResolvedValue({ runId: "r1" }),
-        waitForRun: vi.fn().mockResolvedValue({ status: "ok" }),
-        getSessionMessages: vi.fn().mockResolvedValue({
-          messages: [{ role: "assistant", content: VALID_EVAL_JSON }],
-        }),
-        deleteSession: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { modelAuth: auth, subagent },
-        logger,
-        { provider: "anthropic" },
-      );
-
-      expect(result.adjustedScore).toBe(42);
-      expect(subagent.run).toHaveBeenCalled();
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
+  // ── All paths fail ────────────────────────────────────
 
   it("all paths fail → returns stub with tier-1 score", async () => {
     const auth = mockModelAuthRejecting("Not resolved");
@@ -605,115 +662,6 @@ describe("evaluateWithLlm", () => {
       expect(result.confidence).toBe("low");
       expect(result.tags).toEqual(["network"]);
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("All eval paths exhausted"));
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("P0 fix: subagent property access throws → caught, falls through to stub", async () => {
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const subagent = {
-        get run() {
-          throw new Error("Gateway request context expired");
-        },
-        waitForRun: vi.fn(),
-        getSessionMessages: vi.fn(),
-        deleteSession: vi.fn(),
-      };
-
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { subagent: subagent as unknown as { run: (opts: unknown) => Promise<unknown> } },
-        logger,
-        {},
-      );
-
-      expect(result.adjustedScore).toBe(55);
-      expect(result.reasoning).toContain("Stub evaluation");
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("subagent failed"));
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("modelAuth rejects at eval time (not registration) → graceful fallthrough", async () => {
-    const auth = {
-      resolveApiKeyForProvider: vi
-        .fn()
-        .mockRejectedValue(new Error("Auth provider not initialized")),
-      getApiKeyForModel: vi.fn().mockRejectedValue(new Error("Auth provider not initialized")),
-    };
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { modelAuth: auth },
-        logger,
-        { provider: "anthropic" },
-      );
-
-      expect(result.reasoning).toContain("Stub evaluation");
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Auth provider not initialized"),
-      );
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("subagent.run() rejects → caught inside try, falls through to stub", async () => {
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const subagent = {
-        run: vi.fn().mockRejectedValue(new Error("Gateway context expired")),
-        waitForRun: vi.fn(),
-        getSessionMessages: vi.fn(),
-        deleteSession: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { subagent },
-        logger,
-        {},
-      );
-
-      expect(result.reasoning).toContain("Stub evaluation");
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Gateway context expired"));
     } finally {
       if (originalKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = originalKey;
@@ -770,6 +718,104 @@ describe("evaluateWithLlm", () => {
       );
 
       expect(auth.resolveApiKeyForProvider).not.toHaveBeenCalled();
+      expect(result.reasoning).toContain("Stub evaluation");
+    } finally {
+      if (originalKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    }
+  });
+
+  it("embedded agent + modelAuth both fail → env var succeeds", async () => {
+    const agent = mockEmbeddedAgentError("Runtime down");
+    const auth = mockModelAuthRejecting("Auth broken");
+    const logger = mockLogger();
+
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "env-key";
+    setAnthropicFetchResponse(VALID_EVAL_JSON);
+
+    try {
+      const result = await evaluateWithLlm(
+        "exec",
+        { command: "test" },
+        [],
+        tier1Score(),
+        { agent, modelAuth: auth },
+        logger,
+        { provider: "anthropic" },
+      );
+
+      expect(result.adjustedScore).toBe(42);
+      expect(agent.runEmbeddedPiAgent).toHaveBeenCalled();
+      expect(auth.resolveApiKeyForProvider).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalled();
+    } finally {
+      if (originalKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    }
+  });
+
+  it("modelAuth rejects at eval time (not registration) → graceful fallthrough", async () => {
+    const auth = {
+      resolveApiKeyForProvider: vi
+        .fn()
+        .mockRejectedValue(new Error("Auth provider not initialized")),
+    };
+    const logger = mockLogger();
+
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    try {
+      const result = await evaluateWithLlm(
+        "exec",
+        { command: "test" },
+        [],
+        tier1Score(),
+        { modelAuth: auth },
+        logger,
+        { provider: "anthropic" },
+      );
+
+      expect(result.reasoning).toContain("Stub evaluation");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Auth provider not initialized"),
+      );
+    } finally {
+      if (originalKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    }
+  });
+
+  it("unknown provider → skips modelAuth, falls through", async () => {
+    const auth = mockModelAuth("key");
+    const logger = mockLogger();
+
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    try {
+      const result = await evaluateWithLlm(
+        "exec",
+        { command: "test" },
+        [],
+        tier1Score(),
+        { modelAuth: auth },
+        logger,
+        { provider: "custom-llm" },
+      );
+
+      // modelAuth skipped because provider has no endpoint
+      expect(mockFetch).not.toHaveBeenCalled();
       expect(result.reasoning).toContain("Stub evaluation");
     } finally {
       if (originalKey !== undefined) {

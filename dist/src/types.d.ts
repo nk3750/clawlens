@@ -48,9 +48,52 @@ export interface OpenClawPluginDefinition {
     version?: string;
     register?: (api: OpenClawPluginApi) => void | Promise<void>;
 }
+export interface ResolvedProviderAuth {
+    apiKey?: string;
+    profileId?: string;
+    source: string;
+    mode: "api-key" | "oauth" | "token" | "aws-sdk";
+}
 export interface ModelAuth {
-    resolveApiKeyForProvider(provider: string): Promise<string>;
-    getApiKeyForModel(model: string): Promise<string>;
+    resolveApiKeyForProvider(params: {
+        provider: string;
+        cfg?: Record<string, unknown>;
+    }): Promise<ResolvedProviderAuth>;
+    getApiKeyForModel?(params: {
+        model: unknown;
+        cfg?: Record<string, unknown>;
+    }): Promise<ResolvedProviderAuth>;
+}
+/** Minimal interface for OpenClaw's embedded agent runtime. */
+export interface EmbeddedAgentRuntime {
+    runEmbeddedPiAgent(params: {
+        sessionId: string;
+        sessionFile: string;
+        workspaceDir: string;
+        config?: Record<string, unknown>;
+        prompt: string;
+        timeoutMs: number;
+        runId: string;
+        provider?: string;
+        model?: string;
+        disableTools?: boolean;
+        extraSystemPrompt?: string;
+        streamParams?: {
+            maxTokens?: number;
+        };
+    }): Promise<{
+        payloads?: Array<{
+            text?: string;
+            isError?: boolean;
+        }>;
+        meta: {
+            durationMs: number;
+            error?: {
+                kind: string;
+                message: string;
+            };
+        };
+    }>;
 }
 export interface BeforeToolCallEvent {
     toolName: string;

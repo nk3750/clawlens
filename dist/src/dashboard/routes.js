@@ -105,6 +105,8 @@ export function registerDashboardRoutes(api, deps) {
                     llmApiKeyEnv: riskConfig.llmApiKeyEnv,
                     modelAuth: deps.modelAuth,
                     provider: deps.provider,
+                    agent: deps.agent,
+                    openClawConfig: deps.openClawConfig,
                 });
                 if (!summary) {
                     res.writeHead(404, { "Content-Type": "application/json" });

@@ -1,8 +1,9 @@
 # ADR-007: LLM Evaluation Key Resolution Failures
 
 > Date: 2026-04-07
-> Status: Open
+> Status: **Resolved** (2026-04-09)
 > Severity: P1 — intermittent silent degradation of AI risk evaluations
+> Resolution: Replaced all 3 eval paths. See `docs/architecture/fix-llm-eval-resolution.md`
 
 ## Problem
 
@@ -135,6 +136,23 @@ Plugin reads API key from a file (e.g., `~/.openclaw/plugins/clawlens/api-key`) 
 **Medium-term:** Option 2 (await eval) if async handlers are supported, or Option 4 (key file) as a self-contained fallback.
 
 **Long-term:** Option 1 (fix modelAuth upstream) — this is what the SDK interface was designed for.
+
+## Resolution (2026-04-09)
+
+None of the original 5 options were implemented. Investigation revealed two deeper root causes that the original analysis missed:
+
+1. **ClawLens's `ModelAuth` type was wrong.** The SDK expects `resolveApiKeyForProvider({ provider, cfg })` (object parameter) and returns `ResolvedProviderAuth` (object with `.apiKey`). ClawLens was passing a bare string and treating the return as a string. This is why `.trim()` crashed — the SDK couldn't destructure a bare string.
+
+2. **The intended plugin LLM mechanism is `runtime.agent.runEmbeddedPiAgent()`**, not subagent or manual API calls. This is what OpenClaw's own first-party `llm-task` plugin uses. It handles auth resolution internally through the gateway's config and is not request-scoped.
+
+The fix replaced all 3 original eval paths with a new cascade:
+- **Path 1:** `runEmbeddedPiAgent()` — handles auth internally, works everywhere
+- **Path 2:** `modelAuth` with corrected object-param signature — direct `fetch()` fallback
+- **Path 3:** Env var fallback (unchanged)
+
+The subagent path was removed entirely — it is architecturally incompatible with plugin hooks.
+
+See `docs/architecture/fix-llm-eval-resolution.md` for the full fix document.
 
 ## Files Referenced
 

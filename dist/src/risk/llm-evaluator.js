@@ -1,3 +1,6 @@
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 export const EVAL_SYSTEM_PROMPT = `You are a security analyst evaluating an AI agent's tool call for risk.
 
 Evaluate:
@@ -69,6 +72,16 @@ export function parseEvalResponse(raw) {
     catch {
         return null;
     }
+}
+/**
+ * Extract text from embedded agent payloads.
+ */
+export function collectEmbeddedText(payloads) {
+    return (payloads ?? [])
+        .filter((p) => !p.isError && typeof p.text === "string")
+        .map((p) => p.text ?? "")
+        .join("\n")
+        .trim();
 }
 /**
  * Provider-agnostic LLM API call via raw fetch().
@@ -181,38 +194,86 @@ export function resolveModel(provider, configModel) {
  * Evaluate a tool call with an LLM for deeper risk analysis.
  *
  * Evaluation paths (tried in order):
- *   1. Direct API via modelAuth — resolves key from OpenClaw's auth system (works everywhere)
- *   2. Direct API via explicit env var — optional override, backward compat
- *   3. runtime.subagent — best-effort, works during gateway request batch only
+ *   1. Embedded agent — uses OpenClaw's `runEmbeddedPiAgent`, handles auth internally
+ *   2. Direct API via modelAuth — resolves key from OpenClaw's auth system
+ *   3. Direct API via explicit env var — optional override, backward compat
  *   4. Stub fallback — returns tier-1 score unchanged
  *
- * This is fire-and-forget. It does NOT block the tool call.
- * The result updates the audit entry after the fact.
+ * This is awaited during `before_tool_call` so the audit entry gets the result.
  */
-export async function evaluateWithLlm(toolName, params, recentActions, tier1Score, runtime, logger, directApiConfig) {
+export async function evaluateWithLlm(toolName, params, recentActions, tier1Score, runtime, logger, directApiConfig, openClawConfig) {
     const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
     const provider = directApiConfig?.provider;
     const model = resolveModel(provider, directApiConfig?.model || undefined);
-    // Path 1: Direct API via modelAuth-resolved key (works everywhere, any point in the turn)
+    // Path 1: Embedded agent (uses OpenClaw's own auth, works everywhere)
+    if (runtime?.agent?.runEmbeddedPiAgent) {
+        try {
+            const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawlens-eval-"));
+            const sessionFile = path.join(tmpDir, "session.json");
+            try {
+                const result = await runtime.agent.runEmbeddedPiAgent({
+                    sessionId: `clawlens:risk-eval:${Date.now()}`,
+                    sessionFile,
+                    workspaceDir: process.cwd(),
+                    config: openClawConfig,
+                    prompt: message,
+                    extraSystemPrompt: EVAL_SYSTEM_PROMPT,
+                    timeoutMs: 15_000,
+                    runId: `clawlens-eval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    provider: provider || undefined,
+                    model: model || undefined,
+                    disableTools: true,
+                    streamParams: { maxTokens: 512 },
+                });
+                const text = collectEmbeddedText(result.payloads);
+                if (text) {
+                    const parsed = parseEvalResponse(text);
+                    if (parsed)
+                        return parsed;
+                    logger?.warn("ClawLens: Embedded agent returned unparseable response, falling through");
+                }
+                else {
+                    logger?.warn("ClawLens: Embedded agent returned no text, falling through");
+                }
+            }
+            finally {
+                await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
+            }
+        }
+        catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logger?.warn(`ClawLens: Embedded agent eval failed: ${errMsg}, falling through to direct API`);
+        }
+    }
+    // Path 2: Direct API via modelAuth-resolved key (fixed: object param, reads .apiKey)
     if (runtime?.modelAuth && provider && model && PROVIDER_ENDPOINTS[provider]) {
         try {
-            const apiKey = await runtime.modelAuth.resolveApiKeyForProvider(provider);
-            const text = await callLlmApi(provider, apiKey, model, EVAL_SYSTEM_PROMPT, message, logger);
-            if (text) {
-                const result = parseEvalResponse(text);
-                if (result)
-                    return result;
-                logger?.warn("ClawLens: modelAuth API returned unparseable response, falling through");
+            const auth = await runtime.modelAuth.resolveApiKeyForProvider({
+                provider,
+                cfg: openClawConfig,
+            });
+            const apiKey = auth?.apiKey;
+            if (!apiKey) {
+                logger?.warn("ClawLens: modelAuth resolved no API key, falling through to env var");
             }
             else {
-                logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+                const text = await callLlmApi(provider, apiKey, model, EVAL_SYSTEM_PROMPT, message, logger);
+                if (text) {
+                    const result = parseEvalResponse(text);
+                    if (result)
+                        return result;
+                    logger?.warn("ClawLens: modelAuth API returned unparseable response, falling through");
+                }
+                else {
+                    logger?.warn("ClawLens: modelAuth API call returned no result, falling through");
+                }
             }
         }
         catch (err) {
             logger?.warn(`ClawLens: modelAuth key resolution failed: ${err instanceof Error ? err.message : String(err)}, falling through to env var`);
         }
     }
-    // Path 2: Direct API via explicit env var (backward compat / optional override)
+    // Path 3: Direct API via explicit env var (backward compat / optional override)
     const envVar = directApiConfig?.apiKeyEnv || "ANTHROPIC_API_KEY";
     const envApiKey = process.env[envVar];
     const envProvider = provider || "anthropic";
@@ -223,76 +284,14 @@ export async function evaluateWithLlm(toolName, params, recentActions, tier1Scor
             const result = parseEvalResponse(text);
             if (result)
                 return result;
-            logger?.warn("ClawLens: env var API call returned unparseable response, falling through to subagent");
+            logger?.warn("ClawLens: env var API call returned unparseable response, falling through");
         }
         else {
-            logger?.warn("ClawLens: env var API call returned no result, falling through to subagent");
+            logger?.warn("ClawLens: env var API call returned no result, falling through");
         }
     }
     else if (!envApiKey) {
-        logger?.warn(`ClawLens: ${envVar} not set, falling through to subagent`);
-    }
-    // Path 3: Subagent (best-effort, entire block in try — fixes P0 bug)
-    try {
-        const subagent = runtime?.subagent;
-        if (subagent?.run && subagent?.waitForRun && subagent?.getSessionMessages) {
-            const sessionKey = `clawlens:risk-eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-            // 1. Spawn subagent
-            const idempotencyKey = `clawlens:eval:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-            const runResult = (await subagent.run({
-                sessionKey,
-                message,
-                extraSystemPrompt: EVAL_SYSTEM_PROMPT,
-                idempotencyKey,
-            }));
-            // 2. Wait for completion (30s timeout)
-            const waitResult = (await subagent.waitForRun({
-                runId: runResult.runId,
-                timeoutMs: 30_000,
-            }));
-            if (waitResult.status !== "ok") {
-                logger?.warn(`ClawLens: LLM eval subagent failed: ${waitResult.status} ${waitResult.error || ""}, falling through to stub`);
-            }
-            else {
-                // 3. Get response messages
-                const messagesResult = (await subagent.getSessionMessages({
-                    sessionKey,
-                    limit: 5,
-                }));
-                // Find the assistant's response — last message with content
-                const assistantMsg = [...messagesResult.messages].reverse().find((m) => {
-                    const msg = m;
-                    return msg.role === "assistant" && msg.content;
-                });
-                if (assistantMsg?.content) {
-                    let raw;
-                    if (typeof assistantMsg.content === "string") {
-                        raw = assistantMsg.content;
-                    }
-                    else if (Array.isArray(assistantMsg.content)) {
-                        // Anthropic content block format: [{type: "text", text: "..."}]
-                        raw = assistantMsg.content
-                            .filter((b) => b.type === "text" && typeof b.text === "string")
-                            .map((b) => b.text)
-                            .join("\n");
-                    }
-                    else {
-                        raw = JSON.stringify(assistantMsg.content);
-                    }
-                    const parsed = parseEvalResponse(raw);
-                    if (parsed) {
-                        // 4. Cleanup session
-                        subagent.deleteSession?.({ sessionKey }).catch(() => { });
-                        return parsed;
-                    }
-                }
-                logger?.warn("ClawLens: LLM eval returned unparseable response via subagent, falling through to stub");
-                subagent.deleteSession?.({ sessionKey }).catch(() => { });
-            }
-        }
-    }
-    catch (err) {
-        logger?.warn(`ClawLens: LLM eval via subagent failed: ${err instanceof Error ? err.message : String(err)}, falling through to stub`);
+        logger?.warn(`ClawLens: ${envVar} not set, no more eval paths`);
     }
     // Path 4: Stub fallback — returns tier-1 score unchanged
     logger?.warn("ClawLens: All eval paths exhausted, returning stub");

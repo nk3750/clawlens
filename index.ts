@@ -14,7 +14,12 @@ import { PolicyLoader } from "./src/policy/loader";
 import { RateLimiter } from "./src/rate/limiter";
 import { EvalCache } from "./src/risk/eval-cache";
 import { SessionContext } from "./src/risk/session-context";
-import type { ModelAuth, OpenClawPluginApi, OpenClawPluginDefinition } from "./src/types";
+import type {
+  EmbeddedAgentRuntime,
+  ModelAuth,
+  OpenClawPluginApi,
+  OpenClawPluginDefinition,
+} from "./src/types";
 
 // ── Module-level state ──────────────────────────────────────────────────────
 // Components + handler created once. Hooks registered per unique api object
@@ -45,7 +50,7 @@ const plugin: OpenClawPluginDefinition = {
 
     // Resolve runtime from OpenClaw plugin API (may differ per session)
     const runtime = (api as unknown as Record<string, unknown>).runtime as
-      | { subagent?: Record<string, unknown>; modelAuth?: ModelAuth }
+      | { agent?: Record<string, unknown>; modelAuth?: ModelAuth }
       | undefined;
 
     // Resolve provider from OpenClaw auth config (e.g., "anthropic")
@@ -61,12 +66,7 @@ const plugin: OpenClawPluginDefinition = {
 
     const typedRuntime = runtime as
       | {
-          subagent?: {
-            run?: (opts: unknown) => Promise<unknown>;
-            waitForRun?: (opts: unknown) => Promise<unknown>;
-            getSessionMessages?: (opts: unknown) => Promise<unknown>;
-            deleteSession?: (opts: unknown) => Promise<void>;
-          };
+          agent?: EmbeddedAgentRuntime;
           modelAuth?: ModelAuth;
         }
       | undefined;
@@ -116,6 +116,7 @@ const plugin: OpenClawPluginDefinition = {
         logger: api.logger,
         runtime: typedRuntime,
         provider,
+        openClawConfig: api.config as Record<string, unknown>,
       };
 
       // Create handler instances once — reused across api registrations
@@ -300,6 +301,8 @@ const plugin: OpenClawPluginDefinition = {
         config,
         modelAuth: runtime?.modelAuth,
         provider,
+        agent: typedRuntime?.agent,
+        openClawConfig: api.config as Record<string, unknown>,
       });
 
       _serviceRegistered = true;

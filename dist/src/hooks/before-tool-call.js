@@ -2,8 +2,10 @@ import { formatAlert, sendAlert, shouldAlert } from "../alerts/telegram";
 import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
 export function createBeforeToolCallHandler(deps) {
-    const { engine, auditLogger, rateLimiter, config, sessionContext, evalCache, alertSend, logger, runtime, provider, } = deps;
-    return (event, ctx) => {
+    const { engine, auditLogger, rateLimiter, config, sessionContext, evalCache, alertSend } = deps;
+    return async (event, ctx) => {
+        // Read session-scoped deps at call time — may be refreshed between sessions
+        const { runtime, provider, logger, openClawConfig } = deps;
         const { toolName, params, toolCallId } = event;
         const sessionKey = ctx?.sessionKey || "default";
         try {
@@ -64,12 +66,12 @@ export function createBeforeToolCallHandler(deps) {
                 }
                 else {
                     const recentActions = sessionContext.getRecent(sessionKey, 5);
-                    evaluateWithLlm(toolName, params, recentActions, risk, runtime, logger, {
-                        apiKeyEnv: config.risk.llmApiKeyEnv,
-                        model: config.risk.llmModel,
-                        provider,
-                    })
-                        .then((evaluation) => {
+                    try {
+                        const evaluation = await evaluateWithLlm(toolName, params, recentActions, risk, runtime, logger, {
+                            apiKeyEnv: config.risk.llmApiKeyEnv,
+                            model: config.risk.llmModel,
+                            provider,
+                        }, openClawConfig);
                         // For stub evaluations, write a minimal entry so the dashboard
                         // can show "AI assessment unavailable" rather than nothing
                         if (evaluation.reasoning?.includes("Stub evaluation")) {
@@ -87,33 +89,34 @@ export function createBeforeToolCallHandler(deps) {
                                 riskTier: getTierFromScore(risk.score),
                                 riskTags: risk.tags,
                             });
-                            return;
                         }
-                        auditLogger.appendEvaluation({
-                            refToolCallId: toolCallId,
-                            toolName,
-                            llmEvaluation: evaluation,
-                            riskScore: evaluation.adjustedScore,
-                            riskTier: getTierFromScore(evaluation.adjustedScore),
-                            riskTags: evaluation.tags,
-                        });
-                        // Cache high-confidence low-risk evaluations for future use
-                        evalCache?.maybeCache(toolName, params, evaluation, config.risk.llmEvalThreshold);
-                        // Alert on LLM-adjusted score if it was raised above threshold
-                        if (alertSend &&
-                            evaluation.adjustedScore > risk.score &&
-                            shouldAlert(evaluation.adjustedScore, config.alerts)) {
-                            const adjustedRisk = {
-                                ...risk,
-                                score: evaluation.adjustedScore,
-                                tier: getTierFromScore(evaluation.adjustedScore),
-                                tags: evaluation.tags,
-                            };
-                            const msg = formatAlert(toolName, params, adjustedRisk, config.dashboardUrl || "");
-                            sendAlert(msg, alertSend);
+                        else {
+                            auditLogger.appendEvaluation({
+                                refToolCallId: toolCallId,
+                                toolName,
+                                llmEvaluation: evaluation,
+                                riskScore: evaluation.adjustedScore,
+                                riskTier: getTierFromScore(evaluation.adjustedScore),
+                                riskTags: evaluation.tags,
+                            });
+                            // Cache high-confidence low-risk evaluations for future use
+                            evalCache?.maybeCache(toolName, params, evaluation, config.risk.llmEvalThreshold);
+                            // Alert on LLM-adjusted score if it was raised above threshold
+                            if (alertSend &&
+                                evaluation.adjustedScore > risk.score &&
+                                shouldAlert(evaluation.adjustedScore, config.alerts)) {
+                                const adjustedRisk = {
+                                    ...risk,
+                                    score: evaluation.adjustedScore,
+                                    tier: getTierFromScore(evaluation.adjustedScore),
+                                    tags: evaluation.tags,
+                                };
+                                const msg = formatAlert(toolName, params, adjustedRisk, config.dashboardUrl || "");
+                                sendAlert(msg, alertSend);
+                            }
                         }
-                    })
-                        .catch((err) => {
+                    }
+                    catch (err) {
                         const errMsg = err instanceof Error ? err.message : String(err);
                         logger?.warn(`ClawLens: LLM eval failed for ${toolName}: ${errMsg}`);
                         try {
@@ -135,7 +138,7 @@ export function createBeforeToolCallHandler(deps) {
                         catch {
                             // Last resort — don't let audit write failure crash the process
                         }
-                    });
+                    }
                 }
             }
             // Record for rate limiting (always, for tracking)

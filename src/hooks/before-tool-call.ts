@@ -8,7 +8,12 @@ import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
 import type { SessionContext } from "../risk/session-context";
 import type { RiskScore } from "../risk/types";
-import type { BeforeToolCallEvent, BeforeToolCallResult, ModelAuth } from "../types";
+import type {
+  BeforeToolCallEvent,
+  BeforeToolCallResult,
+  EmbeddedAgentRuntime,
+  ModelAuth,
+} from "../types";
 
 export interface BeforeToolCallDeps {
   engine: PolicyEngine;
@@ -20,15 +25,11 @@ export interface BeforeToolCallDeps {
   alertSend?: (msg: string) => Promise<void> | void;
   logger?: import("../types").PluginLogger;
   runtime?: {
-    subagent?: {
-      run?: (opts: unknown) => Promise<unknown>;
-      waitForRun?: (opts: unknown) => Promise<unknown>;
-      getSessionMessages?: (opts: unknown) => Promise<unknown>;
-      deleteSession?: (opts: unknown) => Promise<void>;
-    };
+    agent?: EmbeddedAgentRuntime;
     modelAuth?: ModelAuth;
   };
   provider?: string;
+  openClawConfig?: Record<string, unknown>;
 }
 
 export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
@@ -39,7 +40,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
     ctx: Record<string, unknown>,
   ): Promise<BeforeToolCallResult | undefined> => {
     // Read session-scoped deps at call time — may be refreshed between sessions
-    const { runtime, provider, logger } = deps;
+    const { runtime, provider, logger, openClawConfig } = deps;
 
     const { toolName, params, toolCallId } = event;
     const sessionKey = (ctx?.sessionKey as string) || "default";
@@ -126,6 +127,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 model: config.risk.llmModel,
                 provider,
               },
+              openClawConfig,
             );
 
             // For stub evaluations, write a minimal entry so the dashboard
