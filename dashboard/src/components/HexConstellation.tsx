@@ -69,7 +69,7 @@ function seededRng(seed: number) {
 function organicLayout(count: number): NodePosition[] {
   const rand = seededRng(42 + count);
 
-  const SPREAD = 0.32 + 0.03 * Math.sqrt(count / 7);
+  const SPREAD = 0.35 + 0.04 * Math.sqrt(count / 7);
   const GOLDEN = 2.399963;
   const pos = Array.from({ length: count }, (_, i) => {
     const angle = i * GOLDEN + (rand() - 0.5) * 0.4;
@@ -126,9 +126,10 @@ function generatePositions(count: number): NodePosition[] {
 
 function nodeScale(count: number): number {
   if (count <= 6) return 1.0;
-  if (count <= 10) return 0.85;
-  if (count <= 15) return 0.72;
-  return 0.6;
+  if (count <= 10) return 0.9;
+  if (count <= 15) return 0.8;
+  if (count <= 25) return 0.72;
+  return 0.65;
 }
 
 /* ─── Component ─── */

@@ -40,7 +40,7 @@ function badgeLabel(decision: string): string {
   }
 }
 
-export default function InterventionsPanel({ interventions, isToday, dateLabel }: Props) {
+export default function FlaggedPanel({ interventions, isToday, dateLabel }: Props) {
   const navigate = useNavigate();
 
   const hasItems = interventions.length > 0;
@@ -56,7 +56,7 @@ export default function InterventionsPanel({ interventions, isToday, dateLabel }
           className="text-[11px] font-semibold tracking-widest uppercase"
           style={{ color: "var(--cl-text-muted)" }}
         >
-          Interventions
+          Flagged
         </span>
         {hasItems && (
           <span
@@ -166,7 +166,7 @@ export default function InterventionsPanel({ interventions, isToday, dateLabel }
           >
             {isToday
               ? "All clear \u2014 fleet operating autonomously"
-              : `All clear \u2014 no interventions on ${dateLabel ?? "this day"}`}
+              : `All clear \u2014 nothing flagged on ${dateLabel ?? "this day"}`}
           </span>
         </div>
       )}

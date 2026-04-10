@@ -576,6 +576,15 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
     entries.filter((e) => now - new Date(e.timestamp).getTime() < 5 * 60_000).map((e) => e.sessionKey),
   );
 
+  // Historic daily max: count decision entries by day, take the max
+  const byDay = new Map<string, number>();
+  for (const e of entries) {
+    if (!e.decision) continue;
+    const day = e.timestamp.slice(0, 10);
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  }
+  const historicDailyMax = byDay.size > 0 ? Math.max(...byDay.values()) : 100;
+
   return {
     total: allowed + approved + blocked + timedOut,
     allowed,
@@ -589,6 +598,7 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
     activeAgents: activeAgents.size,
     activeSessions: activeSessions.size,
     riskPosture: posture,
+    historicDailyMax,
   };
 }
 

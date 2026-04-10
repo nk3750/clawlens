@@ -157,6 +157,28 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
+        // GET /api/interventions
+        if (apiPath === "interventions") {
+          const interventions = entries
+            .filter((e) => e.effectiveDecision === "block" || e.effectiveDecision === "denied" || e.decision === "approval_required")
+            .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+            .slice(0, 20)
+            .map((e) => ({
+              timestamp: e.timestamp,
+              agentId: e.agentId ?? "unknown",
+              agentName: e.agentId ?? "unknown",
+              toolName: e.toolName,
+              description: e.toolName === "exec" ? `Ran ${(e.params as Record<string, unknown>).command ?? "command"}` : e.toolName,
+              riskScore: e.riskScore ?? 0,
+              riskTier: e.riskTier ?? "low",
+              decision: e.decision ?? "block",
+              effectiveDecision: e.effectiveDecision,
+              sessionKey: e.sessionKey,
+            }));
+          res.end(JSON.stringify(interventions));
+          return;
+        }
+
         // GET /api/health
         if (apiPath === "health") {
           res.end(

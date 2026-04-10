@@ -184,6 +184,8 @@ function StatStrip({ stats }: { stats: StatsResponse }) {
       </span>
       <Dot />
       <span className="font-mono text-[11px]">{stats.activeSessions} sessions</span>
+      <Dot />
+      <span className="font-mono text-[11px]">{stats.total} actions</span>
     </div>
   );
 }
@@ -210,12 +212,11 @@ export default function FleetRings({ stats, isToday: _isToday }: Props) {
   const autonomy = isEmpty ? 0 : Math.round((stats.allowed / stats.total) * 100);
   const autonomyFill = isEmpty ? 0 : autonomy / 100;
 
-  const load = stats.total;
   const historicMax = stats.historicDailyMax || 100;
-  const loadFill = isEmpty ? 0 : Math.min(load / historicMax, 1);
-
-  // Format load value
-  const loadDisplay = load >= 1000 ? `${(load / 1000).toFixed(1)}k` : `${load}`;
+  const loadScore = isEmpty
+    ? 0
+    : Math.round(Math.min((stats.total / historicMax) * 100, 100));
+  const loadFill = isEmpty ? 0 : loadScore / 100;
 
   return (
     <section className="relative">
@@ -246,7 +247,7 @@ export default function FleetRings({ stats, isToday: _isToday }: Props) {
           isEmpty={isEmpty}
         />
         <Ring
-          value={loadDisplay}
+          value={`${loadScore}`}
           fill={loadFill}
           color={LOAD_COLOR}
           label="Load"
