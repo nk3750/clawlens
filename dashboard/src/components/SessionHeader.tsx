@@ -11,7 +11,7 @@ interface Props {
 export default function SessionHeader({ session }: Props) {
   const avgTier = riskTierFromScore(session.avgRisk);
   const peakTier = riskTierFromScore(session.peakRisk);
-  const { summary, isLlmGenerated, loading: summaryLoading } = useSessionSummary(session.sessionKey);
+  const { summary, isLlmGenerated, loading: summaryLoading, generate } = useSessionSummary(session.sessionKey);
 
   return (
     <div className="mb-8">
@@ -71,18 +71,8 @@ export default function SessionHeader({ session }: Props) {
         </div>
       </div>
 
-      {/* AI summary */}
-      {summaryLoading ? (
-        <div
-          className="rounded mb-4"
-          style={{
-            height: "1rem",
-            width: "60%",
-            backgroundColor: "var(--cl-surface-raised)",
-            animation: "pulse 1.5s ease-in-out infinite",
-          }}
-        />
-      ) : summary ? (
+      {/* AI summary — on-demand */}
+      {summary ? (
         <div className="flex items-baseline gap-2 mb-4">
           <p className="text-sm italic" style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}>
             &ldquo;{summary}&rdquo;
@@ -92,11 +82,41 @@ export default function SessionHeader({ session }: Props) {
               className="label-mono shrink-0"
               style={{ fontSize: "9px", color: "var(--cl-text-muted)" }}
             >
-              AI-GENERATED
+              AI
             </span>
           )}
         </div>
-      ) : null}
+      ) : (
+        <button
+          onClick={generate}
+          disabled={summaryLoading}
+          className="flex items-center gap-1.5 text-xs font-mono mb-4 transition-colors"
+          style={{
+            color: summaryLoading ? "var(--cl-text-muted)" : "var(--cl-accent)",
+            cursor: summaryLoading ? "default" : "pointer",
+            background: "none",
+            border: "none",
+            padding: 0,
+          }}
+        >
+          {summaryLoading ? (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              Summarizing...
+            </>
+          ) : (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.855z" />
+              </svg>
+              Summarize session
+            </>
+          )}
+        </button>
+      )}
 
       {/* Inline stat strip */}
       <div className="font-mono text-xs flex items-center gap-1.5 flex-wrap" style={{ color: "var(--cl-text-secondary)" }}>

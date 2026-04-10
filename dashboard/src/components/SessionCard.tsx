@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import type { SessionInfo } from "../lib/types";
 import { relTime, riskTierFromScore, riskColor, riskColorRaw, formatDuration, CATEGORY_META } from "../lib/utils";
-import { useSessionSummary } from "../hooks/useSessionSummary";
 
 interface Props {
   session: SessionInfo;
@@ -69,8 +68,6 @@ export default function SessionCard({ session }: Props) {
     tier === "low" ? "Low" :
     tier === "medium" ? "Medium" :
     tier === "high" ? "High" : "Critical";
-  const { summary, loading: summaryLoading } = useSessionSummary(session.sessionKey);
-
   return (
     <Link
       to={`/session/${encodeURIComponent(session.sessionKey)}`}
@@ -138,27 +135,6 @@ export default function SessionCard({ session }: Props) {
         )}
       </div>
 
-      {/* AI summary */}
-      <div className="mt-2" style={{ minHeight: "1.25rem" }}>
-        {summaryLoading ? (
-          <div
-            className="rounded"
-            style={{
-              height: "0.75rem",
-              width: "80%",
-              backgroundColor: "var(--cl-surface-raised)",
-              animation: "pulse 1.5s ease-in-out infinite",
-            }}
-          />
-        ) : summary ? (
-          <p
-            className="text-xs italic leading-snug"
-            style={{ color: "var(--cl-text-muted)" }}
-          >
-            {summary}
-          </p>
-        ) : null}
-      </div>
     </Link>
   );
 }

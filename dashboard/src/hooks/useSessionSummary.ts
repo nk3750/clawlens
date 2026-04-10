@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 
 const BASE = "/plugins/clawlens";
 
@@ -12,10 +12,9 @@ interface SessionSummaryData {
 export function useSessionSummary(sessionKey: string) {
   const [summary, setSummary] = useState<string | null>(null);
   const [isLlmGenerated, setIsLlmGenerated] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const generate = useCallback(() => {
     setLoading(true);
     setSummary(null);
     setIsLlmGenerated(false);
@@ -26,24 +25,16 @@ export function useSessionSummary(sessionKey: string) {
         return res.json() as Promise<SessionSummaryData>;
       })
       .then((data) => {
-        if (!cancelled) {
-          setSummary(data?.summary ?? null);
-          setIsLlmGenerated(data?.isLlmGenerated ?? false);
-          setLoading(false);
-        }
+        setSummary(data?.summary ?? null);
+        setIsLlmGenerated(data?.isLlmGenerated ?? false);
+        setLoading(false);
       })
       .catch(() => {
-        if (!cancelled) {
-          setSummary(null);
-          setIsLlmGenerated(false);
-          setLoading(false);
-        }
+        setSummary(null);
+        setIsLlmGenerated(false);
+        setLoading(false);
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [sessionKey]);
 
-  return { summary, isLlmGenerated, loading };
+  return { summary, isLlmGenerated, loading, generate };
 }

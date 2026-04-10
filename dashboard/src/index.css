@@ -316,6 +316,11 @@ select:focus {
   50% { opacity: 0.35; }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ── Attention badge pulse ── */
 .attention-pulse {
   animation: attention-glow 2s ease-in-out infinite;

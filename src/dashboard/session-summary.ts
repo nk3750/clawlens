@@ -133,13 +133,28 @@ function buildSummaryPrompt(
     .map((e) => {
       const desc = describeAction(e);
       const score = getEffectiveScore(e, evalIdx);
-      const risk = score !== undefined ? `risk ${score}` : "no score";
-      const decision = e.decision || "unknown";
-      return `- ${e.timestamp} ${e.toolName} ${desc} → ${risk} ${decision}`;
+      const risk = score !== undefined && score >= 30 ? ` (risk ${score})` : "";
+      return `- ${e.toolName}: ${desc}${risk}`;
     })
     .join("\n");
 
-  return `Summarize this agent session in 1-2 sentences. Focus on: what the agent did, whether anything was risky or blocked, and the outcome. Be concise and factual.
+  // Highlight risky actions separately so the LLM notices them
+  const riskyActions = decisions
+    .filter((e) => {
+      const score = getEffectiveScore(e, evalIdx);
+      return score !== undefined && score >= 50;
+    })
+    .slice(0, 5)
+    .map((e) => {
+      const desc = describeAction(e);
+      const score = getEffectiveScore(e, evalIdx)!;
+      return `- ${desc} (risk ${score})`;
+    })
+    .join("\n");
+
+  const riskySection = riskyActions ? `\n\nElevated risk actions:\n${riskyActions}` : "";
+
+  return `Summarize in 1-2 plain-text sentences. What did the agent accomplish? If any elevated risk actions are listed, mention them briefly. No markdown. No mention of approvals, policy, or blocking.
 
 Session: ${sessionKey}
 Duration: ${durationStr}
@@ -147,7 +162,7 @@ Actions: ${decisions.length}
 Avg risk: ${avgRisk}, Peak: ${peakRisk}
 
 Tool calls:
-${toolLines}`;
+${toolLines}${riskySection}`;
 }
 
 /**
@@ -254,8 +269,14 @@ async function generateLlmSummary(
   // Need a known provider and a model to proceed (for direct API paths)
   const needsDirectApi = model && PROVIDER_ENDPOINTS[provider];
 
-  const systemPrompt =
-    "Summarize the agent session in 1-2 sentences. Be concise and factual. Focus on what the agent did, whether anything was risky or blocked, and the outcome.";
+  const systemPrompt = [
+    "Return ONLY 1-2 plain-text sentences summarizing this agent session.",
+    "Focus on what the agent accomplished.",
+    "If any actions had elevated risk, briefly note them.",
+    "Rules: no markdown, no headers, no bullet points, no follow-up questions, no commentary.",
+    "Do not mention policy decisions, approvals, or blocking.",
+    "Output the sentences directly, nothing else.",
+  ].join(" ");
 
   // Path 1: Embedded agent (handles auth internally)
   if (config.agent?.runEmbeddedPiAgent) {
@@ -275,13 +296,13 @@ async function generateLlmSummary(
           provider: provider || undefined,
           model: model || undefined,
           disableTools: true,
-          streamParams: { maxTokens: 256 },
+          streamParams: { maxTokens: 80 },
         });
         const text = collectEmbeddedText(result.payloads);
         if (text) {
           return {
             sessionKey,
-            summary: text.trim(),
+            summary: stripMarkdown(text),
             generatedAt: new Date().toISOString(),
             isLlmGenerated: true,
           };
@@ -324,10 +345,28 @@ async function generateLlmSummary(
 
   return {
     sessionKey,
-    summary: text.trim(),
+    summary: stripMarkdown(text),
     generatedAt: new Date().toISOString(),
     isLlmGenerated: true,
   };
+}
+
+/**
+ * Strip markdown artifacts that LLMs may include despite instructions.
+ * Returns clean plain text suitable for inline display.
+ */
+function stripMarkdown(raw: string): string {
+  return raw
+    .replace(/^#+\s+.*/gm, "") // remove headers
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold → plain
+    .replace(/\*([^*]+)\*/g, "$1") // italic → plain
+    .replace(/^[-*]\s+/gm, "") // remove bullet points
+    .replace(/^---+$/gm, "") // remove horizontal rules
+    .replace(/`([^`]+)`/g, "$1") // inline code → plain
+    .replace(/\n{2,}/g, " ") // collapse double newlines
+    .replace(/\n/g, " ") // remaining newlines → spaces
+    .replace(/\s{2,}/g, " ") // collapse whitespace
+    .trim();
 }
 
 /** Exposed for testing — clears the summary cache. */
