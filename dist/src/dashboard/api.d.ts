@@ -20,6 +20,19 @@ export interface EnhancedStatsResponse extends StatsResponse {
     activeAgents: number;
     activeSessions: number;
     riskPosture: RiskPosture;
+    historicDailyMax: number;
+}
+export interface InterventionEntry {
+    timestamp: string;
+    agentId: string;
+    agentName: string;
+    toolName: string;
+    description: string;
+    riskScore: number;
+    riskTier: string;
+    decision: string;
+    effectiveDecision: string;
+    sessionKey?: string;
 }
 export interface EntryResponse {
     timestamp: string;
@@ -132,16 +145,20 @@ export interface SessionDetailResponse {
 }
 /** Compute the effective user-facing decision for an entry. */
 export declare function getEffectiveDecision(entry: AuditEntry): string;
+/** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
+export declare function computeHistoricDailyMax(entries: AuditEntry[]): number;
+/** Blocked + approval_required entries for a day, most recent first. */
+export declare function getInterventions(entries: AuditEntry[], date?: string): InterventionEntry[];
 /** Compute today's decision counts. */
 export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */
 export declare function getRecentEntries(entries: AuditEntry[], limit: number, offset: number, filters?: EntryFilters): EntryResponse[];
 /** Verify the hash chain integrity of all entries. */
 export declare function checkHealth(entries: AuditEntry[]): HealthResponse;
-/** Enhanced stats with risk breakdown and active counts. */
-export declare function computeEnhancedStats(entries: AuditEntry[]): EnhancedStatsResponse;
-/** Get aggregated agent list from audit entries. */
-export declare function getAgents(entries: AuditEntry[]): AgentInfo[];
+/** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */
+export declare function computeEnhancedStats(entries: AuditEntry[], date?: string): EnhancedStatsResponse;
+/** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */
+export declare function getAgents(entries: AuditEntry[], date?: string): AgentInfo[];
 export declare function getAgentDetail(entries: AuditEntry[], agentId: string, range?: string): AgentDetailResponse | null;
 /** Get paginated session list, optionally filtered by agent. */
 export declare function getSessions(entries: AuditEntry[], agentId?: string, limit?: number, offset?: number): {

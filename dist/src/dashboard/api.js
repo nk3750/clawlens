@@ -217,6 +217,48 @@ function buildSessionInfo(sessionKey, entries, evalIdx) {
         riskSparkline,
     };
 }
+// ── Date-filtered helpers ──────────────────────────────
+/** Filter entries to a specific calendar day (YYYY-MM-DD). */
+function getDayEntries(entries, date) {
+    return entries.filter((e) => e.timestamp.startsWith(date));
+}
+/** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
+export function computeHistoricDailyMax(entries) {
+    const byDay = new Map();
+    for (const entry of entries) {
+        if (!entry.decision)
+            continue;
+        const day = entry.timestamp.slice(0, 10);
+        byDay.set(day, (byDay.get(day) ?? 0) + 1);
+    }
+    if (byDay.size === 0)
+        return 100;
+    return Math.max(...byDay.values());
+}
+/** Blocked + approval_required entries for a day, most recent first. */
+export function getInterventions(entries, date) {
+    const dayEntries = date ? getDayEntries(entries, date) : getTodayEntries(entries);
+    const evalIdx = buildEvalIndex(entries);
+    return dayEntries
+        .filter((e) => e.decision === "block" || e.decision === "approval_required")
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .slice(0, 20)
+        .map((e) => {
+        const score = getEffectiveScore(e, evalIdx) ?? e.riskScore ?? 0;
+        return {
+            timestamp: e.timestamp,
+            agentId: e.agentId ?? "unknown",
+            agentName: e.agentId ?? "unknown",
+            toolName: e.toolName,
+            description: describeAction(e),
+            riskScore: score,
+            riskTier: score > 75 ? "critical" : score > 50 ? "high" : score > 25 ? "medium" : "low",
+            decision: e.decision,
+            effectiveDecision: getEffectiveDecision(e),
+            sessionKey: e.sessionKey,
+        };
+    });
+}
 // ── Existing functions (unchanged signatures) ───────────
 /** Compute today's decision counts. */
 export function computeStats(entries) {
@@ -301,11 +343,40 @@ export function checkHealth(entries) {
     };
 }
 // ── New v2 functions ────────────────────────────────────
-/** Enhanced stats with risk breakdown and active counts. */
-export function computeEnhancedStats(entries) {
-    const base = computeStats(entries);
+/** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */
+export function computeEnhancedStats(entries, date) {
+    const isPastDay = date !== undefined;
+    const windowEntries = isPastDay ? getDayEntries(entries, date) : getTodayEntries(entries);
+    const windowDecisions = windowEntries.filter(isDecisionEntry);
+    // Recompute base stats from window
+    let allowed = 0;
+    let approved = 0;
+    let blocked = 0;
+    let timedOut = 0;
+    let pending = 0;
+    for (const e of windowDecisions) {
+        const eff = getEffectiveDecision(e);
+        switch (eff) {
+            case "allow":
+                allowed++;
+                break;
+            case "approved":
+                approved++;
+                break;
+            case "block":
+            case "denied":
+                blocked++;
+                break;
+            case "timeout":
+                timedOut++;
+                break;
+            case "pending":
+                pending++;
+                break;
+        }
+    }
+    const total = allowed + approved + blocked + timedOut;
     const evalIdx = buildEvalIndex(entries);
-    const todayDecisions = getTodayEntries(entries).filter(isDecisionEntry);
     let low = 0;
     let medium = 0;
     let high = 0;
@@ -313,8 +384,7 @@ export function computeEnhancedStats(entries) {
     let riskSum = 0;
     let riskCount = 0;
     let peakRisk = 0;
-    for (const e of todayDecisions) {
-        // Use LLM-adjusted score/tier when available
+    for (const e of windowDecisions) {
         const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
         const effectiveScore = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore;
         const effectiveTier = evalEntry?.riskTier ?? e.riskTier;
@@ -333,55 +403,78 @@ export function computeEnhancedStats(entries) {
                 peakRisk = effectiveScore;
         }
     }
-    const now = Date.now();
-    const activeAgentIds = new Set();
-    const activeSessionKeys = new Set();
-    for (const e of entries) {
-        if (now - new Date(e.timestamp).getTime() <= ACTIVE_THRESHOLD_MS) {
-            if (e.agentId)
-                activeAgentIds.add(e.agentId);
-            if (e.sessionKey)
-                activeSessionKeys.add(e.sessionKey);
+    // Active agents/sessions: for past days, count distinct IDs; for today, use recency
+    let activeAgents;
+    let activeSessions;
+    if (isPastDay) {
+        const agentIds = new Set(windowDecisions.map((e) => e.agentId ?? "default"));
+        const sessionKeys = new Set(windowDecisions.filter((e) => e.sessionKey).map((e) => e.sessionKey));
+        activeAgents = agentIds.size;
+        activeSessions = sessionKeys.size;
+    }
+    else {
+        const now = Date.now();
+        const activeAgentIds = new Set();
+        const activeSessionKeys = new Set();
+        for (const e of entries) {
+            if (now - new Date(e.timestamp).getTime() <= ACTIVE_THRESHOLD_MS) {
+                if (e.agentId)
+                    activeAgentIds.add(e.agentId);
+                if (e.sessionKey)
+                    activeSessionKeys.add(e.sessionKey);
+            }
         }
+        activeAgents = activeAgentIds.size;
+        activeSessions = activeSessionKeys.size;
     }
     const avgScore = riskCount > 0 ? Math.round(riskSum / riskCount) : 0;
     let posture = riskPosture(avgScore);
-    // Override: "high" if any entry in last hour has riskScore > 75
-    const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString();
-    for (const e of todayDecisions) {
-        const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
-        const score = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore;
-        if (e.timestamp >= oneHourAgo && score !== undefined && score > 75) {
-            if (posture === "calm" || posture === "elevated")
-                posture = "high";
-            break;
-        }
-    }
-    // Override: "critical" if any action was blocked in last 30 min
-    const thirtyMinAgo = new Date(Date.now() - 1_800_000).toISOString();
-    for (const e of todayDecisions) {
-        if (e.timestamp >= thirtyMinAgo) {
-            const eff = getEffectiveDecision(e);
-            if (eff === "block" || eff === "denied") {
-                posture = "critical";
+    // Posture overrides — only for today (past days are frozen snapshots)
+    if (!isPastDay) {
+        const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString();
+        for (const e of windowDecisions) {
+            const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
+            const score = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore;
+            if (e.timestamp >= oneHourAgo && score !== undefined && score > 75) {
+                if (posture === "calm" || posture === "elevated")
+                    posture = "high";
                 break;
+            }
+        }
+        const thirtyMinAgo = new Date(Date.now() - 1_800_000).toISOString();
+        for (const e of windowDecisions) {
+            if (e.timestamp >= thirtyMinAgo) {
+                const eff = getEffectiveDecision(e);
+                if (eff === "block" || eff === "denied") {
+                    posture = "critical";
+                    break;
+                }
             }
         }
     }
     return {
-        ...base,
+        total,
+        allowed,
+        approved,
+        blocked,
+        timedOut,
+        pending,
         riskBreakdown: { low, medium, high, critical },
         avgRiskScore: avgScore,
         peakRiskScore: peakRisk,
-        activeAgents: activeAgentIds.size,
-        activeSessions: activeSessionKeys.size,
+        activeAgents,
+        activeSessions,
         riskPosture: posture,
+        historicDailyMax: computeHistoricDailyMax(entries),
     };
 }
-/** Get aggregated agent list from audit entries. */
-export function getAgents(entries) {
+/** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */
+export function getAgents(entries, date) {
+    const isPastDay = date !== undefined;
+    // When viewing a past day, pre-filter all entries to that day
+    const scopedEntries = isPastDay ? getDayEntries(entries, date) : entries;
     const agentMap = new Map();
-    for (const e of entries) {
+    for (const e of scopedEntries) {
         const id = e.agentId || "default";
         const existing = agentMap.get(id);
         if (existing) {
@@ -391,8 +484,16 @@ export function getAgents(entries) {
             agentMap.set(id, [e]);
         }
     }
+    // For past days, only include agents that had decision entries
+    if (isPastDay) {
+        for (const [id, agentEntries] of agentMap) {
+            if (!agentEntries.some(isDecisionEntry)) {
+                agentMap.delete(id);
+            }
+        }
+    }
     const now = Date.now();
-    const todayCutoff = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    const todayCutoff = isPastDay ? date : new Date(now - 24 * 60 * 60 * 1000).toISOString();
     const thirtyMinAgo = new Date(now - 1_800_000).toISOString();
     const evalIdx = buildEvalIndex(entries);
     const agents = [];
@@ -403,10 +504,15 @@ export function getAgents(entries) {
                 lastTimestamp = e.timestamp;
             }
         }
-        const isActive = lastTimestamp
-            ? now - new Date(lastTimestamp).getTime() <= ACTIVE_THRESHOLD_MS
-            : false;
-        const todayDecisions = agentEntries.filter((e) => e.timestamp >= todayCutoff && isDecisionEntry(e));
+        // Past days: always idle. Today: active if activity in last 5 min.
+        const isActive = isPastDay
+            ? false
+            : lastTimestamp
+                ? now - new Date(lastTimestamp).getTime() <= ACTIVE_THRESHOLD_MS
+                : false;
+        const todayDecisions = isPastDay
+            ? agentEntries.filter(isDecisionEntry)
+            : agentEntries.filter((e) => e.timestamp >= todayCutoff && isDecisionEntry(e));
         let riskSum = 0;
         let riskCount = 0;
         let peakRisk = 0;
@@ -430,7 +536,6 @@ export function getAgents(entries) {
         }
         let currentSession;
         let currentSessionKey;
-        // Find the most recent session (for both active and idle agents)
         const withSession = agentEntries
             .filter((e) => e.sessionKey)
             .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -446,7 +551,6 @@ export function getAgents(entries) {
                 };
             }
         }
-        // Determine mode from session keys — exact match on ":cron:" segment
         const hasCronSession = agentEntries.some((e) => {
             if (!e.sessionKey)
                 return false;
@@ -454,22 +558,17 @@ export function getAgents(entries) {
             return parts.length >= 3 && parts[2] === "cron";
         });
         const mode = hasCronSession ? "scheduled" : "interactive";
-        // Context from current/latest session
         const currentContext = currentSessionKey ? parseSessionContext(currentSessionKey) : undefined;
-        // Activity breakdown from current session (or latest session if idle)
         const breakdownEntries = currentSessionKey
             ? agentEntries.filter((e) => e.sessionKey === currentSessionKey && isDecisionEntry(e))
             : todayDecisions;
         const activityBreakdown = computeBreakdown(breakdownEntries);
-        // Today's activity breakdown (full day, for agent detail page)
         const todayActivityBreakdown = computeBreakdown(todayDecisions);
-        // Latest action
         const latestDecision = agentEntries
             .filter(isDecisionEntry)
             .sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
         const latestAction = latestDecision ? describeAction(latestDecision) : undefined;
         const latestActionTime = latestDecision?.timestamp;
-        // Risk posture from current/latest session (using LLM-adjusted scores)
         const sessionRiskEntries = currentSessionKey
             ? agentEntries.filter((e) => e.sessionKey === currentSessionKey && getEffectiveScore(e, evalIdx) !== undefined)
             : agentEntries.filter((e) => getEffectiveScore(e, evalIdx) !== undefined);
@@ -479,33 +578,44 @@ export function getAgents(entries) {
         }
         const sessionAvg = sessionRiskEntries.length > 0 ? Math.round(sessionRiskSum / sessionRiskEntries.length) : 0;
         const agentPosture = riskPosture(sessionAvg);
-        // Needs attention: pending approval, blocked in last 30 min, or session peak >= 75
         let needsAttention = false;
         let attentionReason;
-        // Check for blocked actions in last 30 min
-        for (const e of agentEntries) {
-            if (e.timestamp >= thirtyMinAgo && isDecisionEntry(e)) {
-                const eff = getEffectiveDecision(e);
-                if (eff === "block" || eff === "denied") {
-                    needsAttention = true;
-                    attentionReason = `Blocked: ${e.toolName}`;
-                    break;
+        if (isPastDay) {
+            // Past day: flag if any blocked entries occurred that day
+            for (const e of agentEntries) {
+                if (isDecisionEntry(e)) {
+                    const eff = getEffectiveDecision(e);
+                    if (eff === "block" || eff === "denied") {
+                        needsAttention = true;
+                        attentionReason = `Blocked: ${e.toolName}`;
+                        break;
+                    }
                 }
             }
         }
-        // Check for high peak risk in current session
+        else {
+            // Today: blocked in last 30 min
+            for (const e of agentEntries) {
+                if (e.timestamp >= thirtyMinAgo && isDecisionEntry(e)) {
+                    const eff = getEffectiveDecision(e);
+                    if (eff === "block" || eff === "denied") {
+                        needsAttention = true;
+                        attentionReason = `Blocked: ${e.toolName}`;
+                        break;
+                    }
+                }
+            }
+        }
         if (!needsAttention && peakRisk >= 75) {
             needsAttention = true;
             attentionReason = "High risk activity detected";
         }
-        // Blocked count (today)
         let blockedCount = 0;
         for (const e of todayDecisions) {
             const eff = getEffectiveDecision(e);
             if (eff === "block" || eff === "denied")
                 blockedCount++;
         }
-        // Top risk: single highest-risk action (score >= 25)
         let topRisk;
         const topRiskEntry = agentEntries
             .filter((e) => isDecisionEntry(e) &&

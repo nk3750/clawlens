@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { checkHealth, computeEnhancedStats, getAgentDetail, getAgents, getRecentEntries, getSessionDetail, getSessions, } from "./api";
+import { checkHealth, computeEnhancedStats, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, } from "./api";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -33,8 +33,9 @@ export function registerDashboardRoutes(api, deps) {
             subPath = subPath.replace(/^\//, "");
             // ── API routes ──────────────────────────────
             if (subPath === "api/stats") {
+                const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, computeEnhancedStats(entries));
+                sendJson(res, computeEnhancedStats(entries, date));
                 return true;
             }
             if (subPath === "api/entries") {
@@ -66,8 +67,15 @@ export function registerDashboardRoutes(api, deps) {
                 return true;
             }
             if (subPath === "api/agents") {
+                const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, getAgents(entries));
+                sendJson(res, getAgents(entries, date));
+                return true;
+            }
+            if (subPath === "api/interventions") {
+                const date = url.searchParams.get("date") || undefined;
+                const entries = deps.auditLogger.readEntries();
+                sendJson(res, getInterventions(entries, date));
                 return true;
             }
             const agentMatch = subPath.match(/^api\/agent\/([^/]+)$/);
