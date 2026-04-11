@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { extractIdentityKey, lookupKey, normalizeCommand } from "../src/guardrails/identity";
 import { GuardrailStore } from "../src/guardrails/store";
-import type { Guardrail, GuardrailAction } from "../src/guardrails/types";
+import type { Guardrail } from "../src/guardrails/types";
 
 // ── Identity Key Extraction ──────────────────────────────────
 
