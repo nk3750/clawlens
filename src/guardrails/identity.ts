@@ -17,12 +17,12 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
       return String(params.path ?? params.file_path ?? "");
     case "web_fetch":
     case "fetch_url":
-      return String(params.url ?? "");
+      return normalizeUrl(String(params.url ?? ""));
     case "web_search":
     case "search":
       return String(params.query ?? "");
     case "browser":
-      return String(params.url ?? "");
+      return normalizeUrl(String(params.url ?? ""));
     case "message":
       return String(params.to ?? params.recipient ?? "");
     case "sessions_spawn":
@@ -40,6 +40,49 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
 
 export function normalizeCommand(cmd: string): string {
   return cmd.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Normalize a URL for stable identity key matching.
+ *
+ * - Lowercases protocol and hostname (URL constructor handles this)
+ * - Strips default ports (443 for https, 80 for http)
+ * - Strips fragment (#...)
+ * - Sorts query parameters alphabetically
+ * - Strips trailing slash when path is just "/"
+ * - Falls back to raw string if URL parsing fails
+ */
+export function normalizeUrl(raw: string): string {
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+
+    // Strip default ports (URL constructor may leave them explicit)
+    if (
+      (u.protocol === "https:" && u.port === "443") ||
+      (u.protocol === "http:" && u.port === "80")
+    ) {
+      u.port = "";
+    }
+
+    // Strip fragment
+    u.hash = "";
+
+    // Sort query parameters
+    const sorted = new URLSearchParams([...u.searchParams.entries()].sort());
+    u.search = sorted.size > 0 ? `?${sorted.toString()}` : "";
+
+    // Build result, stripping trailing slash when path is just "/"
+    let result = u.toString();
+    if (u.pathname === "/" && !u.search) {
+      result = result.replace(/\/$/, "");
+    }
+
+    return result;
+  } catch {
+    // Not a valid URL — return as-is for passthrough
+    return raw;
+  }
 }
 
 /** Composite lookup key for O(1) guardrail matching. */

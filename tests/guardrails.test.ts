@@ -2,7 +2,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extractIdentityKey, lookupKey, normalizeCommand } from "../src/guardrails/identity";
+import {
+  extractIdentityKey,
+  lookupKey,
+  normalizeCommand,
+  normalizeUrl,
+} from "../src/guardrails/identity";
 import { GuardrailStore } from "../src/guardrails/store";
 import type { Guardrail } from "../src/guardrails/types";
 
@@ -87,6 +92,83 @@ describe("extractIdentityKey", () => {
     expect(extractIdentityKey("memory_get", { key: "config.auth" })).toBe("config.auth");
   });
 
+  // ── URL normalization in identity keys ───────────────────
+
+  it("normalizes web_fetch URL: strips trailing slash", () => {
+    expect(extractIdentityKey("web_fetch", { url: "https://apnews.com/" })).toBe(
+      "https://apnews.com",
+    );
+  });
+
+  it("normalizes web_fetch URL: lowercases protocol and hostname", () => {
+    expect(extractIdentityKey("web_fetch", { url: "HTTPS://APNEWS.COM" })).toBe(
+      "https://apnews.com",
+    );
+  });
+
+  it("normalizes fetch_url URL: trailing slash + case", () => {
+    expect(extractIdentityKey("fetch_url", { url: "HTTPS://FOO.COM/" })).toBe("https://foo.com");
+  });
+
+  it("normalizes browser URL: trailing slash + case", () => {
+    expect(extractIdentityKey("browser", { url: "https://App.Com/" })).toBe("https://app.com");
+  });
+
+  it("normalizes URL: preserves path case", () => {
+    expect(extractIdentityKey("web_fetch", { url: "https://example.com/MyPath/Page" })).toBe(
+      "https://example.com/MyPath/Page",
+    );
+  });
+
+  it("normalizes URL: strips fragment", () => {
+    expect(extractIdentityKey("web_fetch", { url: "https://example.com/page#section" })).toBe(
+      "https://example.com/page",
+    );
+  });
+
+  it("normalizes URL: sorts query params", () => {
+    expect(extractIdentityKey("web_fetch", { url: "https://example.com/api?z=1&a=2" })).toBe(
+      "https://example.com/api?a=2&z=1",
+    );
+  });
+
+  it("normalizes URL: strips default HTTPS port 443", () => {
+    expect(extractIdentityKey("web_fetch", { url: "https://example.com:443/path" })).toBe(
+      "https://example.com/path",
+    );
+  });
+
+  it("normalizes URL: strips default HTTP port 80", () => {
+    expect(extractIdentityKey("web_fetch", { url: "http://example.com:80/path" })).toBe(
+      "http://example.com/path",
+    );
+  });
+
+  it("normalizes URL: preserves non-default port", () => {
+    expect(extractIdentityKey("web_fetch", { url: "https://example.com:8443/path" })).toBe(
+      "https://example.com:8443/path",
+    );
+  });
+
+  it("normalizes URL: non-URL string passes through unchanged", () => {
+    expect(extractIdentityKey("web_fetch", { url: "not-a-url" })).toBe("not-a-url");
+  });
+
+  it("produces same key for equivalent URL variants", () => {
+    const variants = [
+      "https://apnews.com",
+      "https://apnews.com/",
+      "HTTPS://APNEWS.COM",
+      "HTTPS://APNEWS.COM/",
+      "https://apnews.com:443",
+      "https://apnews.com:443/",
+    ];
+    const keys = variants.map((url) => extractIdentityKey("web_fetch", { url }));
+    const unique = new Set(keys);
+    expect(unique.size).toBe(1);
+    expect(keys[0]).toBe("https://apnews.com");
+  });
+
   it("returns sorted JSON for unknown tools", () => {
     const result = extractIdentityKey("unknown_tool", { b: 2, a: 1 });
     expect(result).toBe('{"a":1,"b":2}');
@@ -115,6 +197,56 @@ describe("normalizeCommand", () => {
 
   it("preserves single spaces", () => {
     expect(normalizeCommand("git status")).toBe("git status");
+  });
+});
+
+describe("normalizeUrl", () => {
+  it("strips trailing slash on bare domain", () => {
+    expect(normalizeUrl("https://apnews.com/")).toBe("https://apnews.com");
+  });
+
+  it("lowercases protocol and hostname", () => {
+    expect(normalizeUrl("HTTPS://APNEWS.COM")).toBe("https://apnews.com");
+  });
+
+  it("preserves path case", () => {
+    expect(normalizeUrl("https://example.com/MyPath/Page")).toBe("https://example.com/MyPath/Page");
+  });
+
+  it("strips fragment", () => {
+    expect(normalizeUrl("https://example.com/page#section")).toBe("https://example.com/page");
+  });
+
+  it("sorts query parameters", () => {
+    expect(normalizeUrl("https://example.com/api?z=1&a=2")).toBe("https://example.com/api?a=2&z=1");
+  });
+
+  it("strips default HTTPS port 443", () => {
+    expect(normalizeUrl("https://example.com:443/path")).toBe("https://example.com/path");
+  });
+
+  it("strips default HTTP port 80", () => {
+    expect(normalizeUrl("http://example.com:80/path")).toBe("http://example.com/path");
+  });
+
+  it("preserves non-default port", () => {
+    expect(normalizeUrl("https://example.com:8443/path")).toBe("https://example.com:8443/path");
+  });
+
+  it("returns non-URL strings unchanged", () => {
+    expect(normalizeUrl("not-a-url")).toBe("not-a-url");
+  });
+
+  it("returns empty string unchanged", () => {
+    expect(normalizeUrl("")).toBe("");
+  });
+
+  it("preserves trailing slash when path is not just /", () => {
+    expect(normalizeUrl("https://example.com/docs/")).toBe("https://example.com/docs/");
+  });
+
+  it("keeps query params with trailing-slash-only path", () => {
+    expect(normalizeUrl("https://example.com/?q=hello")).toBe("https://example.com/?q=hello");
   });
 });
 
