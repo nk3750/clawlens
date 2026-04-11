@@ -29,3 +29,4 @@ export interface GuardrailFile {
     version: 1;
     guardrails: Guardrail[];
 }
+export declare function isValidGuardrailAction(action: unknown): action is GuardrailAction;

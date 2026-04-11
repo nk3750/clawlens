@@ -51,9 +51,9 @@ function mapEntry(entry, evalIndex, guardrailStore) {
     const llmEval = evalEntry?.llmEvaluation ?? entry.llmEvaluation;
     // Check if an active guardrail matches this entry
     let guardrailMatch;
-    if (guardrailStore && entry.agentId && entry.decision) {
+    if (guardrailStore && entry.decision) {
         const key = extractIdentityKey(entry.toolName, entry.params);
-        const matched = guardrailStore.peek(entry.agentId, entry.toolName, key);
+        const matched = guardrailStore.peek(entry.agentId || "unknown", entry.toolName, key);
         if (matched) {
             guardrailMatch = { id: matched.id, action: matched.action };
         }

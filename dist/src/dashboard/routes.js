@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
+import { isValidGuardrailAction } from "../guardrails/types";
 import { checkHealth, computeEnhancedStats, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, } from "./api";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
@@ -46,6 +47,18 @@ export function registerDashboardRoutes(api, deps) {
                 if (!toolCallId || !action) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ error: "toolCallId and action are required" }));
+                    return true;
+                }
+                if (!isValidGuardrailAction(action)) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({
+                        error: "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+                    }));
+                    return true;
+                }
+                if (typeof expiresIn === "number" && expiresIn <= 0) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "expiresIn must be positive" }));
                     return true;
                 }
                 const entries = deps.auditLogger.readEntries();
@@ -112,6 +125,13 @@ export function registerDashboardRoutes(api, deps) {
                 const id = decodeURIComponent(guardrailIdMatch[1]);
                 const body = await readBody(req);
                 const patch = body;
+                if (patch.action !== undefined && !isValidGuardrailAction(patch.action)) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({
+                        error: "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+                    }));
+                    return true;
+                }
                 const updated = deps.guardrailStore.update(id, patch);
                 if (!updated) {
                     res.writeHead(404, { "Content-Type": "application/json" });
