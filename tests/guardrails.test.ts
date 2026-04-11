@@ -10,7 +10,8 @@ import {
   normalizeUrl,
 } from "../src/guardrails/identity";
 import { GuardrailStore } from "../src/guardrails/store";
-import type { Guardrail } from "../src/guardrails/types";
+import type { Guardrail, GuardrailAction } from "../src/guardrails/types";
+import { isValidGuardrailAction } from "../src/guardrails/types";
 
 // ── Identity Key Extraction ──────────────────────────────────
 
@@ -253,6 +254,54 @@ describe("extractIdentityKey", () => {
     expect(extractIdentityKey("read", {})).toBe("");
     expect(extractIdentityKey("web_fetch", {})).toBe("");
     expect(extractIdentityKey("message", {})).toBe("");
+  });
+
+  // ── Query/message/cron/spawn normalization ────────────────
+
+  describe("query/message/cron/spawn normalization", () => {
+    it("trims and lowercases web_search query", () => {
+      expect(extractIdentityKey("web_search", { query: "  Node Security  " })).toBe(
+        "node security",
+      );
+    });
+    it("trims and lowercases search query", () => {
+      expect(extractIdentityKey("search", { query: "FIND Bugs" })).toBe("find bugs");
+    });
+    it("trims and lowercases memory_search query", () => {
+      expect(extractIdentityKey("memory_search", { query: "  API Keys  " })).toBe("api keys");
+    });
+    it("trims and lowercases memory_get key", () => {
+      expect(extractIdentityKey("memory_get", { key: " Config.Auth " })).toBe("config.auth");
+    });
+    it("trims and lowercases message recipient", () => {
+      expect(extractIdentityKey("message", { to: "User@Example.COM" })).toBe("user@example.com");
+    });
+    it("trims and lowercases message recipient (fallback)", () => {
+      expect(extractIdentityKey("message", { recipient: " #General " })).toBe("#general");
+    });
+    it("trims cron name and normalizes cron expression whitespace", () => {
+      expect(extractIdentityKey("cron", { name: " cleanup ", cron: "0  0  *  *  *" })).toBe(
+        "cleanup:0 0 * * *",
+      );
+    });
+    it("trims sessions_spawn key", () => {
+      expect(extractIdentityKey("sessions_spawn", { sessionKey: " worker-1 " })).toBe("worker-1");
+    });
+  });
+
+  // ── Glob and grep tool coverage ───────────────────────────
+
+  describe("glob and grep tool coverage", () => {
+    it("extracts pattern for glob tool", () => {
+      expect(extractIdentityKey("glob", { pattern: "**/*.env" })).toBe("**/*.env");
+    });
+    it("extracts pattern for grep tool", () => {
+      expect(extractIdentityKey("grep", { pattern: "API_KEY" })).toBe("API_KEY");
+    });
+    it("glob ignores non-pattern params", () => {
+      expect(extractIdentityKey("glob", { pattern: "**/*.ts", path: "/app" })).toBe("**/*.ts");
+      expect(extractIdentityKey("glob", { pattern: "**/*.ts", limit: 10 })).toBe("**/*.ts");
+    });
   });
 });
 
@@ -841,5 +890,37 @@ describe("before_tool_call guardrail enforcement", () => {
         decision: "allow-once",
       }),
     );
+  });
+});
+
+// ── Guardrail Action Validation ─────────────────────────────
+
+describe("guardrail action validation", () => {
+  it("accepts block", () => {
+    expect(isValidGuardrailAction({ type: "block" })).toBe(true);
+  });
+  it("accepts require_approval", () => {
+    expect(isValidGuardrailAction({ type: "require_approval" })).toBe(true);
+  });
+  it("accepts allow_once", () => {
+    expect(isValidGuardrailAction({ type: "allow_once" })).toBe(true);
+  });
+  it("accepts allow_hours with valid hours", () => {
+    expect(isValidGuardrailAction({ type: "allow_hours", hours: 24 })).toBe(true);
+  });
+  it("rejects unknown type", () => {
+    expect(isValidGuardrailAction({ type: "allow_forever" })).toBe(false);
+  });
+  it("rejects missing type", () => {
+    expect(isValidGuardrailAction({} as unknown)).toBe(false);
+  });
+  it("rejects allow_hours without hours", () => {
+    expect(isValidGuardrailAction({ type: "allow_hours" })).toBe(false);
+  });
+  it("rejects allow_hours with negative hours", () => {
+    expect(isValidGuardrailAction({ type: "allow_hours", hours: -1 })).toBe(false);
+  });
+  it("rejects null", () => {
+    expect(isValidGuardrailAction(null)).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import type { AuditEntry, AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
-import type { GuardrailAction } from "../guardrails/types";
+import { type GuardrailAction, isValidGuardrailAction } from "../guardrails/types";
 import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
 import {
   checkHealth,
@@ -87,6 +87,21 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           res.end(JSON.stringify({ error: "toolCallId and action are required" }));
           return true;
         }
+        if (!isValidGuardrailAction(action)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error:
+                "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+            }),
+          );
+          return true;
+        }
+        if (typeof expiresIn === "number" && expiresIn <= 0) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "expiresIn must be positive" }));
+          return true;
+        }
         const entries = deps.auditLogger.readEntries();
         const entry = entries.find((e) => e.toolCallId === toolCallId && e.decision);
         if (!entry) {
@@ -159,6 +174,16 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           agentId?: string | null;
           expiresAt?: string | null;
         };
+        if (patch.action !== undefined && !isValidGuardrailAction(patch.action)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error:
+                "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+            }),
+          );
+          return true;
+        }
         const updated = deps.guardrailStore.update(id, patch);
         if (!updated) {
           res.writeHead(404, { "Content-Type": "application/json" });

@@ -22,19 +22,35 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
       return normalizeUrl(String(params.url ?? ""));
     case "web_search":
     case "search":
-      return String(params.query ?? "");
+      return String(params.query ?? "")
+        .trim()
+        .toLowerCase();
     case "browser":
       return normalizeUrl(String(params.url ?? ""));
     case "message":
-      return String(params.to ?? params.recipient ?? "");
+      return String(params.to ?? params.recipient ?? "")
+        .trim()
+        .toLowerCase();
     case "sessions_spawn":
-      return String(params.sessionKey ?? params.agent ?? "");
-    case "cron":
-      return `${params.name ?? ""}:${params.cron ?? ""}`;
+      return String(params.sessionKey ?? params.agent ?? "").trim();
+    case "cron": {
+      const name = String(params.name ?? "").trim();
+      const expr = String(params.cron ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return `${name}:${expr}`;
+    }
     case "memory_search":
-      return String(params.query ?? "");
+      return String(params.query ?? "")
+        .trim()
+        .toLowerCase();
     case "memory_get":
-      return String(params.key ?? "");
+      return String(params.key ?? "")
+        .trim()
+        .toLowerCase();
+    case "glob":
+    case "grep":
+      return String(params.pattern ?? "");
     default:
       return JSON.stringify(sortKeys(params));
   }
