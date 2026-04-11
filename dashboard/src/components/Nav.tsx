@@ -48,6 +48,7 @@ export default function Nav() {
         <div className="flex items-center gap-1">
           <NavLink to="/" active={isActive("/")}>Agents</NavLink>
           <NavLink to="/activity" active={isActive("/activity")}>Activity</NavLink>
+          <NavLink to="/guardrails" active={isActive("/guardrails")}>Guardrails</NavLink>
         </div>
       </div>
     </nav>

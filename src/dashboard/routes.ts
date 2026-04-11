@@ -3,6 +3,9 @@ import type { ServerResponse } from "node:http";
 import * as path from "node:path";
 import type { AuditEntry, AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
+import { extractIdentityKey } from "../guardrails/identity";
+import { GuardrailStore } from "../guardrails/store";
+import type { GuardrailAction } from "../guardrails/types";
 import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
 import {
   checkHealth,
@@ -28,6 +31,7 @@ export interface DashboardDeps {
   provider?: string;
   agent?: EmbeddedAgentRuntime;
   openClawConfig?: Record<string, unknown>;
+  guardrailStore?: GuardrailStore;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -63,6 +67,127 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
 
       // ── API routes ──────────────────────────────
 
+      // ── Guardrails CRUD ─────────────────────────
+
+      if (subPath === "api/guardrails" && req.method === "POST") {
+        if (!deps.guardrailStore) {
+          res.writeHead(501, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Guardrails not configured" }));
+          return true;
+        }
+        const body = await readBody(req);
+        const { toolCallId, action, agentScope, expiresIn } = body as {
+          toolCallId: string;
+          action: GuardrailAction;
+          agentScope: "agent" | "global";
+          expiresIn?: number;
+        };
+        if (!toolCallId || !action) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "toolCallId and action are required" }));
+          return true;
+        }
+        const entries = deps.auditLogger.readEntries();
+        const entry = entries.find((e) => e.toolCallId === toolCallId && e.decision);
+        if (!entry) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Audit entry not found" }));
+          return true;
+        }
+        const identityKey = extractIdentityKey(entry.toolName, entry.params);
+        const agentId = agentScope === "global" ? null : (entry.agentId ?? null);
+        const expiresAt =
+          action.type === "allow_hours" && typeof expiresIn === "number"
+            ? new Date(Date.now() + expiresIn * 3600_000).toISOString()
+            : null;
+        const describeAction = (tn: string, p: Record<string, unknown>) => {
+          const val =
+            typeof p.command === "string"
+              ? p.command
+              : typeof p.path === "string"
+                ? p.path
+                : typeof p.url === "string"
+                  ? p.url
+                  : typeof p.query === "string"
+                    ? p.query
+                    : "";
+          return val ? `${tn} — ${val}` : tn;
+        };
+        const guardrail = {
+          id: GuardrailStore.generateId(),
+          tool: entry.toolName,
+          identityKey,
+          matchMode: "exact" as const,
+          action,
+          agentId,
+          createdAt: new Date().toISOString(),
+          expiresAt,
+          source: {
+            toolCallId,
+            sessionKey: entry.sessionKey ?? "",
+            agentId: entry.agentId ?? "unknown",
+          },
+          description: describeAction(entry.toolName, entry.params),
+          riskScore: entry.riskScore ?? 0,
+        };
+        deps.guardrailStore.add(guardrail);
+        sendJson(res, guardrail);
+        return true;
+      }
+
+      if (subPath === "api/guardrails" && req.method === "GET") {
+        if (!deps.guardrailStore) {
+          sendJson(res, { guardrails: [] });
+          return true;
+        }
+        const agentId = url.searchParams.get("agentId") || undefined;
+        sendJson(res, { guardrails: deps.guardrailStore.list(agentId ? { agentId } : undefined) });
+        return true;
+      }
+
+      const guardrailIdMatch = subPath.match(/^api\/guardrails\/([^/]+)$/);
+      if (guardrailIdMatch && req.method === "PUT") {
+        if (!deps.guardrailStore) {
+          res.writeHead(501, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Guardrails not configured" }));
+          return true;
+        }
+        const id = decodeURIComponent(guardrailIdMatch[1]);
+        const body = await readBody(req);
+        const patch = body as {
+          action?: GuardrailAction;
+          agentId?: string | null;
+          expiresAt?: string | null;
+        };
+        const updated = deps.guardrailStore.update(id, patch);
+        if (!updated) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Guardrail not found" }));
+          return true;
+        }
+        sendJson(res, updated);
+        return true;
+      }
+
+      if (guardrailIdMatch && req.method === "DELETE") {
+        if (!deps.guardrailStore) {
+          res.writeHead(501, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Guardrails not configured" }));
+          return true;
+        }
+        const id = decodeURIComponent(guardrailIdMatch[1]);
+        const removed = deps.guardrailStore.remove(id);
+        if (!removed) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Guardrail not found" }));
+          return true;
+        }
+        sendJson(res, { ok: true });
+        return true;
+      }
+
+      // ── Core API routes ─────────────────────────
+
       if (subPath === "api/stats") {
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
@@ -86,7 +211,7 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         if (since) filters.since = since as EntryFilters["since"];
 
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getRecentEntries(entries, limit, offset, filters));
+        sendJson(res, getRecentEntries(entries, limit, offset, filters, deps.guardrailStore));
         return true;
       }
 
@@ -263,4 +388,19 @@ function clampInt(raw: string | null, min: number, max: number, fallback: number
   const n = parseInt(raw, 10);
   if (Number.isNaN(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+function readBody(req: import("node:http").IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
 }

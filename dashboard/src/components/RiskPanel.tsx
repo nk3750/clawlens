@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { EntryResponse, RiskTrendPoint } from "../lib/types";
 import { riskTierFromScore, riskColorRaw, riskLeftBorder, entryIcon } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
+import GuardrailModal from "./GuardrailModal";
 import Sparkline from "./Sparkline";
 import RiskDetail from "./RiskDetail";
 
@@ -66,6 +67,7 @@ export default function RiskPanel({ riskTrend, topRisks, onDotClick }: Props) {
 
 function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [showGuardrailModal, setShowGuardrailModal] = useState(false);
   const icon = entryIcon(entry);
   const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : "low";
   const color = riskColorRaw(tier);
@@ -76,7 +78,7 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
     <div>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg transition-colors"
+        className="group w-full flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg transition-colors"
         style={{
           backgroundColor: expanded ? "var(--cl-elevated)" : "transparent",
           boxShadow: riskLeftBorder(entry.riskScore),
@@ -134,6 +136,55 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
           </span>
         )}
 
+        {/* Guardrail badge */}
+        {entry.guardrailMatch && (
+          <span className="shrink-0" title={`Guardrail: ${entry.guardrailMatch.action.type}`}>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={
+                entry.guardrailMatch.action.type === "block"
+                  ? "#ef4444"
+                  : entry.guardrailMatch.action.type === "require_approval"
+                    ? "#fbbf24"
+                    : "#4ade80"
+              }
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </span>
+        )}
+
+        {/* Shield button — add guardrail */}
+        {entry.toolCallId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowGuardrailModal(true);
+            }}
+            className="shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+            title="Add guardrail"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--cl-text-muted)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </button>
+        )}
+
         {/* Chevron */}
         <svg
           width="12"
@@ -180,6 +231,16 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
           </div>
         </div>
       </div>
+
+      {/* Guardrail creation modal */}
+      {showGuardrailModal && (
+        <GuardrailModal
+          entry={entry}
+          description={description}
+          onClose={() => setShowGuardrailModal(false)}
+          onCreated={() => {}}
+        />
+      )}
     </div>
   );
 }

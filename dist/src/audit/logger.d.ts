@@ -81,6 +81,28 @@ export declare class AuditLogger extends EventEmitter {
         riskTier: NonNullable<AuditEntry["riskTier"]>;
         riskTags: string[];
     }): void;
+    /** Log a guardrail match event. */
+    logGuardrailMatch(data: {
+        timestamp: string;
+        toolCallId?: string;
+        toolName: string;
+        guardrailId: string;
+        action: {
+            type: string;
+            hours?: number;
+        };
+        identityKey: string;
+        agentId: string;
+        sessionKey?: string;
+    }): void;
+    /** Log a guardrail approval resolution. */
+    logGuardrailResolution(data: {
+        guardrailId: string;
+        toolCallId?: string;
+        toolName: string;
+        approved: boolean;
+        decision: string;
+    }): void;
     /** Flush the write stream. */
     flush(): Promise<void>;
     /** Read all entries from the audit log file. */

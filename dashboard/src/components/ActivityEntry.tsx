@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { EntryResponse } from "../lib/types";
 import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon } from "../lib/utils";
 import DecisionBadge from "./DecisionBadge";
+import GuardrailModal from "./GuardrailModal";
 import RiskDetail from "./RiskDetail";
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 export default function ActivityEntry({ entry, description }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [showGuardrailModal, setShowGuardrailModal] = useState(false);
   const icon = entryIcon(entry);
 
   const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : null;
@@ -23,7 +25,7 @@ export default function ActivityEntry({ entry, description }: Props) {
     <div>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
+        className="group w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
         style={{
           backgroundColor: expanded ? "var(--cl-elevated)" : "transparent",
         }}
@@ -104,6 +106,55 @@ export default function ActivityEntry({ entry, description }: Props) {
           </span>
         )}
 
+        {/* Guardrail badge */}
+        {entry.guardrailMatch && (
+          <span className="shrink-0" title={`Guardrail: ${entry.guardrailMatch.action.type}`}>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={
+                entry.guardrailMatch.action.type === "block"
+                  ? "#ef4444"
+                  : entry.guardrailMatch.action.type === "require_approval"
+                    ? "#fbbf24"
+                    : "#4ade80"
+              }
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </span>
+        )}
+
+        {/* Shield button — add guardrail */}
+        {entry.toolCallId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowGuardrailModal(true);
+            }}
+            className="shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+            title="Add guardrail"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--cl-text-muted)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </button>
+        )}
+
         {/* Timestamp */}
         <span className="font-mono text-xs shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
           {relTime(entry.timestamp)}
@@ -145,6 +196,16 @@ export default function ActivityEntry({ entry, description }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Guardrail creation modal */}
+      {showGuardrailModal && (
+        <GuardrailModal
+          entry={entry}
+          description={description}
+          onClose={() => setShowGuardrailModal(false)}
+          onCreated={() => {}}
+        />
+      )}
     </div>
   );
 }

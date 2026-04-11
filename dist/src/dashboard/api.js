@@ -1,4 +1,5 @@
 import { AuditLogger } from "../audit/logger";
+import { extractIdentityKey } from "../guardrails/identity";
 import { parseExecCommand } from "../risk/exec-parser";
 import { computeBreakdown, describeAction, getCategory, parseSessionContext, riskPosture, } from "./categories";
 // ── Internal helpers ────────────────────────────────────
@@ -44,10 +45,19 @@ function getEffectiveScore(entry, evalIdx) {
     }
     return entry.riskScore;
 }
-function mapEntry(entry, evalIndex) {
+function mapEntry(entry, evalIndex, guardrailStore) {
     // If there's an LLM eval for this tool call, use its adjusted score/tier/tags
     const evalEntry = entry.toolCallId ? evalIndex?.get(entry.toolCallId) : undefined;
     const llmEval = evalEntry?.llmEvaluation ?? entry.llmEvaluation;
+    // Check if an active guardrail matches this entry
+    let guardrailMatch;
+    if (guardrailStore && entry.agentId && entry.decision) {
+        const key = extractIdentityKey(entry.toolName, entry.params);
+        const matched = guardrailStore.peek(entry.agentId, entry.toolName, key);
+        if (matched) {
+            guardrailMatch = { id: matched.id, action: matched.action };
+        }
+    }
     return {
         timestamp: entry.timestamp,
         toolName: entry.toolName,
@@ -71,6 +81,7 @@ function mapEntry(entry, evalIndex) {
         execCategory: entry.toolName === "exec" && typeof entry.params.command === "string"
             ? parseExecCommand(entry.params.command).category
             : undefined,
+        guardrailMatch,
     };
 }
 /** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
@@ -299,7 +310,7 @@ export function computeStats(entries) {
     };
 }
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */
-export function getRecentEntries(entries, limit, offset, filters) {
+export function getRecentEntries(entries, limit, offset, filters, guardrailStore) {
     const evalIdx = buildEvalIndex(entries);
     let filtered = entries.filter(isDecisionEntry);
     if (filters) {
@@ -331,7 +342,7 @@ export function getRecentEntries(entries, limit, offset, filters) {
         }
     }
     const reversed = filtered.reverse();
-    return reversed.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx));
+    return reversed.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx, guardrailStore));
 }
 /** Verify the hash chain integrity of all entries. */
 export function checkHealth(entries) {

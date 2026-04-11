@@ -1,6 +1,9 @@
 import { formatAlert, sendAlert, shouldAlert } from "../alerts/telegram";
 import type { AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
+import { extractIdentityKey } from "../guardrails/identity";
+import type { GuardrailStore } from "../guardrails/store";
+import type { Guardrail } from "../guardrails/types";
 import type { EvalCache } from "../risk/eval-cache";
 import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
@@ -17,6 +20,7 @@ export interface BeforeToolCallDeps {
   auditLogger: AuditLogger;
   config: ClawLensConfig;
   sessionContext: SessionContext;
+  guardrailStore?: GuardrailStore;
   evalCache?: EvalCache;
   alertSend?: (msg: string) => Promise<void> | void;
   logger?: import("../types").PluginLogger;
@@ -29,7 +33,7 @@ export interface BeforeToolCallDeps {
 }
 
 export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
-  const { auditLogger, config, sessionContext, evalCache, alertSend } = deps;
+  const { auditLogger, config, sessionContext, evalCache, alertSend, guardrailStore } = deps;
 
   return async (
     event: BeforeToolCallEvent,
@@ -40,8 +44,59 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
 
     const { toolName, params, toolCallId } = event;
     const sessionKey = (ctx?.sessionKey as string) || "default";
+    const agentId = (ctx?.agentId as string) || "unknown";
 
     try {
+      // ── Guardrail check (before risk scoring) ──────────
+      if (guardrailStore) {
+        const identityKey = extractIdentityKey(toolName, params);
+        const matched = guardrailStore.match(agentId, toolName, identityKey);
+
+        if (matched) {
+          auditLogger.logGuardrailMatch({
+            timestamp: new Date().toISOString(),
+            toolCallId,
+            toolName,
+            guardrailId: matched.id,
+            action: matched.action,
+            identityKey,
+            agentId,
+            sessionKey: sessionKey !== "default" ? sessionKey : undefined,
+          });
+
+          if (matched.action.type === "block") {
+            return {
+              block: true,
+              blockReason: `ClawLens guardrail: "${matched.description}" is blocked`,
+            };
+          }
+
+          if (matched.action.type === "require_approval") {
+            return {
+              requireApproval: {
+                title: "ClawLens Guardrail",
+                description: formatGuardrailApproval(matched, toolName, params),
+                severity: "warning",
+                timeoutMs: 300_000,
+                timeoutBehavior: "deny",
+                pluginId: "clawlens",
+                onResolution: (decision) => {
+                  auditLogger.logGuardrailResolution({
+                    guardrailId: matched.id,
+                    toolCallId,
+                    toolName,
+                    approved: decision === "allow-once" || decision === "allow-always",
+                    decision,
+                  });
+                },
+              },
+            };
+          }
+
+          // allow_once and allow_hours: fall through to normal scoring path
+        }
+      }
+
       // Compute risk score
       const risk: RiskScore = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
 
@@ -207,4 +262,31 @@ function getTierFromScore(score: number): "low" | "medium" | "high" | "critical"
   if (score >= 60) return "high";
   if (score >= 30) return "medium";
   return "low";
+}
+
+function formatGuardrailApproval(
+  guardrail: Guardrail,
+  toolName: string,
+  params: Record<string, unknown>,
+): string {
+  const cmd =
+    typeof params.command === "string"
+      ? params.command
+      : typeof params.path === "string"
+        ? params.path
+        : typeof params.url === "string"
+          ? params.url
+          : "";
+  const action = cmd ? `${toolName} — ${cmd}` : toolName;
+  const tier = getTierFromScore(guardrail.riskScore).toUpperCase();
+  const date = new Date(guardrail.createdAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  return [
+    `Agent: ${guardrail.agentId ?? "all agents"}`,
+    `Action: ${action}`,
+    `Risk: ${guardrail.riskScore} ${tier}`,
+    `Guardrail: "Require Approval" (added ${date})`,
+  ].join("\n");
 }

@@ -186,6 +186,58 @@ export class AuditLogger extends EventEmitter {
     });
   }
 
+  /** Log a guardrail match event. */
+  logGuardrailMatch(data: {
+    timestamp: string;
+    toolCallId?: string;
+    toolName: string;
+    guardrailId: string;
+    action: { type: string; hours?: number };
+    identityKey: string;
+    agentId: string;
+    sessionKey?: string;
+  }): void {
+    this.append({
+      timestamp: data.timestamp,
+      toolName: data.toolName,
+      toolCallId: data.toolCallId,
+      params: {
+        guardrailId: data.guardrailId,
+        guardrailAction: data.action.type,
+        identityKey: data.identityKey,
+      },
+      decision:
+        data.action.type === "block"
+          ? "block"
+          : data.action.type === "require_approval"
+            ? "approval_required"
+            : "allow",
+      agentId: data.agentId,
+      sessionKey: data.sessionKey,
+    });
+  }
+
+  /** Log a guardrail approval resolution. */
+  logGuardrailResolution(data: {
+    guardrailId: string;
+    toolCallId?: string;
+    toolName: string;
+    approved: boolean;
+    decision: string;
+  }): void {
+    this.append({
+      timestamp: new Date().toISOString(),
+      toolName: data.toolName,
+      toolCallId: data.toolCallId,
+      params: {
+        guardrailId: data.guardrailId,
+        resolution: data.decision,
+      },
+      decision: data.approved ? "allow" : "block",
+      userResponse: data.approved ? "approved" : "denied",
+    });
+  }
+
   /** Flush the write stream. */
   async flush(): Promise<void> {
     return new Promise<void>((resolve, reject) => {

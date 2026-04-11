@@ -1,5 +1,6 @@
 import type { AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
+import type { GuardrailStore } from "../guardrails/store";
 import type { EvalCache } from "../risk/eval-cache";
 import type { SessionContext } from "../risk/session-context";
 import type { BeforeToolCallEvent, BeforeToolCallResult, EmbeddedAgentRuntime, ModelAuth } from "../types";
@@ -7,6 +8,7 @@ export interface BeforeToolCallDeps {
     auditLogger: AuditLogger;
     config: ClawLensConfig;
     sessionContext: SessionContext;
+    guardrailStore?: GuardrailStore;
     evalCache?: EvalCache;
     alertSend?: (msg: string) => Promise<void> | void;
     logger?: import("../types").PluginLogger;

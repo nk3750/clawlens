@@ -1,5 +1,7 @@
 import type { AuditEntry } from "../audit/logger";
 import { AuditLogger } from "../audit/logger";
+import { extractIdentityKey } from "../guardrails/identity";
+import type { GuardrailStore } from "../guardrails/store";
 import { parseExecCommand } from "../risk/exec-parser";
 import {
   type ActivityCategory,
@@ -79,6 +81,11 @@ export interface EntryResponse {
   category: ActivityCategory;
   /** Exec sub-category from parseExecCommand (only set for exec tool calls). */
   execCategory?: string;
+  /** Present when an active guardrail matches this entry's tool + identity key. */
+  guardrailMatch?: {
+    id: string;
+    action: { type: string; hours?: number };
+  };
 }
 
 export interface HealthResponse {
@@ -215,10 +222,24 @@ function getEffectiveScore(
   return entry.riskScore;
 }
 
-function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>): EntryResponse {
+function mapEntry(
+  entry: AuditEntry,
+  evalIndex?: Map<string, AuditEntry>,
+  guardrailStore?: GuardrailStore,
+): EntryResponse {
   // If there's an LLM eval for this tool call, use its adjusted score/tier/tags
   const evalEntry = entry.toolCallId ? evalIndex?.get(entry.toolCallId) : undefined;
   const llmEval = evalEntry?.llmEvaluation ?? entry.llmEvaluation;
+
+  // Check if an active guardrail matches this entry
+  let guardrailMatch: EntryResponse["guardrailMatch"];
+  if (guardrailStore && entry.agentId && entry.decision) {
+    const key = extractIdentityKey(entry.toolName, entry.params);
+    const matched = guardrailStore.peek(entry.agentId, entry.toolName, key);
+    if (matched) {
+      guardrailMatch = { id: matched.id, action: matched.action };
+    }
+  }
 
   return {
     timestamp: entry.timestamp,
@@ -244,6 +265,7 @@ function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>): Entry
       entry.toolName === "exec" && typeof entry.params.command === "string"
         ? parseExecCommand(entry.params.command).category
         : undefined,
+    guardrailMatch,
   };
 }
 
@@ -498,6 +520,7 @@ export function getRecentEntries(
   limit: number,
   offset: number,
   filters?: EntryFilters,
+  guardrailStore?: GuardrailStore,
 ): EntryResponse[] {
   const evalIdx = buildEvalIndex(entries);
   let filtered = entries.filter(isDecisionEntry);
@@ -532,7 +555,7 @@ export function getRecentEntries(
   }
 
   const reversed = filtered.reverse();
-  return reversed.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx));
+  return reversed.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx, guardrailStore));
 }
 
 /** Verify the hash chain integrity of all entries. */

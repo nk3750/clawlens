@@ -1,4 +1,5 @@
 import type { AuditEntry } from "../audit/logger";
+import type { GuardrailStore } from "../guardrails/store";
 import { type ActivityCategory, type RiskPosture } from "./categories";
 export interface StatsResponse {
     total: number;
@@ -63,6 +64,14 @@ export interface EntryResponse {
     category: ActivityCategory;
     /** Exec sub-category from parseExecCommand (only set for exec tool calls). */
     execCategory?: string;
+    /** Present when an active guardrail matches this entry's tool + identity key. */
+    guardrailMatch?: {
+        id: string;
+        action: {
+            type: string;
+            hours?: number;
+        };
+    };
 }
 export interface HealthResponse {
     valid: boolean;
@@ -152,7 +161,7 @@ export declare function getInterventions(entries: AuditEntry[], date?: string): 
 /** Compute today's decision counts. */
 export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */
-export declare function getRecentEntries(entries: AuditEntry[], limit: number, offset: number, filters?: EntryFilters): EntryResponse[];
+export declare function getRecentEntries(entries: AuditEntry[], limit: number, offset: number, filters?: EntryFilters, guardrailStore?: GuardrailStore): EntryResponse[];
 /** Verify the hash chain integrity of all entries. */
 export declare function checkHealth(entries: AuditEntry[]): HealthResponse;
 /** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */

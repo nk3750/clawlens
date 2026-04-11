@@ -1,5 +1,6 @@
 export interface ClawLensConfig {
     auditLogPath: string;
+    guardrailsPath: string;
     retention: string;
     digest: {
         schedule: string;

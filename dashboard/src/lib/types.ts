@@ -72,6 +72,11 @@ export interface EntryResponse {
   category: ActivityCategory;
   /** Exec sub-category (only set for exec tool calls). */
   execCategory?: string;
+  /** Present when an active guardrail matches this entry. */
+  guardrailMatch?: {
+    id: string;
+    action: GuardrailAction;
+  };
 }
 
 
@@ -149,4 +154,30 @@ export interface AgentDetailResponse {
 export interface SessionDetailResponse {
   session: SessionInfo;
   entries: EntryResponse[];
+}
+
+// ── Guardrails ────────────────────────────────────────
+
+export type GuardrailAction =
+  | { type: "block" }
+  | { type: "require_approval" }
+  | { type: "allow_once" }
+  | { type: "allow_hours"; hours: number };
+
+export interface Guardrail {
+  id: string;
+  tool: string;
+  identityKey: string;
+  matchMode: "exact";
+  action: GuardrailAction;
+  agentId: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  source: {
+    toolCallId: string;
+    sessionKey: string;
+    agentId: string;
+  };
+  description: string;
+  riskScore: number;
 }

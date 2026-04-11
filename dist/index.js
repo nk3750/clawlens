@@ -4,6 +4,7 @@ import { exportToCSV, exportToJSON } from "./src/audit/exporter";
 import { AuditLogger } from "./src/audit/logger";
 import { resolveConfig } from "./src/config";
 import { registerDashboardRoutes } from "./src/dashboard/routes";
+import { GuardrailStore } from "./src/guardrails/store";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createSessionEndHandler } from "./src/hooks/session-end";
@@ -46,6 +47,8 @@ const plugin = {
             const auditLogger = new AuditLogger(config.auditLogPath);
             const sessionContext = new SessionContext();
             const evalCache = new EvalCache();
+            const guardrailStore = new GuardrailStore(config.guardrailsPath);
+            guardrailStore.load();
             // Alert send function — uses gateway method if available
             let alertSend;
             try {
@@ -66,6 +69,7 @@ const plugin = {
                 auditLogger,
                 config,
                 sessionContext,
+                guardrailStore,
                 evalCache,
                 alertSend,
                 logger: api.logger,
@@ -97,7 +101,7 @@ const plugin = {
         }
         // ── One-time registrations: service, CLI, dashboard ──
         if (!_serviceRegistered) {
-            const { auditLogger, evalCache } = _handlerDeps;
+            const { auditLogger, evalCache, guardrailStore: grStore } = _handlerDeps;
             api.registerService({
                 id: "clawlens",
                 start: async () => {
@@ -173,6 +177,7 @@ const plugin = {
                 provider,
                 agent: typedRuntime?.agent,
                 openClawConfig: api.config,
+                guardrailStore: grStore,
             });
             _serviceRegistered = true;
         }

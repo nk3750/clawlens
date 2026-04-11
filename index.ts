@@ -4,6 +4,7 @@ import { exportToCSV, exportToJSON } from "./src/audit/exporter";
 import { AuditLogger } from "./src/audit/logger";
 import { resolveConfig } from "./src/config";
 import { registerDashboardRoutes } from "./src/dashboard/routes";
+import { GuardrailStore } from "./src/guardrails/store";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { type BeforeToolCallDeps, createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createSessionEndHandler } from "./src/hooks/session-end";
@@ -70,6 +71,8 @@ const plugin: OpenClawPluginDefinition = {
       const auditLogger = new AuditLogger(config.auditLogPath);
       const sessionContext = new SessionContext();
       const evalCache = new EvalCache();
+      const guardrailStore = new GuardrailStore(config.guardrailsPath);
+      guardrailStore.load();
 
       // Alert send function — uses gateway method if available
       let alertSend: ((msg: string) => Promise<void> | void) | undefined;
@@ -91,6 +94,7 @@ const plugin: OpenClawPluginDefinition = {
         auditLogger,
         config,
         sessionContext,
+        guardrailStore,
         evalCache,
         alertSend,
         logger: api.logger,
@@ -124,7 +128,7 @@ const plugin: OpenClawPluginDefinition = {
 
     // ── One-time registrations: service, CLI, dashboard ──
     if (!_serviceRegistered) {
-      const { auditLogger, evalCache } = _handlerDeps;
+      const { auditLogger, evalCache, guardrailStore: grStore } = _handlerDeps;
 
       api.registerService({
         id: "clawlens",
@@ -215,6 +219,7 @@ const plugin: OpenClawPluginDefinition = {
         provider,
         agent: typedRuntime?.agent,
         openClawConfig: api.config as Record<string, unknown>,
+        guardrailStore: grStore as GuardrailStore,
       });
 
       _serviceRegistered = true;

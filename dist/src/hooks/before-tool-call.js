@@ -1,14 +1,61 @@
 import { formatAlert, sendAlert, shouldAlert } from "../alerts/telegram";
+import { extractIdentityKey } from "../guardrails/identity";
 import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
 export function createBeforeToolCallHandler(deps) {
-    const { auditLogger, config, sessionContext, evalCache, alertSend } = deps;
+    const { auditLogger, config, sessionContext, evalCache, alertSend, guardrailStore } = deps;
     return async (event, ctx) => {
         // Read session-scoped deps at call time — may be refreshed between sessions
         const { runtime, provider, logger, openClawConfig } = deps;
         const { toolName, params, toolCallId } = event;
         const sessionKey = ctx?.sessionKey || "default";
+        const agentId = ctx?.agentId || "unknown";
         try {
+            // ── Guardrail check (before risk scoring) ──────────
+            if (guardrailStore) {
+                const identityKey = extractIdentityKey(toolName, params);
+                const matched = guardrailStore.match(agentId, toolName, identityKey);
+                if (matched) {
+                    auditLogger.logGuardrailMatch({
+                        timestamp: new Date().toISOString(),
+                        toolCallId,
+                        toolName,
+                        guardrailId: matched.id,
+                        action: matched.action,
+                        identityKey,
+                        agentId,
+                        sessionKey: sessionKey !== "default" ? sessionKey : undefined,
+                    });
+                    if (matched.action.type === "block") {
+                        return {
+                            block: true,
+                            blockReason: `ClawLens guardrail: "${matched.description}" is blocked`,
+                        };
+                    }
+                    if (matched.action.type === "require_approval") {
+                        return {
+                            requireApproval: {
+                                title: "ClawLens Guardrail",
+                                description: formatGuardrailApproval(matched, toolName, params),
+                                severity: "warning",
+                                timeoutMs: 300_000,
+                                timeoutBehavior: "deny",
+                                pluginId: "clawlens",
+                                onResolution: (decision) => {
+                                    auditLogger.logGuardrailResolution({
+                                        guardrailId: matched.id,
+                                        toolCallId,
+                                        toolName,
+                                        approved: decision === "allow-once" || decision === "allow-always",
+                                        decision,
+                                    });
+                                },
+                            },
+                        };
+                    }
+                    // allow_once and allow_hours: fall through to normal scoring path
+                }
+            }
             // Compute risk score
             const risk = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
             // Record in session context
@@ -136,7 +183,7 @@ export function createBeforeToolCallHandler(deps) {
             }
             return;
         }
-        catch (err) {
+        catch {
             // Never block — just log the error and allow through
             auditLogger.logDecision({
                 timestamp: new Date().toISOString(),
@@ -158,5 +205,26 @@ function getTierFromScore(score) {
     if (score >= 30)
         return "medium";
     return "low";
+}
+function formatGuardrailApproval(guardrail, toolName, params) {
+    const cmd = typeof params.command === "string"
+        ? params.command
+        : typeof params.path === "string"
+            ? params.path
+            : typeof params.url === "string"
+                ? params.url
+                : "";
+    const action = cmd ? `${toolName} — ${cmd}` : toolName;
+    const tier = getTierFromScore(guardrail.riskScore).toUpperCase();
+    const date = new Date(guardrail.createdAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+    });
+    return [
+        `Agent: ${guardrail.agentId ?? "all agents"}`,
+        `Action: ${action}`,
+        `Risk: ${guardrail.riskScore} ${tier}`,
+        `Guardrail: "Require Approval" (added ${date})`,
+    ].join("\n");
 }
 //# sourceMappingURL=before-tool-call.js.map
