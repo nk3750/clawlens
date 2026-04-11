@@ -23,7 +23,8 @@ paths:
 
 ## Hook Pipeline
 - `before_tool_call` handler is **async** — LLM evals are awaited (blocking for score >= 50)
-- Guardrail check runs first, before risk scoring (when implemented)
+- No policy engine or mode toggle — handler always allows through after scoring + logging
+- Guardrail check will run first, before risk scoring (see `docs/product/guardrails-spec.md`)
 - Audit log writes are async fire-and-forget in `after_tool_call`
 - **< 50ms overhead** for auto-allowed actions
 
