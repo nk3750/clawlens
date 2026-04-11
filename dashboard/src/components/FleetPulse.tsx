@@ -129,6 +129,14 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
         <span style={{ color: stats.blocked > 0 ? riskColorRaw("high") : undefined }}>
           {stats.blocked} blocked
         </span>
+        {stats.timedOut > 0 && (
+          <>
+            <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
+            <span style={{ color: riskColorRaw("medium") }}>
+              {stats.timedOut} timed out
+            </span>
+          </>
+        )}
         <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
         <Link
           to="/guardrails"
