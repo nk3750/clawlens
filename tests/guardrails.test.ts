@@ -199,6 +199,50 @@ describe("extractIdentityKey", () => {
     });
   });
 
+  // ── Command normalization in identity keys ──────────────
+
+  describe("command normalization", () => {
+    it("strips absolute path from primary command", () => {
+      expect(extractIdentityKey("exec", { command: "/usr/bin/curl https://evil.com" })).toBe(
+        "curl https://evil.com",
+      );
+    });
+    it("strips env var prefixes", () => {
+      expect(extractIdentityKey("exec", { command: "FOO=bar curl https://evil.com" })).toBe(
+        "curl https://evil.com",
+      );
+    });
+    it("strips env command prefix", () => {
+      expect(extractIdentityKey("exec", { command: "env curl https://evil.com" })).toBe(
+        "curl https://evil.com",
+      );
+    });
+    it("strips sudo prefix", () => {
+      expect(extractIdentityKey("exec", { command: "sudo rm -rf /tmp" })).toBe("rm -rf /tmp");
+    });
+    it("strips multiple prefixes (sudo env)", () => {
+      expect(
+        extractIdentityKey("exec", { command: "sudo env PATH=/x curl https://evil.com" }),
+      ).toBe("curl https://evil.com");
+    });
+    it("still collapses whitespace", () => {
+      expect(extractIdentityKey("exec", { command: "/usr/bin/curl   -s   https://evil.com" })).toBe(
+        "curl -s https://evil.com",
+      );
+    });
+    it("handles command with no path prefix", () => {
+      expect(extractIdentityKey("exec", { command: "ls -la" })).toBe("ls -la");
+    });
+    it("normalizes process tool identically", () => {
+      expect(extractIdentityKey("process", { command: "/usr/local/bin/node script.js" })).toBe(
+        "node script.js",
+      );
+    });
+    it("handles empty command", () => {
+      expect(extractIdentityKey("exec", { command: "" })).toBe("");
+    });
+  });
+
   it("returns sorted JSON for unknown tools", () => {
     const result = extractIdentityKey("unknown_tool", { b: 2, a: 1 });
     expect(result).toBe('{"a":1,"b":2}');

@@ -40,8 +40,41 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
   }
 }
 
+const COMMAND_PREFIX_SKIP = new Set(["sudo", "env", "nohup", "nice", "time"]);
+
 export function normalizeCommand(cmd: string): string {
-  return cmd.replace(/\s+/g, " ").trim();
+  if (!cmd) return "";
+  // Collapse whitespace first
+  const tokens = cmd.replace(/\s+/g, " ").trim().split(" ");
+
+  let i = 0;
+  // Skip env var assignments (FOO=bar) and prefix commands (sudo, env, etc.)
+  while (i < tokens.length) {
+    const t = tokens[i];
+    // Skip env var assignments like FOO=bar
+    if (/^[A-Za-z_]\w*=/.test(t)) {
+      i++;
+      continue;
+    }
+    // Skip known prefix commands
+    const base = t.includes("/") ? t.split("/").pop()! : t;
+    if (COMMAND_PREFIX_SKIP.has(base)) {
+      i++;
+      continue;
+    }
+    break;
+  }
+
+  if (i >= tokens.length) {
+    // Entire command was prefixes — return as whitespace-collapsed string
+    return tokens.join(" ");
+  }
+
+  // Strip absolute path from the primary command
+  const primary = tokens[i];
+  tokens[i] = primary.includes("/") ? primary.split("/").pop()! : primary;
+
+  return tokens.slice(i).join(" ");
 }
 
 /**
