@@ -11,10 +11,6 @@ function actionLabel(action: GuardrailAction): string {
       return "BLOCK";
     case "require_approval":
       return "REQUIRE APPROVAL";
-    case "allow_once":
-      return "ALLOW ONCE";
-    case "allow_hours":
-      return `ALLOW FOR ${action.hours}H`;
   }
 }
 
@@ -24,19 +20,7 @@ function actionColor(action: GuardrailAction): string {
       return "#ef4444";
     case "require_approval":
       return "#fbbf24";
-    case "allow_once":
-      return "#4ade80";
-    case "allow_hours":
-      return "#4ade80";
   }
-}
-
-function expiryText(g: Guardrail): string {
-  if (!g.expiresAt) return "permanent";
-  const remaining = new Date(g.expiresAt).getTime() - Date.now();
-  if (remaining <= 0) return "expired";
-  const hours = Math.ceil(remaining / 3_600_000);
-  return hours > 24 ? `expires in ${Math.round(hours / 24)}d` : `expires in ${hours}h`;
 }
 
 export default function Guardrails() {
@@ -125,8 +109,6 @@ export default function Guardrails() {
           <option value="">All actions</option>
           <option value="block">Block</option>
           <option value="require_approval">Require Approval</option>
-          <option value="allow_once">Allow Once</option>
-          <option value="allow_hours">Allow (timed)</option>
         </select>
       </div>
 
@@ -204,9 +186,6 @@ function GuardrailRow({
           </span>
           <span className="text-xs" style={{ color: "var(--cl-text-muted)" }}>
             {g.agentId ?? "all agents"}
-          </span>
-          <span className="text-xs" style={{ color: "var(--cl-text-muted)" }}>
-            {expiryText(g)}
           </span>
           <span className="text-xs" style={{ color: "var(--cl-text-muted)" }}>
             added {relTime(g.createdAt)}

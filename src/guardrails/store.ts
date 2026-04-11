@@ -2,7 +2,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { lookupKey } from "./identity";
-import type { Guardrail, GuardrailFile } from "./types";
+import { type Guardrail, type GuardrailFile, isValidGuardrailAction } from "./types";
 
 export class GuardrailStore {
   private byKey = new Map<string, Guardrail>();
@@ -13,7 +13,7 @@ export class GuardrailStore {
     this.filePath = filePath;
   }
 
-  /** Load guardrails from disk into memory. Cleans expired entries on load. */
+  /** Load guardrails from disk into memory. Migrates out invalid action types. */
   load(): void {
     this.byKey.clear();
     this.all = [];
@@ -30,8 +30,14 @@ export class GuardrailStore {
       return;
     }
 
+    // Migration: filter out guardrails with invalid action types (allow_once, allow_hours)
+    const before = this.all.length;
+    this.all = this.all.filter((g) => isValidGuardrailAction(g.action));
+    if (this.all.length !== before) {
+      this.save();
+    }
+
     this.rebuildIndex();
-    this.cleanExpired();
   }
 
   /** Persist guardrails to disk atomically (write tmp + rename). */
@@ -65,16 +71,12 @@ export class GuardrailStore {
   }
 
   /** Update fields on an existing guardrail. */
-  update(
-    id: string,
-    patch: Partial<Pick<Guardrail, "action" | "agentId" | "expiresAt">>,
-  ): Guardrail | null {
+  update(id: string, patch: Partial<Pick<Guardrail, "action" | "agentId">>): Guardrail | null {
     const guardrail = this.all.find((g) => g.id === id);
     if (!guardrail) return null;
 
     if (patch.action !== undefined) guardrail.action = patch.action;
     if (patch.agentId !== undefined) guardrail.agentId = patch.agentId;
-    if (patch.expiresAt !== undefined) guardrail.expiresAt = patch.expiresAt;
 
     this.rebuildIndex();
     this.save();
@@ -84,38 +86,20 @@ export class GuardrailStore {
   /**
    * Match a tool call against guardrails.
    * Checks agent-specific first, then global (*).
-   * Handles expiry and allow_once auto-removal.
    */
   match(agentId: string, tool: string, identityKey: string): Guardrail | null {
-    // Agent-specific check
     const agentKey = lookupKey(agentId, tool, identityKey);
     let guardrail = this.byKey.get(agentKey) ?? null;
 
-    // Global check
     if (!guardrail) {
       const globalKey = lookupKey("*", tool, identityKey);
       guardrail = this.byKey.get(globalKey) ?? null;
     }
 
-    if (!guardrail) return null;
-
-    // Check expiry
-    if (guardrail.expiresAt && new Date(guardrail.expiresAt).getTime() <= Date.now()) {
-      this.remove(guardrail.id);
-      return null;
-    }
-
-    // allow_once: apply then auto-remove
-    if (guardrail.action.type === "allow_once") {
-      const result = { ...guardrail };
-      this.remove(guardrail.id);
-      return result;
-    }
-
     return guardrail;
   }
 
-  /** Read-only match — checks for a matching guardrail without side effects (no auto-remove). */
+  /** Read-only match — checks for a matching guardrail without side effects. */
   peek(agentId: string, tool: string, identityKey: string): Guardrail | null {
     const agentKey = lookupKey(agentId, tool, identityKey);
     let guardrail = this.byKey.get(agentKey) ?? null;
@@ -125,14 +109,6 @@ export class GuardrailStore {
       guardrail = this.byKey.get(globalKey) ?? null;
     }
 
-    if (!guardrail) return null;
-
-    // Skip expired — and trigger lazy cleanup
-    if (guardrail.expiresAt && new Date(guardrail.expiresAt).getTime() <= Date.now()) {
-      this.cleanExpired();
-      return null;
-    }
-
     return guardrail;
   }
 
@@ -140,17 +116,6 @@ export class GuardrailStore {
   list(filters?: { agentId?: string }): Guardrail[] {
     if (!filters?.agentId) return [...this.all];
     return this.all.filter((g) => g.agentId === filters.agentId || g.agentId === null);
-  }
-
-  /** Remove expired guardrails. */
-  cleanExpired(): void {
-    const now = Date.now();
-    const before = this.all.length;
-    this.all = this.all.filter((g) => !g.expiresAt || new Date(g.expiresAt).getTime() > now);
-    if (this.all.length !== before) {
-      this.rebuildIndex();
-      this.save();
-    }
   }
 
   /** Generate a guardrail ID. */

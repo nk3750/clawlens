@@ -13,7 +13,6 @@ const BASE = "/plugins/clawlens";
 
 export default function GuardrailModal({ entry, description, onClose, onCreated }: Props) {
   const [actionType, setActionType] = useState<GuardrailAction["type"]>("block");
-  const [hours, setHours] = useState(24);
   const [scope, setScope] = useState<"agent" | "global">("agent");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,10 +24,7 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
     setSaving(true);
     setError(null);
 
-    const action: GuardrailAction =
-      actionType === "allow_hours"
-        ? { type: "allow_hours", hours }
-        : { type: actionType };
+    const action: GuardrailAction = { type: actionType };
 
     try {
       const res = await fetch(`${BASE}/api/guardrails`, {
@@ -38,7 +34,6 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
           toolCallId: entry.toolCallId,
           action,
           agentScope: scope,
-          expiresIn: actionType === "allow_hours" ? hours : undefined,
         }),
       });
       if (!res.ok) {
@@ -115,8 +110,6 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
           {([
             ["block", "Block"],
             ["require_approval", "Require Approval"],
-            ["allow_once", "Allow Once (then remove)"],
-            ["allow_hours", "Allow for"],
           ] as const).map(([value, label]) => (
             <label
               key={value}
@@ -136,24 +129,6 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
                 style={{ accentColor: "var(--cl-accent)" }}
               />
               <span className="text-sm">{label}</span>
-              {value === "allow_hours" && actionType === "allow_hours" && (
-                <span className="flex items-center gap-1 ml-1">
-                  <input
-                    type="number"
-                    min={1}
-                    max={720}
-                    value={hours}
-                    onChange={(e) => setHours(Math.max(1, Number(e.target.value)))}
-                    className="w-14 px-1.5 py-0.5 rounded text-sm font-mono text-center"
-                    style={{
-                      backgroundColor: "var(--cl-surface)",
-                      border: "1px solid var(--cl-border)",
-                      color: "var(--cl-text-primary)",
-                    }}
-                  />
-                  <span className="text-sm" style={{ color: "var(--cl-text-secondary)" }}>hours</span>
-                </span>
-              )}
             </label>
           ))}
         </div>

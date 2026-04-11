@@ -81,19 +81,31 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 timeoutBehavior: "deny",
                 pluginId: "clawlens",
                 onResolution: (decision) => {
+                  const approved = decision === "allow-once" || decision === "allow-always";
+
+                  let storeAction: "removed" | "unchanged" = "unchanged";
+                  if (decision === "allow-always" && guardrailStore) {
+                    const removed = guardrailStore.remove(matched.id);
+                    if (removed) {
+                      storeAction = "removed";
+                      logger?.info(
+                        `ClawLens: Guardrail ${matched.id} removed (allow-always resolution)`,
+                      );
+                    }
+                  }
+
                   auditLogger.logGuardrailResolution({
                     guardrailId: matched.id,
                     toolCallId,
                     toolName,
-                    approved: decision === "allow-once" || decision === "allow-always",
+                    approved,
                     decision,
+                    storeAction,
                   });
                 },
               },
             };
           }
-
-          // allow_once and allow_hours: fall through to normal scoring path
         }
       }
 

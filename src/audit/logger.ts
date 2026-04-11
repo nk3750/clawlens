@@ -192,7 +192,7 @@ export class AuditLogger extends EventEmitter {
     toolCallId?: string;
     toolName: string;
     guardrailId: string;
-    action: { type: string; hours?: number };
+    action: { type: string };
     identityKey: string;
     agentId: string;
     sessionKey?: string;
@@ -224,6 +224,7 @@ export class AuditLogger extends EventEmitter {
     toolName: string;
     approved: boolean;
     decision: string;
+    storeAction?: "removed" | "unchanged";
   }): void {
     this.append({
       timestamp: new Date().toISOString(),
@@ -232,6 +233,7 @@ export class AuditLogger extends EventEmitter {
       params: {
         guardrailId: data.guardrailId,
         resolution: data.decision,
+        storeAction: data.storeAction,
       },
       decision: data.approved ? "allow" : "block",
       userResponse: data.approved ? "approved" : "denied",

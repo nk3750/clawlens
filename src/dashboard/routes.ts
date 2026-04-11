@@ -76,11 +76,10 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           return true;
         }
         const body = await readBody(req);
-        const { toolCallId, action, agentScope, expiresIn } = body as {
+        const { toolCallId, action, agentScope } = body as {
           toolCallId: string;
           action: GuardrailAction;
           agentScope: "agent" | "global";
-          expiresIn?: number;
         };
         if (!toolCallId || !action) {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -91,15 +90,9 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
-              error:
-                "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+              error: "Invalid action. Must be block or require_approval",
             }),
           );
-          return true;
-        }
-        if (typeof expiresIn === "number" && expiresIn <= 0) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "expiresIn must be positive" }));
           return true;
         }
         const entries = deps.auditLogger.readEntries();
@@ -111,10 +104,6 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         }
         const identityKey = extractIdentityKey(entry.toolName, entry.params);
         const agentId = agentScope === "global" ? null : (entry.agentId ?? null);
-        const expiresAt =
-          action.type === "allow_hours" && typeof expiresIn === "number"
-            ? new Date(Date.now() + expiresIn * 3600_000).toISOString()
-            : null;
         const describeAction = (tn: string, p: Record<string, unknown>) => {
           const val =
             typeof p.command === "string"
@@ -136,7 +125,6 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           action,
           agentId,
           createdAt: new Date().toISOString(),
-          expiresAt,
           source: {
             toolCallId,
             sessionKey: entry.sessionKey ?? "",
@@ -172,14 +160,12 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         const patch = body as {
           action?: GuardrailAction;
           agentId?: string | null;
-          expiresAt?: string | null;
         };
         if (patch.action !== undefined && !isValidGuardrailAction(patch.action)) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
-              error:
-                "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+              error: "Invalid action. Must be block or require_approval",
             }),
           );
           return true;

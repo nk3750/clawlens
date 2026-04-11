@@ -406,7 +406,6 @@ describe("GuardrailStore", () => {
       action: { type: "block" },
       agentId: "test-agent",
       createdAt: new Date().toISOString(),
-      expiresAt: null,
       source: {
         toolCallId: "tc-001",
         sessionKey: "sess-001",
@@ -523,40 +522,6 @@ describe("GuardrailStore", () => {
       expect(result?.action.type).toBe("require_approval");
     });
 
-    it("removes expired guardrail on match", () => {
-      store.load();
-      const g = makeGuardrail({
-        expiresAt: new Date(Date.now() - 1000).toISOString(),
-      });
-      store.add(g);
-
-      const result = store.match("test-agent", "exec", "curl https://example.com");
-      expect(result).toBeNull();
-      expect(store.list()).toHaveLength(0);
-    });
-
-    it("returns non-expired guardrail", () => {
-      store.load();
-      const g = makeGuardrail({
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-      });
-      store.add(g);
-
-      const result = store.match("test-agent", "exec", "curl https://example.com");
-      expect(result?.id).toBe(g.id);
-    });
-
-    it("auto-removes allow_once after match", () => {
-      store.load();
-      const g = makeGuardrail({ action: { type: "allow_once" } });
-      store.add(g);
-
-      const result = store.match("test-agent", "exec", "curl https://example.com");
-      expect(result?.action.type).toBe("allow_once");
-      // Should be removed after match
-      expect(store.list()).toHaveLength(0);
-    });
-
     it("returns null for non-matching identity key", () => {
       store.load();
       store.add(makeGuardrail());
@@ -577,41 +542,20 @@ describe("GuardrailStore", () => {
   describe("peek()", () => {
     it("returns matching guardrail without side effects", () => {
       store.load();
-      const g = makeGuardrail({ action: { type: "allow_once" } });
+      const g = makeGuardrail({ action: { type: "require_approval" } });
       store.add(g);
 
       const result = store.peek("test-agent", "exec", "curl https://example.com");
       expect(result?.id).toBe(g.id);
-      // Not removed
       expect(store.list()).toHaveLength(1);
     });
 
-    it("skips expired and triggers lazy cleanup", () => {
+    it("returns null when no match", () => {
       store.load();
-      store.add(makeGuardrail({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
+      store.add(makeGuardrail());
 
-      const result = store.peek("test-agent", "exec", "curl https://example.com");
+      const result = store.peek("test-agent", "exec", "different command");
       expect(result).toBeNull();
-      // Cleaned by peek via cleanExpired()
-      expect(store.list()).toHaveLength(0);
-    });
-
-    it("lazily cleans expired on peek when expired encountered", () => {
-      store.load();
-      for (let i = 0; i < 5; i++) {
-        store.add(
-          makeGuardrail({
-            identityKey: `expired-${i}`,
-            expiresAt: new Date(Date.now() - 1000).toISOString(),
-          }),
-        );
-      }
-      store.add(makeGuardrail({ identityKey: "valid", expiresAt: null }));
-
-      // Peek hits an expired entry, triggering cleanup
-      store.peek("test-agent", "exec", "expired-0");
-      expect(store.list().length).toBe(1);
-      expect(store.list()[0].identityKey).toBe("valid");
     });
   });
 
@@ -624,15 +568,6 @@ describe("GuardrailStore", () => {
     const filtered = store.list({ agentId: "a" });
     // agent "a" + global (null)
     expect(filtered).toHaveLength(2);
-  });
-
-  it("cleanExpired() removes stale guardrails", () => {
-    store.load();
-    store.add(makeGuardrail({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
-    store.add(makeGuardrail({ expiresAt: null }));
-
-    store.cleanExpired();
-    expect(store.list()).toHaveLength(1);
   });
 
   it("lookup key handles identity keys containing colons", () => {
@@ -668,6 +603,81 @@ describe("GuardrailStore", () => {
 
     store.load();
     expect(store.list()).toEqual([]);
+  });
+
+  it("load() migration filters out allow_once and allow_hours guardrails", () => {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const data = {
+      version: 1,
+      guardrails: [
+        {
+          id: "gr_keep1",
+          tool: "exec",
+          identityKey: "cmd1",
+          matchMode: "exact",
+          action: { type: "block" },
+          agentId: "a",
+          createdAt: "2026-01-01T00:00:00Z",
+          expiresAt: null,
+          source: { toolCallId: "tc1", sessionKey: "s1", agentId: "a" },
+          description: "exec — cmd1",
+          riskScore: 50,
+        },
+        {
+          id: "gr_remove1",
+          tool: "exec",
+          identityKey: "cmd2",
+          matchMode: "exact",
+          action: { type: "allow_once" },
+          agentId: "a",
+          createdAt: "2026-01-01T00:00:00Z",
+          expiresAt: null,
+          source: { toolCallId: "tc2", sessionKey: "s1", agentId: "a" },
+          description: "exec — cmd2",
+          riskScore: 10,
+        },
+        {
+          id: "gr_remove2",
+          tool: "exec",
+          identityKey: "cmd3",
+          matchMode: "exact",
+          action: { type: "allow_hours", hours: 24 },
+          agentId: "a",
+          createdAt: "2026-01-01T00:00:00Z",
+          expiresAt: "2026-01-02T00:00:00Z",
+          source: { toolCallId: "tc3", sessionKey: "s1", agentId: "a" },
+          description: "exec — cmd3",
+          riskScore: 20,
+        },
+        {
+          id: "gr_keep2",
+          tool: "exec",
+          identityKey: "cmd4",
+          matchMode: "exact",
+          action: { type: "require_approval" },
+          agentId: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          expiresAt: null,
+          source: { toolCallId: "tc4", sessionKey: "s1", agentId: "a" },
+          description: "exec — cmd4",
+          riskScore: 60,
+        },
+      ],
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data));
+
+    store.load();
+    expect(store.list()).toHaveLength(2);
+    expect(
+      store
+        .list()
+        .map((g) => g.id)
+        .sort(),
+    ).toEqual(["gr_keep1", "gr_keep2"]);
+
+    // Verify cleaned file was saved
+    const saved = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    expect(saved.guardrails).toHaveLength(2);
   });
 });
 
@@ -737,7 +747,6 @@ describe("before_tool_call guardrail enforcement", () => {
       action: { type: "block" },
       agentId: "test-agent",
       createdAt: new Date().toISOString(),
-      expiresAt: null,
       source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
       description: "exec — curl https://evil.com",
       riskScore: 80,
@@ -774,7 +783,6 @@ describe("before_tool_call guardrail enforcement", () => {
       action: { type: "require_approval" },
       agentId: "test-agent",
       createdAt: new Date().toISOString(),
-      expiresAt: null,
       source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
       description: "exec — rm -rf /tmp/data",
       riskScore: 90,
@@ -797,46 +805,6 @@ describe("before_tool_call guardrail enforcement", () => {
     expect(result?.requireApproval?.severity).toBe("warning");
     expect(result?.requireApproval?.timeoutBehavior).toBe("deny");
     expect(auditLogger.logGuardrailMatch).toHaveBeenCalledOnce();
-  });
-
-  it("allows through and continues to scoring for allow_once", async () => {
-    const auditLogger = mockAuditLogger();
-    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
-    grStore.load();
-    grStore.add({
-      id: "gr_test3",
-      tool: "exec",
-      identityKey: "ls -la",
-      matchMode: "exact",
-      action: { type: "allow_once" },
-      agentId: "test-agent",
-      createdAt: new Date().toISOString(),
-      expiresAt: null,
-      source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
-      description: "exec — ls -la",
-      riskScore: 10,
-    });
-
-    const handler = createBeforeToolCallHandler({
-      auditLogger: auditLogger as never,
-      config: { ...DEFAULT_CONFIG, guardrailsPath: "" },
-      sessionContext: new SessionContext(),
-      guardrailStore: grStore,
-    });
-
-    const result = await handler(
-      { toolName: "exec", params: { command: "ls -la" }, toolCallId: "tc-004" },
-      ctx,
-    );
-
-    // Should fall through (undefined = allow)
-    expect(result).toBeUndefined();
-    // Risk scoring SHOULD have run
-    expect(mockComputeRiskScore).toHaveBeenCalledOnce();
-    // Guardrail match should be logged
-    expect(auditLogger.logGuardrailMatch).toHaveBeenCalledOnce();
-    // allow_once guardrail should have been consumed
-    expect(grStore.list()).toHaveLength(0);
   });
 
   it("passes through when no guardrail matches", async () => {
@@ -879,6 +847,165 @@ describe("before_tool_call guardrail enforcement", () => {
     expect(mockComputeRiskScore).toHaveBeenCalledOnce();
   });
 
+  it("allow-always resolution removes guardrail from store", async () => {
+    const auditLogger = mockAuditLogger();
+    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
+    grStore.load();
+    grStore.add({
+      id: "gr_allow_always",
+      tool: "exec",
+      identityKey: "safe-cmd",
+      matchMode: "exact",
+      action: { type: "require_approval" },
+      agentId: "test-agent",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
+      description: "exec — safe-cmd",
+      riskScore: 50,
+    });
+
+    const handler = createBeforeToolCallHandler({
+      auditLogger: auditLogger as never,
+      config: { ...DEFAULT_CONFIG, guardrailsPath: "" },
+      sessionContext: new SessionContext(),
+      guardrailStore: grStore,
+    });
+
+    const result = await handler(
+      { toolName: "exec", params: { command: "safe-cmd" }, toolCallId: "tc-aa" },
+      ctx,
+    );
+
+    result?.requireApproval?.onResolution?.("allow-always");
+
+    expect(grStore.list()).toHaveLength(0);
+    expect(auditLogger.logGuardrailResolution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guardrailId: "gr_allow_always",
+        approved: true,
+        decision: "allow-always",
+        storeAction: "removed",
+      }),
+    );
+  });
+
+  it("allow-once resolution leaves guardrail unchanged", async () => {
+    const auditLogger = mockAuditLogger();
+    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
+    grStore.load();
+    grStore.add({
+      id: "gr_allow_once",
+      tool: "exec",
+      identityKey: "maybe-cmd",
+      matchMode: "exact",
+      action: { type: "require_approval" },
+      agentId: "test-agent",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
+      description: "exec — maybe-cmd",
+      riskScore: 50,
+    });
+
+    const handler = createBeforeToolCallHandler({
+      auditLogger: auditLogger as never,
+      config: { ...DEFAULT_CONFIG, guardrailsPath: "" },
+      sessionContext: new SessionContext(),
+      guardrailStore: grStore,
+    });
+
+    const result = await handler(
+      { toolName: "exec", params: { command: "maybe-cmd" }, toolCallId: "tc-ao" },
+      ctx,
+    );
+
+    result?.requireApproval?.onResolution?.("allow-once");
+
+    expect(grStore.list()).toHaveLength(1);
+    expect(auditLogger.logGuardrailResolution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approved: true,
+        decision: "allow-once",
+        storeAction: "unchanged",
+      }),
+    );
+  });
+
+  it("deny resolution leaves guardrail unchanged", async () => {
+    const auditLogger = mockAuditLogger();
+    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
+    grStore.load();
+    grStore.add({
+      id: "gr_deny",
+      tool: "exec",
+      identityKey: "risky-cmd",
+      matchMode: "exact",
+      action: { type: "require_approval" },
+      agentId: "test-agent",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
+      description: "exec — risky-cmd",
+      riskScore: 70,
+    });
+
+    const handler = createBeforeToolCallHandler({
+      auditLogger: auditLogger as never,
+      config: { ...DEFAULT_CONFIG, guardrailsPath: "" },
+      sessionContext: new SessionContext(),
+      guardrailStore: grStore,
+    });
+
+    const result = await handler(
+      { toolName: "exec", params: { command: "risky-cmd" }, toolCallId: "tc-deny" },
+      ctx,
+    );
+
+    result?.requireApproval?.onResolution?.("deny");
+
+    expect(grStore.list()).toHaveLength(1);
+    expect(auditLogger.logGuardrailResolution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approved: false,
+        decision: "deny",
+        storeAction: "unchanged",
+      }),
+    );
+  });
+
+  it("storeAction field is logged in audit entry", async () => {
+    const auditLogger = mockAuditLogger();
+    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
+    grStore.load();
+    grStore.add({
+      id: "gr_audit",
+      tool: "exec",
+      identityKey: "audit-cmd",
+      matchMode: "exact",
+      action: { type: "require_approval" },
+      agentId: "test-agent",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
+      description: "exec — audit-cmd",
+      riskScore: 60,
+    });
+
+    const handler = createBeforeToolCallHandler({
+      auditLogger: auditLogger as never,
+      config: { ...DEFAULT_CONFIG, guardrailsPath: "" },
+      sessionContext: new SessionContext(),
+      guardrailStore: grStore,
+    });
+
+    const result = await handler(
+      { toolName: "exec", params: { command: "audit-cmd" }, toolCallId: "tc-audit" },
+      ctx,
+    );
+
+    result?.requireApproval?.onResolution?.("allow-always");
+
+    const call = auditLogger.logGuardrailResolution.mock.calls[0][0];
+    expect(call.storeAction).toBe("removed");
+  });
+
   it("require_approval onResolution logs guardrail resolution", async () => {
     const auditLogger = mockAuditLogger();
     const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
@@ -891,7 +1018,6 @@ describe("before_tool_call guardrail enforcement", () => {
       action: { type: "require_approval" },
       agentId: "test-agent",
       createdAt: new Date().toISOString(),
-      expiresAt: null,
       source: { toolCallId: "tc-orig", sessionKey: "s1", agentId: "test-agent" },
       description: "exec — dangerous-cmd",
       riskScore: 75,
@@ -958,23 +1084,17 @@ describe("guardrail action validation", () => {
   it("accepts require_approval", () => {
     expect(isValidGuardrailAction({ type: "require_approval" })).toBe(true);
   });
-  it("accepts allow_once", () => {
-    expect(isValidGuardrailAction({ type: "allow_once" })).toBe(true);
+  it("rejects allow_once (removed action type)", () => {
+    expect(isValidGuardrailAction({ type: "allow_once" })).toBe(false);
   });
-  it("accepts allow_hours with valid hours", () => {
-    expect(isValidGuardrailAction({ type: "allow_hours", hours: 24 })).toBe(true);
+  it("rejects allow_hours (removed action type)", () => {
+    expect(isValidGuardrailAction({ type: "allow_hours", hours: 24 })).toBe(false);
   });
   it("rejects unknown type", () => {
     expect(isValidGuardrailAction({ type: "allow_forever" })).toBe(false);
   });
   it("rejects missing type", () => {
     expect(isValidGuardrailAction({} as unknown)).toBe(false);
-  });
-  it("rejects allow_hours without hours", () => {
-    expect(isValidGuardrailAction({ type: "allow_hours" })).toBe(false);
-  });
-  it("rejects allow_hours with negative hours", () => {
-    expect(isValidGuardrailAction({ type: "allow_hours", hours: -1 })).toBe(false);
   });
   it("rejects null", () => {
     expect(isValidGuardrailAction(null)).toBe(false);
