@@ -6,11 +6,10 @@ import {
   extractIdentityKey,
   lookupKey,
   normalizeCommand,
-  normalizePath,
   normalizeUrl,
 } from "../src/guardrails/identity";
 import { GuardrailStore } from "../src/guardrails/store";
-import type { Guardrail, GuardrailAction } from "../src/guardrails/types";
+import type { Guardrail } from "../src/guardrails/types";
 import { isValidGuardrailAction } from "../src/guardrails/types";
 
 // ── Identity Key Extraction ──────────────────────────────────
