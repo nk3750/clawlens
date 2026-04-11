@@ -187,7 +187,7 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
       }
 
       return;
-    } catch (err) {
+    } catch {
       // Never block — just log the error and allow through
       auditLogger.logDecision({
         timestamp: new Date().toISOString(),
