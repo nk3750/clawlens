@@ -6,6 +6,8 @@
  * exact match guaranteed.
  */
 
+import * as nodePath from "node:path";
+
 export function extractIdentityKey(toolName: string, params: Record<string, unknown>): string {
   switch (toolName) {
     case "exec":
@@ -14,7 +16,7 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
     case "read":
     case "write":
     case "edit":
-      return String(params.path ?? params.file_path ?? "");
+      return normalizePath(String(params.path ?? params.file_path ?? ""));
     case "web_fetch":
     case "fetch_url":
       return normalizeUrl(String(params.url ?? ""));
@@ -40,6 +42,24 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
 
 export function normalizeCommand(cmd: string): string {
   return cmd.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Normalize a file path for stable identity key matching.
+ *
+ * - Resolves //, /./, /../ segments via path.normalize
+ * - Strips leading ./ (relative current-dir prefix)
+ * - Strips trailing slash (unless root /)
+ */
+export function normalizePath(raw: string): string {
+  if (!raw) return "";
+  // path.normalize handles //, /./, /../
+  let result = nodePath.normalize(raw);
+  // Strip trailing slash (unless root /)
+  if (result.length > 1 && result.endsWith("/")) {
+    result = result.slice(0, -1);
+  }
+  return result;
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   extractIdentityKey,
   lookupKey,
   normalizeCommand,
+  normalizePath,
   normalizeUrl,
 } from "../src/guardrails/identity";
 import { GuardrailStore } from "../src/guardrails/store";
@@ -167,6 +168,35 @@ describe("extractIdentityKey", () => {
     const unique = new Set(keys);
     expect(unique.size).toBe(1);
     expect(keys[0]).toBe("https://apnews.com");
+  });
+
+  // ── File path normalization in identity keys ────────────
+
+  describe("file path normalization", () => {
+    it("strips leading ./", () => {
+      expect(extractIdentityKey("read", { path: "./src/main.ts" })).toBe("src/main.ts");
+    });
+    it("collapses double slashes", () => {
+      expect(extractIdentityKey("write", { path: "src//main.ts" })).toBe("src/main.ts");
+    });
+    it("resolves . segments", () => {
+      expect(extractIdentityKey("edit", { path: "src/./main.ts" })).toBe("src/main.ts");
+    });
+    it("resolves .. segments", () => {
+      expect(extractIdentityKey("read", { path: "src/utils/../main.ts" })).toBe("src/main.ts");
+    });
+    it("strips trailing slash on file paths", () => {
+      expect(extractIdentityKey("read", { path: "/etc/config/" })).toBe("/etc/config");
+    });
+    it("preserves absolute path root", () => {
+      expect(extractIdentityKey("read", { path: "/etc/passwd" })).toBe("/etc/passwd");
+    });
+    it("normalizes file_path fallback too", () => {
+      expect(extractIdentityKey("read", { file_path: "./src//index.ts" })).toBe("src/index.ts");
+    });
+    it("handles empty path", () => {
+      expect(extractIdentityKey("read", { path: "" })).toBe("");
+    });
   });
 
   it("returns sorted JSON for unknown tools", () => {
