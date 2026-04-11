@@ -1041,6 +1041,82 @@ export function getSessions(
   };
 }
 
+// ── Activity Timeline ─────────────────────────────────
+
+export interface ActivityTimelineBucket {
+  start: string;
+  agentId: string;
+  counts: Record<ActivityCategory, number>;
+  total: number;
+  peakRisk: number;
+}
+
+export interface ActivityTimelineResponse {
+  agents: string[];
+  buckets: ActivityTimelineBucket[];
+  startTime: string;
+  endTime: string;
+  totalActions: number;
+}
+
+export function getActivityTimeline(
+  entries: AuditEntry[],
+  bucketMinutes = 15,
+  dateStr?: string,
+): ActivityTimelineResponse {
+  const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
+  const decisions = dayEntries.filter(isDecisionEntry);
+
+  if (decisions.length === 0) {
+    return { agents: [], buckets: [], startTime: "", endTime: "", totalActions: 0 };
+  }
+
+  const bucketMs = bucketMinutes * 60_000;
+  const bucketMap = new Map<string, ActivityTimelineBucket>();
+  const agentTotals = new Map<string, number>();
+
+  for (const entry of decisions) {
+    const agentId = entry.agentId ?? "unknown";
+    const ts = new Date(entry.timestamp).getTime();
+    const bucketStart = Math.floor(ts / bucketMs) * bucketMs;
+    const key = `${agentId}:${bucketStart}`;
+    const category = getCategory(entry.toolName);
+    const risk = entry.riskScore ?? 0;
+
+    let bucket = bucketMap.get(key);
+    if (!bucket) {
+      bucket = {
+        start: new Date(bucketStart).toISOString(),
+        agentId,
+        counts: { exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0 },
+        total: 0,
+        peakRisk: 0,
+      };
+      bucketMap.set(key, bucket);
+    }
+
+    bucket.counts[category]++;
+    bucket.total++;
+    if (risk > bucket.peakRisk) bucket.peakRisk = risk;
+    agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + 1);
+  }
+
+  const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+
+  const buckets = [...bucketMap.values()];
+  const timestamps = buckets.map((b) => new Date(b.start).getTime());
+  const minTs = Math.min(...timestamps);
+  const maxTs = Math.max(...timestamps) + bucketMs;
+
+  return {
+    agents,
+    buckets,
+    startTime: new Date(minTs).toISOString(),
+    endTime: new Date(maxTs).toISOString(),
+    totalActions: decisions.length,
+  };
+}
+
 /** Get full detail for a single session. */
 export function getSessionDetail(
   entries: AuditEntry[],

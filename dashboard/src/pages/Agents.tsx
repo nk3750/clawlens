@@ -4,7 +4,7 @@ import type { AgentInfo, Guardrail, InterventionEntry, StatsResponse } from "../
 import FleetPulse from "../components/FleetPulse";
 import NeedsAttention from "../components/NeedsAttention";
 import AgentCardCompact from "../components/AgentCardCompact";
-import LiveFeed from "../components/LiveFeed";
+import ActivityTimeline from "../components/ActivityTimeline";
 import ErrorCard from "../components/ErrorCard";
 
 export default function Agents() {
@@ -134,8 +134,8 @@ export default function Agents() {
         )}
       </section>
 
-      {/* Live Feed */}
-      <LiveFeed isToday={isToday} selectedDate={selectedDate} />
+      {/* Activity Timeline */}
+      <ActivityTimeline isToday={isToday} selectedDate={selectedDate} />
     </div>
   );
 }

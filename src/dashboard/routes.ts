@@ -11,6 +11,7 @@ import {
   checkHealth,
   computeEnhancedStats,
   type EntryFilters,
+  getActivityTimeline,
   getAgentDetail,
   getAgents,
   getInterventions,
@@ -223,6 +224,14 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
 
         const entries = deps.auditLogger.readEntries();
         sendJson(res, getRecentEntries(entries, limit, offset, filters, deps.guardrailStore));
+        return true;
+      }
+
+      if (subPath === "api/activity-timeline") {
+        const bucketMinutes = clampInt(url.searchParams.get("bucketMinutes"), 5, 60, 15);
+        const date = url.searchParams.get("date") || undefined;
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, getActivityTimeline(entries, bucketMinutes, date));
         return true;
       }
 

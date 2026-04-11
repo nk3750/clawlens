@@ -156,6 +156,24 @@ export interface SessionDetailResponse {
   entries: EntryResponse[];
 }
 
+// ── Activity Timeline ─────────────────────────────────
+
+export interface ActivityTimelineBucket {
+  start: string;
+  agentId: string;
+  counts: Record<ActivityCategory, number>;
+  total: number;
+  peakRisk: number;
+}
+
+export interface ActivityTimelineResponse {
+  agents: string[];
+  buckets: ActivityTimelineBucket[];
+  startTime: string;
+  endTime: string;
+  totalActions: number;
+}
+
 // ── Guardrails ────────────────────────────────────────
 
 export type GuardrailAction =

@@ -891,7 +891,7 @@ describe("before_tool_call guardrail enforcement", () => {
 
   it("allow-once resolution leaves guardrail unchanged", async () => {
     const auditLogger = mockAuditLogger();
-    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
+    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-ao-${Date.now()}.json`));
     grStore.load();
     grStore.add({
       id: "gr_allow_once",
@@ -932,7 +932,7 @@ describe("before_tool_call guardrail enforcement", () => {
 
   it("deny resolution leaves guardrail unchanged", async () => {
     const auditLogger = mockAuditLogger();
-    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-${Date.now()}.json`));
+    const grStore = new GuardrailStore(path.join(os.tmpdir(), `gr-test-deny-${Date.now()}.json`));
     grStore.load();
     grStore.add({
       id: "gr_deny",
