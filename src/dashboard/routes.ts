@@ -3,7 +3,6 @@ import type { ServerResponse } from "node:http";
 import * as path from "node:path";
 import type { AuditEntry, AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
-import type { PolicyEngine } from "../policy/engine";
 import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
 import {
   checkHealth,
@@ -22,7 +21,6 @@ import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
 
 export interface DashboardDeps {
-  engine: PolicyEngine;
   auditLogger: AuditLogger;
   pluginDir?: string;
   config?: ClawLensConfig;

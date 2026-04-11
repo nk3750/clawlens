@@ -1,9 +1,5 @@
 export interface ClawLensConfig {
-    /** "observe" = score and log everything, never block. "enforce" = apply policy decisions. */
-    mode: "observe" | "enforce";
-    policiesPath: string;
     auditLogPath: string;
-    rateStatePath: string;
     retention: string;
     digest: {
         schedule: string;

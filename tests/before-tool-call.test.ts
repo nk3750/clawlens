@@ -42,22 +42,6 @@ function mockLogger() {
   };
 }
 
-function mockPolicyEngine(action: "allow" | "block" | "approval_required" = "allow") {
-  return {
-    evaluate: vi.fn().mockReturnValue({
-      action,
-      ruleName: "test-rule",
-      reason: "test reason",
-      severity: "info",
-    }),
-    getPolicy: vi.fn().mockReturnValue({
-      defaults: { approval_timeout: 300, timeout_action: "deny" },
-      rules: [],
-    }),
-    load: vi.fn(),
-  };
-}
-
 function mockAuditLogger() {
   return {
     logDecision: vi.fn(),
@@ -66,16 +50,6 @@ function mockAuditLogger() {
     init: vi.fn(),
     readEntries: vi.fn().mockReturnValue([]),
     flush: vi.fn(),
-  };
-}
-
-function mockRateLimiter() {
-  return {
-    getCount: vi.fn().mockReturnValue(0),
-    record: vi.fn(),
-    restore: vi.fn(),
-    persist: vi.fn(),
-    cleanup: vi.fn(),
   };
 }
 
@@ -133,9 +107,7 @@ function makeConfig(overrides?: Partial<ClawLensConfig>): ClawLensConfig {
 
 function makeDeps(overrides?: Partial<BeforeToolCallDeps>): BeforeToolCallDeps {
   return {
-    engine: mockPolicyEngine() as unknown as BeforeToolCallDeps["engine"],
     auditLogger: mockAuditLogger() as unknown as BeforeToolCallDeps["auditLogger"],
-    rateLimiter: mockRateLimiter() as unknown as BeforeToolCallDeps["rateLimiter"],
     config: makeConfig(),
     sessionContext: new SessionContext(),
     evalCache: new EvalCache(),
@@ -178,7 +150,7 @@ describe("createBeforeToolCallHandler", () => {
 
     const result = await handler(makeEvent(), ctx);
 
-    // observe mode → returns undefined (allow through)
+    // Always returns undefined (allow through)
     expect(result).toBeUndefined();
     expect(mockEvaluateWithLlm).not.toHaveBeenCalled();
   });
@@ -361,39 +333,5 @@ describe("createBeforeToolCallHandler", () => {
       expect.anything(),
       undefined, // openClawConfig
     );
-  });
-
-  it("enforce mode blocks when policy says block", async () => {
-    mockComputeRiskScore.mockReturnValue(lowRisk());
-
-    const engine = mockPolicyEngine("block");
-    const deps = makeDeps({
-      engine: engine as unknown as BeforeToolCallDeps["engine"],
-      config: makeConfig({ mode: "enforce" }),
-    });
-    const handler = createBeforeToolCallHandler(deps);
-
-    const result = await handler(makeEvent(), ctx);
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        block: true,
-        blockReason: expect.stringContaining("test reason"),
-      }),
-    );
-  });
-
-  it("observe mode never blocks even when policy says block", async () => {
-    mockComputeRiskScore.mockReturnValue(lowRisk());
-
-    const engine = mockPolicyEngine("block");
-    const deps = makeDeps({
-      engine: engine as unknown as BeforeToolCallDeps["engine"],
-      config: makeConfig({ mode: "observe" }),
-    });
-    const handler = createBeforeToolCallHandler(deps);
-
-    const result = await handler(makeEvent(), ctx);
-    expect(result).toBeUndefined();
   });
 });

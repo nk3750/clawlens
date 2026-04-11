@@ -1,13 +1,11 @@
 import { generateDigest } from "../audit/digest";
 import type { AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
-import type { RateLimiter } from "../rate/limiter";
 import type { SessionContext } from "../risk/session-context";
 import type { PluginLogger, SessionEvent } from "../types";
 
 export function createSessionEndHandler(
   auditLogger: AuditLogger,
-  rateLimiter: RateLimiter,
   config: ClawLensConfig,
   logger: PluginLogger,
   sessionContext: SessionContext,
@@ -18,9 +16,6 @@ export function createSessionEndHandler(
 
     // Flush audit log
     await auditLogger.flush();
-
-    // Persist rate limiter state
-    rateLimiter.persist();
 
     // Generate digest if configured
     if (config.digest.schedule !== "off") {

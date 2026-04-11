@@ -2,11 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 export interface ClawLensConfig {
-  /** "observe" = score and log everything, never block. "enforce" = apply policy decisions. */
-  mode: "observe" | "enforce";
-  policiesPath: string;
   auditLogPath: string;
-  rateStatePath: string;
   retention: string;
   digest: {
     schedule: string;
@@ -32,10 +28,7 @@ export interface ClawLensConfig {
 const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawlens");
 
 export const DEFAULT_CONFIG: ClawLensConfig = {
-  mode: "observe",
-  policiesPath: path.join(DEFAULT_DIR, "policies.yaml"),
   auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
-  rateStatePath: path.join(DEFAULT_DIR, "rate-state.json"),
   retention: "30d",
   digest: {
     schedule: "daily",
@@ -64,13 +57,8 @@ export function resolveConfig(
   const riskCfg = pluginConfig.risk as Record<string, unknown> | undefined;
   const alertsCfg = pluginConfig.alerts as Record<string, unknown> | undefined;
 
-  const mode = pluginConfig.mode === "enforce" ? "enforce" : "observe";
-
   return {
-    mode,
-    policiesPath: resolve((pluginConfig.policiesPath as string) || DEFAULT_CONFIG.policiesPath),
     auditLogPath: resolve((pluginConfig.auditLogPath as string) || DEFAULT_CONFIG.auditLogPath),
-    rateStatePath: resolve((pluginConfig.rateStatePath as string) || DEFAULT_CONFIG.rateStatePath),
     retention: (pluginConfig.retention as string) || DEFAULT_CONFIG.retention,
     digest: {
       schedule:

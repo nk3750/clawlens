@@ -2,18 +2,13 @@ import { formatAlert, sendAlert, shouldAlert } from "../alerts/telegram";
 import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
 export function createBeforeToolCallHandler(deps) {
-    const { engine, auditLogger, rateLimiter, config, sessionContext, evalCache, alertSend } = deps;
+    const { auditLogger, config, sessionContext, evalCache, alertSend } = deps;
     return async (event, ctx) => {
         // Read session-scoped deps at call time — may be refreshed between sessions
         const { runtime, provider, logger, openClawConfig } = deps;
         const { toolName, params, toolCallId } = event;
         const sessionKey = ctx?.sessionKey || "default";
         try {
-            // Evaluate policy (for logging what *would* happen, even in observe mode)
-            const decision = engine.evaluate(toolName, params, (tn, rn, w) => rateLimiter.getCount(tn, rn, w));
-            const policy = engine.getPolicy();
-            const defaultTimeout = policy?.defaults.approval_timeout ?? 300;
-            const defaultTimeoutAction = policy?.defaults.timeout_action ?? "deny";
             // Compute risk score
             const risk = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
             // Record in session context
@@ -29,9 +24,7 @@ export function createBeforeToolCallHandler(deps) {
                 toolName,
                 toolCallId,
                 params,
-                policyRule: decision.ruleName,
-                decision: decision.action,
-                severity: decision.severity,
+                decision: "allow",
                 riskScore: risk.score,
                 riskTier: risk.tier,
                 riskTags: risk.tags,
@@ -141,60 +134,18 @@ export function createBeforeToolCallHandler(deps) {
                     }
                 }
             }
-            // Record for rate limiting (always, for tracking)
-            rateLimiter.record(toolName, decision.ruleName);
-            // ── Mode: observe (default) ──────────────────────────────
-            // Score, log, alert — but never block. Always return void.
-            if (config.mode === "observe") {
-                return;
-            }
-            // ── Mode: enforce ────────────────────────────────────────
-            // Apply policy decisions: block or require approval.
-            switch (decision.action) {
-                case "block":
-                    return {
-                        block: true,
-                        blockReason: `ClawLens: ${decision.reason || "Blocked by policy"}`,
-                    };
-                case "approval_required":
-                    return {
-                        requireApproval: {
-                            title: `ClawLens: ${decision.ruleName || "Policy approval"}`,
-                            description: formatApprovalDescription(toolName, params),
-                            severity: decision.severity || "warning",
-                            timeoutMs: (decision.timeout || defaultTimeout) * 1000,
-                            timeoutBehavior: decision.timeoutAction || defaultTimeoutAction,
-                            onResolution: (resolution) => {
-                                auditLogger.logApprovalResolution({
-                                    toolCallId,
-                                    toolName,
-                                    approved: resolution === "allow-once" || resolution === "allow-always",
-                                    resolvedBy: typeof resolution === "string" ? resolution : undefined,
-                                });
-                            },
-                        },
-                    };
-                default:
-                    return;
-            }
+            return;
         }
         catch (err) {
-            // In observe mode, never block — just log the error
+            // Never block — just log the error and allow through
             auditLogger.logDecision({
                 timestamp: new Date().toISOString(),
                 toolName,
                 toolCallId,
                 params,
-                decision: config.mode === "enforce" ? "block" : "allow",
+                decision: "allow",
                 severity: "critical",
             });
-            if (config.mode === "enforce") {
-                return {
-                    block: true,
-                    blockReason: `ClawLens: Internal error — blocked for safety. ${err instanceof Error ? err.message : String(err)}`,
-                };
-            }
-            // observe mode: log error, allow through
             return;
         }
     };
@@ -207,17 +158,5 @@ function getTierFromScore(score) {
     if (score >= 30)
         return "medium";
     return "low";
-}
-function formatApprovalDescription(toolName, params) {
-    const lines = [`The agent wants to use **${toolName}**`];
-    const interesting = ["command", "path", "url", "to", "content", "name"];
-    for (const key of interesting) {
-        if (params[key] !== undefined) {
-            const value = String(params[key]);
-            const display = value.length > 200 ? `${value.slice(0, 200)}\u2026` : value;
-            lines.push(`  ${key}: \`${display}\``);
-        }
-    }
-    return lines.join("\n");
 }
 //# sourceMappingURL=before-tool-call.js.map

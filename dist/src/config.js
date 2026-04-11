@@ -2,10 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawlens");
 export const DEFAULT_CONFIG = {
-    mode: "observe",
-    policiesPath: path.join(DEFAULT_DIR, "policies.yaml"),
     auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
-    rateStatePath: path.join(DEFAULT_DIR, "rate-state.json"),
     retention: "30d",
     digest: {
         schedule: "daily",
@@ -28,12 +25,8 @@ export function resolveConfig(pluginConfig, resolvePath) {
         return { ...DEFAULT_CONFIG };
     const riskCfg = pluginConfig.risk;
     const alertsCfg = pluginConfig.alerts;
-    const mode = pluginConfig.mode === "enforce" ? "enforce" : "observe";
     return {
-        mode,
-        policiesPath: resolve(pluginConfig.policiesPath || DEFAULT_CONFIG.policiesPath),
         auditLogPath: resolve(pluginConfig.auditLogPath || DEFAULT_CONFIG.auditLogPath),
-        rateStatePath: resolve(pluginConfig.rateStatePath || DEFAULT_CONFIG.rateStatePath),
         retention: pluginConfig.retention || DEFAULT_CONFIG.retention,
         digest: {
             schedule: pluginConfig.digest?.schedule ||

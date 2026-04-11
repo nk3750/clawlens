@@ -1,12 +1,10 @@
 import { generateDigest } from "../audit/digest";
-export function createSessionEndHandler(auditLogger, rateLimiter, config, logger, sessionContext) {
+export function createSessionEndHandler(auditLogger, config, logger, sessionContext) {
     return async (event, _ctx) => {
         // Clean up session context
         sessionContext.cleanup(event.sessionKey);
         // Flush audit log
         await auditLogger.flush();
-        // Persist rate limiter state
-        rateLimiter.persist();
         // Generate digest if configured
         if (config.digest.schedule !== "off") {
             try {

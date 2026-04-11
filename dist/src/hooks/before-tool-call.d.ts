@@ -1,14 +1,10 @@
 import type { AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
-import type { PolicyEngine } from "../policy/engine";
-import type { RateLimiter } from "../rate/limiter";
 import type { EvalCache } from "../risk/eval-cache";
 import type { SessionContext } from "../risk/session-context";
 import type { BeforeToolCallEvent, BeforeToolCallResult, EmbeddedAgentRuntime, ModelAuth } from "../types";
 export interface BeforeToolCallDeps {
-    engine: PolicyEngine;
     auditLogger: AuditLogger;
-    rateLimiter: RateLimiter;
     config: ClawLensConfig;
     sessionContext: SessionContext;
     evalCache?: EvalCache;

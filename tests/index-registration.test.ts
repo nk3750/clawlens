@@ -11,32 +11,6 @@ vi.mock("../src/audit/logger", () => ({
   })),
 }));
 
-vi.mock("../src/policy/engine", () => ({
-  PolicyEngine: vi.fn().mockImplementation(() => ({
-    load: vi.fn(),
-    getPolicy: vi.fn().mockReturnValue(null),
-    evaluate: vi.fn().mockReturnValue({ action: "allow" }),
-  })),
-}));
-
-vi.mock("../src/policy/loader", () => ({
-  PolicyLoader: vi.fn().mockImplementation(() => ({
-    load: vi.fn(),
-    startWatching: vi.fn(),
-    stopWatching: vi.fn(),
-  })),
-}));
-
-vi.mock("../src/rate/limiter", () => ({
-  RateLimiter: vi.fn().mockImplementation(() => ({
-    getCount: vi.fn().mockReturnValue(0),
-    record: vi.fn(),
-    restore: vi.fn(),
-    persist: vi.fn(),
-    cleanup: vi.fn(),
-  })),
-}));
-
 vi.mock("../src/risk/eval-cache", () => ({
   EvalCache: vi.fn().mockImplementation(() => ({
     get: vi.fn(),
@@ -70,10 +44,6 @@ vi.mock("../src/hooks/after-tool-call", () => ({
   createAfterToolCallHandler: vi.fn().mockReturnValue(vi.fn()),
 }));
 
-vi.mock("../src/hooks/before-prompt-build", () => ({
-  createBeforePromptBuildHandler: vi.fn().mockReturnValue(vi.fn()),
-}));
-
 vi.mock("../src/hooks/session-start", () => ({
   createSessionStartHandler: vi.fn().mockReturnValue(vi.fn()),
 }));
@@ -84,10 +54,7 @@ vi.mock("../src/hooks/session-end", () => ({
 
 vi.mock("../src/config", () => ({
   resolveConfig: vi.fn().mockReturnValue({
-    mode: "observe",
-    policiesPath: "/tmp/test-policies.yaml",
     auditLogPath: "/tmp/test-audit.jsonl",
-    rateStatePath: "/tmp/test-rate.json",
     retention: "30d",
     digest: { schedule: "daily" },
     risk: {
@@ -185,7 +152,7 @@ describe("index.ts register()", () => {
     expect(api2.registerCli).not.toHaveBeenCalled();
   });
 
-  it("registers all five hook types on each api", async () => {
+  it("registers all four hook types on each api", async () => {
     const plugin = (await import("../index")).default;
     const api = mockApi("test");
 
@@ -194,9 +161,8 @@ describe("index.ts register()", () => {
     const hookNames = api.on.mock.calls.map((c: unknown[]) => c[0]);
     expect(hookNames).toContain("before_tool_call");
     expect(hookNames).toContain("after_tool_call");
-    expect(hookNames).toContain("before_prompt_build");
     expect(hookNames).toContain("session_start");
     expect(hookNames).toContain("session_end");
-    expect(hookNames).toHaveLength(5);
+    expect(hookNames).toHaveLength(4);
   });
 });

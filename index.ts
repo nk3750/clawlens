@@ -5,13 +5,9 @@ import { AuditLogger } from "./src/audit/logger";
 import { resolveConfig } from "./src/config";
 import { registerDashboardRoutes } from "./src/dashboard/routes";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
-import { createBeforePromptBuildHandler } from "./src/hooks/before-prompt-build";
 import { type BeforeToolCallDeps, createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
 import { createSessionEndHandler } from "./src/hooks/session-end";
 import { createSessionStartHandler } from "./src/hooks/session-start";
-import { PolicyEngine } from "./src/policy/engine";
-import { PolicyLoader } from "./src/policy/loader";
-import { RateLimiter } from "./src/rate/limiter";
 import { EvalCache } from "./src/risk/eval-cache";
 import { SessionContext } from "./src/risk/session-context";
 import type {
@@ -33,8 +29,6 @@ let _beforeToolCallHandler: (...args: any[]) => any;
 // biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
 let _afterToolCallHandler: (...args: any[]) => any;
 // biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
-let _beforePromptBuildHandler: (...args: any[]) => any;
-// biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
 let _sessionStartHandler: (...args: any[]) => any;
 // biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
 let _sessionEndHandler: (...args: any[]) => any;
@@ -42,8 +36,8 @@ let _sessionEndHandler: (...args: any[]) => any;
 const plugin: OpenClawPluginDefinition = {
   id: "clawlens",
   name: "ClawLens",
-  description: "Agent governance — policy enforcement, approval flows, and audit trails",
-  version: "0.2.0",
+  description: "Agent governance — risk scoring, audit trails, and observability",
+  version: "0.3.0",
 
   register(api: OpenClawPluginApi) {
     const config = resolveConfig(api.pluginConfig, api.resolvePath);
@@ -73,10 +67,7 @@ const plugin: OpenClawPluginDefinition = {
 
     // ── First call: create all components and handler instances ──
     if (!_handlerDeps) {
-      const engine = new PolicyEngine();
-      const loader = new PolicyLoader(engine, config.policiesPath, api.logger);
       const auditLogger = new AuditLogger(config.auditLogPath);
-      const rateLimiter = new RateLimiter(config.rateStatePath);
       const sessionContext = new SessionContext();
       const evalCache = new EvalCache();
 
@@ -96,19 +87,8 @@ const plugin: OpenClawPluginDefinition = {
         };
       }
 
-      // Load policy eagerly so hooks work even if service.start() hasn't run yet
-      try {
-        loader.load();
-      } catch (err) {
-        api.logger.warn(
-          `ClawLens: Failed to load policy during register: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-
       _handlerDeps = {
-        engine,
         auditLogger,
-        rateLimiter,
         config,
         sessionContext,
         evalCache,
@@ -121,22 +101,9 @@ const plugin: OpenClawPluginDefinition = {
 
       // Create handler instances once — reused across api registrations
       _beforeToolCallHandler = createBeforeToolCallHandler(_handlerDeps);
-      _afterToolCallHandler = createAfterToolCallHandler(auditLogger, rateLimiter);
-      _beforePromptBuildHandler = createBeforePromptBuildHandler(engine);
-      _sessionStartHandler = createSessionStartHandler(
-        engine,
-        loader,
-        auditLogger,
-        rateLimiter,
-        api.logger,
-      );
-      _sessionEndHandler = createSessionEndHandler(
-        auditLogger,
-        rateLimiter,
-        config,
-        api.logger,
-        sessionContext,
-      );
+      _afterToolCallHandler = createAfterToolCallHandler(auditLogger);
+      _sessionStartHandler = createSessionStartHandler(auditLogger, api.logger);
+      _sessionEndHandler = createSessionEndHandler(auditLogger, config, api.logger, sessionContext);
     } else {
       // Subsequent init: refresh session-scoped state on shared deps
       _handlerDeps.runtime = typedRuntime;
@@ -150,7 +117,6 @@ const plugin: OpenClawPluginDefinition = {
     if (!_hookedApis.has(api)) {
       api.on("before_tool_call", _beforeToolCallHandler, { priority: 100 });
       api.on("after_tool_call", _afterToolCallHandler);
-      api.on("before_prompt_build", _beforePromptBuildHandler);
       api.on("session_start", _sessionStartHandler);
       api.on("session_end", _sessionEndHandler);
       _hookedApis.add(api);
@@ -158,15 +124,11 @@ const plugin: OpenClawPluginDefinition = {
 
     // ── One-time registrations: service, CLI, dashboard ──
     if (!_serviceRegistered) {
-      const { engine, auditLogger, rateLimiter, evalCache } = _handlerDeps;
-      const loader = new PolicyLoader(engine as PolicyEngine, config.policiesPath, api.logger);
+      const { auditLogger, evalCache } = _handlerDeps;
 
       api.registerService({
         id: "clawlens",
         start: async () => {
-          if (!(engine as PolicyEngine).getPolicy()) {
-            loader.load();
-          }
           await (auditLogger as AuditLogger).init();
 
           // Pre-warm eval cache from audit log entries with real LLM evaluations
@@ -182,15 +144,10 @@ const plugin: OpenClawPluginDefinition = {
             );
           }
 
-          (rateLimiter as RateLimiter).restore();
-          loader.startWatching();
           api.logger.info("ClawLens: Service started");
         },
         stop: async () => {
-          loader.stopWatching();
           await (auditLogger as AuditLogger).flush();
-          (rateLimiter as RateLimiter).persist();
-          (rateLimiter as RateLimiter).cleanup();
           api.logger.info("ClawLens: Service stopped");
         },
       });
@@ -198,58 +155,15 @@ const plugin: OpenClawPluginDefinition = {
       api.registerCli((cli) => {
         cli
           .command("clawlens init")
-          .description("Initialize ClawLens with default config and policies")
+          .description("Initialize ClawLens data directory and show config snippet")
           .action(async () => {
-            const configDir = path.dirname(config.policiesPath);
+            const dataDir = path.dirname(config.auditLogPath);
 
-            if (!fs.existsSync(configDir)) {
-              fs.mkdirSync(configDir, { recursive: true });
-            }
-
-            if (!fs.existsSync(config.policiesPath)) {
-              const defaultPolicy = path.join(__dirname, "policies", "standard.yaml");
-              if (fs.existsSync(defaultPolicy)) {
-                fs.copyFileSync(defaultPolicy, config.policiesPath);
-              } else {
-                fs.writeFileSync(
-                  config.policiesPath,
-                  `${[
-                    'version: "1"',
-                    "",
-                    "defaults:",
-                    "  unknown_actions: approval_required",
-                    "  approval_timeout: 300",
-                    "  timeout_action: deny",
-                    "  digest: daily",
-                    "",
-                    "rules:",
-                    '  - name: "Block rm -rf"',
-                    "    match:",
-                    "      tool: exec",
-                    "      params:",
-                    '        command: "*rm -rf*"',
-                    "    action: block",
-                    '    reason: "Destructive command blocked"',
-                    "",
-                    '  - name: "Approve shell commands"',
-                    "    match:",
-                    "      tool: exec",
-                    "    action: approval_required",
-                    "",
-                    '  - name: "Allow reads"',
-                    "    match:",
-                    "      tool: read",
-                    "    action: allow",
-                    "",
-                    '  - name: "Default"',
-                    "    match: {}",
-                    "    action: approval_required",
-                  ].join("\n")}\n`,
-                );
-              }
-              console.log(`ClawLens initialized. Edit policies at ${config.policiesPath}`);
+            if (!fs.existsSync(dataDir)) {
+              fs.mkdirSync(dataDir, { recursive: true });
+              console.log(`Created data directory: ${dataDir}`);
             } else {
-              console.log(`Policies already exist at ${config.policiesPath} — skipping.`);
+              console.log(`Data directory already exists: ${dataDir}`);
             }
 
             console.log("\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:");
@@ -262,7 +176,6 @@ const plugin: OpenClawPluginDefinition = {
                       clawlens: {
                         enabled: true,
                         config: {
-                          policiesPath: config.policiesPath,
                           auditLogPath: config.auditLogPath,
                         },
                       },
@@ -295,7 +208,6 @@ const plugin: OpenClawPluginDefinition = {
       });
 
       registerDashboardRoutes(api, {
-        engine: engine as PolicyEngine,
         auditLogger: auditLogger as AuditLogger,
         pluginDir: __dirname,
         config,

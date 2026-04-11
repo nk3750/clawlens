@@ -1,4 +1,4 @@
-export function createAfterToolCallHandler(auditLogger, rateLimiter) {
+export function createAfterToolCallHandler(auditLogger) {
     return (event, _ctx) => {
         auditLogger.logResult({
             timestamp: new Date().toISOString(),
@@ -6,7 +6,6 @@ export function createAfterToolCallHandler(auditLogger, rateLimiter) {
             toolCallId: event.toolCallId,
             executionResult: event.result ? "success" : "failure",
         });
-        rateLimiter.record(event.toolName);
     };
 }
 //# sourceMappingURL=after-tool-call.js.map
