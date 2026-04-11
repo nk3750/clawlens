@@ -587,14 +587,32 @@ describe("GuardrailStore", () => {
       expect(store.list()).toHaveLength(1);
     });
 
-    it("skips expired without removing", () => {
+    it("skips expired and triggers lazy cleanup", () => {
       store.load();
       store.add(makeGuardrail({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
 
       const result = store.peek("test-agent", "exec", "curl https://example.com");
       expect(result).toBeNull();
-      // Still in the list (not cleaned by peek)
-      expect(store.list()).toHaveLength(1);
+      // Cleaned by peek via cleanExpired()
+      expect(store.list()).toHaveLength(0);
+    });
+
+    it("lazily cleans expired on peek when expired encountered", () => {
+      store.load();
+      for (let i = 0; i < 5; i++) {
+        store.add(
+          makeGuardrail({
+            identityKey: `expired-${i}`,
+            expiresAt: new Date(Date.now() - 1000).toISOString(),
+          }),
+        );
+      }
+      store.add(makeGuardrail({ identityKey: "valid", expiresAt: null }));
+
+      // Peek hits an expired entry, triggering cleanup
+      store.peek("test-agent", "exec", "expired-0");
+      expect(store.list().length).toBe(1);
+      expect(store.list()[0].identityKey).toBe("valid");
     });
   });
 
@@ -616,6 +634,19 @@ describe("GuardrailStore", () => {
 
     store.cleanExpired();
     expect(store.list()).toHaveLength(1);
+  });
+
+  it("lookup key handles identity keys containing colons", () => {
+    store.load();
+    const g = makeGuardrail({
+      tool: "web_fetch",
+      identityKey: "https://evil.com:8080/path",
+      agentId: "agent-1",
+    });
+    store.add(g);
+
+    const result = store.match("agent-1", "web_fetch", "https://evil.com:8080/path");
+    expect(result?.id).toBe(g.id);
   });
 
   it("generateId() produces prefixed IDs", () => {

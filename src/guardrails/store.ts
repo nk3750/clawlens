@@ -127,8 +127,9 @@ export class GuardrailStore {
 
     if (!guardrail) return null;
 
-    // Skip expired
+    // Skip expired — and trigger lazy cleanup
     if (guardrail.expiresAt && new Date(guardrail.expiresAt).getTime() <= Date.now()) {
+      this.cleanExpired();
       return null;
     }
 
