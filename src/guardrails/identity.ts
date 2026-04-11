@@ -65,6 +65,10 @@ export function normalizeUrl(raw: string): string {
       u.port = "";
     }
 
+    // Strip credentials — user:pass@ is not part of resource identity
+    u.username = "";
+    u.password = "";
+
     // Strip fragment
     u.hash = "";
 

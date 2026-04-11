@@ -248,6 +248,14 @@ describe("normalizeUrl", () => {
   it("keeps query params with trailing-slash-only path", () => {
     expect(normalizeUrl("https://example.com/?q=hello")).toBe("https://example.com/?q=hello");
   });
+
+  it("strips credentials from URL", () => {
+    expect(normalizeUrl("https://user:pass@evil.com/path")).toBe("https://evil.com/path");
+  });
+
+  it("strips surrounding whitespace from URL", () => {
+    expect(normalizeUrl("  https://example.com/  ")).toBe("https://example.com");
+  });
 });
 
 describe("lookupKey", () => {
