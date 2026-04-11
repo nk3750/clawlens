@@ -891,6 +891,32 @@ describe("before_tool_call guardrail enforcement", () => {
       }),
     );
   });
+
+  it("logs warning when guardrail check throws", async () => {
+    const auditLogger = mockAuditLogger();
+    const loggerMock = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const grStore = {
+      match: vi.fn().mockImplementation(() => {
+        throw new Error("corrupted store");
+      }),
+    };
+
+    const handler = createBeforeToolCallHandler({
+      auditLogger: auditLogger as never,
+      config: { ...DEFAULT_CONFIG, guardrailsPath: "" },
+      sessionContext: new SessionContext(),
+      guardrailStore: grStore as never,
+      logger: loggerMock,
+    });
+
+    const result = await handler(
+      { toolName: "exec", params: { command: "echo hi" }, toolCallId: "tc-err" },
+      ctx,
+    );
+
+    expect(result).toBeUndefined();
+    expect(loggerMock.warn).toHaveBeenCalledWith(expect.stringContaining("corrupted store"));
+  });
 });
 
 // ── Guardrail Action Validation ─────────────────────────────

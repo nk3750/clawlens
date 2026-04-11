@@ -242,8 +242,10 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
       }
 
       return;
-    } catch {
+    } catch (err) {
       // Never block — just log the error and allow through
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger?.warn(`ClawLens: before_tool_call error for ${toolName}: ${errMsg}`);
       auditLogger.logDecision({
         timestamp: new Date().toISOString(),
         toolName,
@@ -269,15 +271,8 @@ function formatGuardrailApproval(
   toolName: string,
   params: Record<string, unknown>,
 ): string {
-  const cmd =
-    typeof params.command === "string"
-      ? params.command
-      : typeof params.path === "string"
-        ? params.path
-        : typeof params.url === "string"
-          ? params.url
-          : "";
-  const action = cmd ? `${toolName} — ${cmd}` : toolName;
+  const detail = extractApprovalDetail(toolName, params);
+  const action = detail ? `${toolName} — ${detail}` : toolName;
   const tier = getTierFromScore(guardrail.riskScore).toUpperCase();
   const date = new Date(guardrail.createdAt).toLocaleDateString("en-US", {
     month: "short",
@@ -289,4 +284,38 @@ function formatGuardrailApproval(
     `Risk: ${guardrail.riskScore} ${tier}`,
     `Guardrail: "Require Approval" (added ${date})`,
   ].join("\n");
+}
+
+function extractApprovalDetail(toolName: string, params: Record<string, unknown>): string {
+  const str = (key: string) => (typeof params[key] === "string" ? (params[key] as string) : "");
+  switch (toolName) {
+    case "exec":
+    case "process":
+      return str("command");
+    case "read":
+    case "write":
+    case "edit":
+      return str("path") || str("file_path");
+    case "web_fetch":
+    case "fetch_url":
+    case "browser":
+      return str("url");
+    case "web_search":
+    case "search":
+    case "memory_search":
+      return str("query");
+    case "message":
+      return str("to") || str("recipient");
+    case "sessions_spawn":
+      return str("sessionKey") || str("agent");
+    case "memory_get":
+      return str("key");
+    case "cron":
+      return str("name");
+    case "glob":
+    case "grep":
+      return str("pattern");
+    default:
+      return "";
+  }
 }
