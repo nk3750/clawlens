@@ -56,6 +56,7 @@ export default function Agents() {
       {stats && (
         <FleetPulse
           stats={stats}
+          totalAgents={agents?.length ?? 0}
           guardrailCount={guardrails.length}
           selectedDate={selectedDate}
           onDateChange={setSelectedDate}

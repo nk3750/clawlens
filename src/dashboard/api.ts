@@ -84,7 +84,7 @@ export interface EntryResponse {
   /** Present when an active guardrail matches this entry's tool + identity key. */
   guardrailMatch?: {
     id: string;
-    action: { type: string; hours?: number };
+    action: { type: string };
   };
 }
 

@@ -62,7 +62,9 @@ export default function LiveFeed({ isToday, selectedDate }: Props) {
     ),
   );
 
-  const visible = entries.slice(0, MAX_VISIBLE);
+  const visible = entries
+    .filter((e) => e.riskScore != null && e.agentId && !("refToolCallId" in e))
+    .slice(0, MAX_VISIBLE);
 
   return (
     <div className="mt-8">

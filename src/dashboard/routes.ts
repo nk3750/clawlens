@@ -319,7 +319,21 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         });
 
         const listener = (entry: AuditEntry) => {
-          const enriched = { ...entry, category: getCategory(entry.toolName) };
+          const enriched: Record<string, unknown> = {
+            ...entry,
+            category: getCategory(entry.toolName),
+          };
+          if (deps.guardrailStore && entry.decision) {
+            const key = extractIdentityKey(entry.toolName, entry.params);
+            const matched = deps.guardrailStore.peek(
+              entry.agentId || "unknown",
+              entry.toolName,
+              key,
+            );
+            if (matched) {
+              enriched.guardrailMatch = { id: matched.id, action: matched.action };
+            }
+          }
           res.write(`data: ${JSON.stringify(enriched)}\n\n`);
         };
         deps.auditLogger.on("entry", listener);

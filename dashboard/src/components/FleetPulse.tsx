@@ -4,6 +4,7 @@ import { riskColorRaw } from "../lib/utils";
 
 interface Props {
   stats: StatsResponse;
+  totalAgents: number;
   guardrailCount: number;
   selectedDate: string | null;
   onDateChange: (date: string | null) => void;
@@ -26,7 +27,7 @@ function formatDate(iso: string): string {
     .toUpperCase();
 }
 
-export default function FleetPulse({ stats, guardrailCount, selectedDate, onDateChange }: Props) {
+export default function FleetPulse({ stats, totalAgents, guardrailCount, selectedDate, onDateChange }: Props) {
   const today = todayISO();
   const viewing = selectedDate ?? today;
   const isToday = viewing === today;
@@ -119,7 +120,7 @@ export default function FleetPulse({ stats, guardrailCount, selectedDate, onDate
         className="font-mono text-xs mt-2 flex items-center gap-1 flex-wrap"
         style={{ color: "var(--cl-text-secondary)" }}
       >
-        <span>{stats.activeAgents} agents</span>
+        <span>{totalAgents} agents</span>
         <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
         <span>{stats.activeSessions} active</span>
         <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
