@@ -109,6 +109,7 @@ export interface AgentInfo {
         score: number;
         tier: string;
     };
+    hourlyActivity: number[];
 }
 export interface ToolSummaryItem {
     toolName: string;

@@ -2,10 +2,10 @@ import { agentGradient } from "../lib/utils";
 
 interface Props {
   agentId: string;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
 }
 
-const SIZES = { sm: 32, md: 44, lg: 60 };
+const SIZES = { xs: 20, sm: 32, md: 44, lg: 60 };
 
 export default function GradientAvatar({ agentId, size = "md" }: Props) {
   const [c1, c2] = agentGradient(agentId);

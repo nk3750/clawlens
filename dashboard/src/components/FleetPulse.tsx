@@ -60,61 +60,18 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
 
   return (
     <div className="page-enter">
-      {/* Row 1: Date label + peak risk + nav arrows */}
-      <div className="flex items-center justify-between">
+      {/* Row 1: Date label + stats + nav */}
+      <div
+        className="font-mono text-xs flex items-center gap-2 flex-wrap"
+        style={{ color: "var(--cl-text-secondary)" }}
+      >
         <span
-          className="text-sm font-medium tracking-widest uppercase select-none"
+          className="text-sm font-medium tracking-widest uppercase select-none font-sans"
           style={{ color: isToday ? "var(--cl-accent)" : "var(--cl-text-primary)" }}
         >
           {isToday ? "TODAY" : formatDate(viewing)}
         </span>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={goBack}
-            disabled={!canGoBack}
-            className="transition-opacity duration-150"
-            style={{
-              color: "var(--cl-text-muted)",
-              opacity: canGoBack ? 1 : 0.25,
-              cursor: canGoBack ? "pointer" : "default",
-              background: "none",
-              border: "none",
-              padding: 4,
-              fontSize: 18,
-              lineHeight: 1,
-            }}
-            aria-label="Previous day"
-          >
-            &#8249;
-          </button>
-          <button
-            type="button"
-            onClick={goForward}
-            disabled={!canGoForward}
-            className="transition-opacity duration-150"
-            style={{
-              color: "var(--cl-text-muted)",
-              opacity: canGoForward ? 1 : 0.25,
-              cursor: canGoForward ? "pointer" : "default",
-              background: "none",
-              border: "none",
-              padding: 4,
-              fontSize: 18,
-              lineHeight: 1,
-            }}
-            aria-label="Next day"
-          >
-            &#8250;
-          </button>
-        </div>
-      </div>
-
-      {/* Row 2: Key metrics */}
-      <div
-        className="font-mono text-xs mt-2 flex items-center gap-1 flex-wrap"
-        style={{ color: "var(--cl-text-secondary)" }}
-      >
+        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
         <span>{totalAgents} agents</span>
         <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
         <span>{stats.activeSessions} active</span>
@@ -152,6 +109,45 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
           </svg>
           {guardrailCount} guardrails
         </Link>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={goBack}
+          disabled={!canGoBack}
+          className="transition-opacity duration-150"
+          style={{
+            color: "var(--cl-text-muted)",
+            opacity: canGoBack ? 1 : 0.25,
+            cursor: canGoBack ? "pointer" : "default",
+            background: "none",
+            border: "none",
+            padding: 4,
+            fontSize: 18,
+            lineHeight: 1,
+          }}
+          aria-label="Previous day"
+        >
+          &#8249;
+        </button>
+        <button
+          type="button"
+          onClick={goForward}
+          disabled={!canGoForward}
+          className="transition-opacity duration-150"
+          style={{
+            color: "var(--cl-text-muted)",
+            opacity: canGoForward ? 1 : 0.25,
+            cursor: canGoForward ? "pointer" : "default",
+            background: "none",
+            border: "none",
+            padding: 4,
+            fontSize: 18,
+            lineHeight: 1,
+          }}
+          aria-label="Next day"
+        >
+          &#8250;
+        </button>
       </div>
 
       {/* Row 3: Risk distribution bar */}

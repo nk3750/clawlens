@@ -36,24 +36,31 @@ describe("getActivityTimeline", () => {
   });
 
   it("buckets a single agent into a single bucket", () => {
-    const now = new Date();
-    const entries = [
-      entry({ timestamp: now.toISOString(), agentId: "a1", toolName: "exec" }),
-      entry({
-        timestamp: new Date(now.getTime() + 60_000).toISOString(),
-        agentId: "a1",
-        toolName: "read",
-      }),
-    ];
-    const result = getActivityTimeline(entries, 15);
+    // Pin time to middle of a 15-min bucket to avoid boundary flakiness
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-11T10:05:00Z"));
+    try {
+      const now = new Date();
+      const entries = [
+        entry({ timestamp: now.toISOString(), agentId: "a1", toolName: "exec" }),
+        entry({
+          timestamp: new Date(now.getTime() + 60_000).toISOString(),
+          agentId: "a1",
+          toolName: "read",
+        }),
+      ];
+      const result = getActivityTimeline(entries, 15);
 
-    expect(result.agents).toEqual(["a1"]);
-    expect(result.totalActions).toBe(2);
-    expect(result.buckets).toHaveLength(1);
-    expect(result.buckets[0].agentId).toBe("a1");
-    expect(result.buckets[0].total).toBe(2);
-    expect(result.buckets[0].counts.commands).toBe(1); // exec
-    expect(result.buckets[0].counts.exploring).toBe(1); // read
+      expect(result.agents).toEqual(["a1"]);
+      expect(result.totalActions).toBe(2);
+      expect(result.buckets).toHaveLength(1);
+      expect(result.buckets[0].agentId).toBe("a1");
+      expect(result.buckets[0].total).toBe(2);
+      expect(result.buckets[0].counts.commands).toBe(1); // exec
+      expect(result.buckets[0].counts.exploring).toBe(1); // read
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("separates entries into different buckets by time", () => {

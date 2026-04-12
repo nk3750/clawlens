@@ -127,6 +127,7 @@ export interface AgentInfo {
     score: number;
     tier: string;
   };
+  hourlyActivity: number[];
 }
 
 export interface ToolSummaryItem {
@@ -890,6 +891,12 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
       };
     }
 
+    const hourlyActivity = new Array<number>(24).fill(0);
+    for (const e of todayDecisions) {
+      const hour = new Date(e.timestamp).getUTCHours();
+      hourlyActivity[hour]++;
+    }
+
     agents.push({
       id,
       name: id,
@@ -911,6 +918,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
       blockedCount,
       riskProfile,
       topRisk,
+      hourlyActivity,
     });
   }
 

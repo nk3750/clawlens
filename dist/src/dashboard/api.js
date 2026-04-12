@@ -643,6 +643,11 @@ export function getAgents(entries, date) {
                 tier: score > 75 ? "critical" : score > 50 ? "high" : score > 25 ? "medium" : "low",
             };
         }
+        const hourlyActivity = new Array(24).fill(0);
+        for (const e of todayDecisions) {
+            const hour = new Date(e.timestamp).getUTCHours();
+            hourlyActivity[hour]++;
+        }
         agents.push({
             id,
             name: id,
@@ -664,6 +669,7 @@ export function getAgents(entries, date) {
             blockedCount,
             riskProfile,
             topRisk,
+            hourlyActivity,
         });
     }
     agents.sort((a, b) => {

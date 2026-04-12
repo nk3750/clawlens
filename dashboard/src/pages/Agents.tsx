@@ -3,7 +3,7 @@ import { useApi } from "../hooks/useApi";
 import type { AgentInfo, Guardrail, InterventionEntry, StatsResponse } from "../lib/types";
 import FleetPulse from "../components/FleetPulse";
 import NeedsAttention from "../components/NeedsAttention";
-import AgentCardCompact from "../components/AgentCardCompact";
+import AgentRow from "../components/AgentCardCompact";
 import ActivityTimeline from "../components/ActivityTimeline";
 import ErrorCard from "../components/ErrorCard";
 
@@ -32,18 +32,8 @@ export default function Agents() {
     });
   }, [agents]);
 
-  const topAgentId = sortedAgents.length > 0 ? sortedAgents[0].id : null;
-
-  // Per-agent guardrail counts: agent-specific + globals (agentId === null)
-  const guardrailCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    const globalCount = guardrails.filter((g) => g.agentId === null).length;
-    for (const agent of agents ?? []) {
-      const agentSpecific = guardrails.filter((g) => g.agentId === agent.id).length;
-      counts.set(agent.id, agentSpecific + globalCount);
-    }
-    return counts;
-  }, [agents, guardrails]);
+  const activeAgents = useMemo(() => sortedAgents.filter((a) => a.todayToolCalls > 0), [sortedAgents]);
+  const idleAgents = useMemo(() => sortedAgents.filter((a) => a.todayToolCalls === 0), [sortedAgents]);
 
   const dateLabel = selectedDate
     ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-US", {
@@ -70,20 +60,12 @@ export default function Agents() {
         <NeedsAttention interventions={interventions} agents={agents} />
       )}
 
-      {/* Agent Cards Grid */}
+      {/* Agent Rows */}
       <section style={{ marginTop: "clamp(16px, 2vw, 28px)" }}>
-        <div className="flex items-center gap-3 mb-4">
+        <div className="mb-3">
           <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
             AGENTS
           </span>
-          {agents && (
-            <span
-              className="font-mono text-[10px]"
-              style={{ color: "var(--cl-text-muted)", opacity: 0.4 }}
-            >
-              {agents.length}
-            </span>
-          )}
         </div>
 
         {/* Loading */}
@@ -119,19 +101,31 @@ export default function Agents() {
           </div>
         )}
 
-        {/* Agent cards */}
-        {sortedAgents.length > 0 && (
+        {/* Active agents */}
+        {activeAgents.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            {activeAgents.map((agent) => (
+              <AgentRow key={agent.id} agent={agent} />
+            ))}
+          </div>
+        )}
+
+        {/* Idle agents */}
+        {idleAgents.length > 0 && (
           <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}
+            className="flex flex-col gap-1.5"
+            style={{ marginTop: activeAgents.length > 0 ? 12 : 0 }}
           >
-            {sortedAgents.map((agent) => (
-              <AgentCardCompact
-                key={agent.id}
-                agent={agent}
-                guardrailCount={guardrailCounts.get(agent.id) ?? 0}
-                isTopAgent={agent.id === topAgentId}
-              />
+            {activeAgents.length > 0 && (
+              <span
+                className="font-mono text-[10px] uppercase mb-1"
+                style={{ color: "var(--cl-text-muted)", opacity: 0.5 }}
+              >
+                Idle
+              </span>
+            )}
+            {idleAgents.map((agent) => (
+              <AgentRow key={agent.id} agent={agent} />
             ))}
           </div>
         )}

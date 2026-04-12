@@ -110,6 +110,7 @@ export interface AgentInfo {
     score: number;
     tier: RiskTier;
   };
+  hourlyActivity: number[];
 }
 
 export interface ToolSummaryItem {
