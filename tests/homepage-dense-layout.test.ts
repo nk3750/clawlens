@@ -17,7 +17,7 @@ function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
 describe("hourlyActivity computation", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-11T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 3, 11, 14, 0, 0));
   });
 
   afterEach(() => {
@@ -28,17 +28,17 @@ describe("hourlyActivity computation", () => {
     const entries = [
       entry({
         agentId: "agent1",
-        timestamp: "2026-04-11T08:15:00Z",
+        timestamp: new Date(2026, 3, 11, 8, 15, 0).toISOString(),
         decision: "allow",
       }),
       entry({
         agentId: "agent1",
-        timestamp: "2026-04-11T08:45:00Z",
+        timestamp: new Date(2026, 3, 11, 8, 45, 0).toISOString(),
         decision: "allow",
       }),
       entry({
         agentId: "agent1",
-        timestamp: "2026-04-11T12:00:00Z",
+        timestamp: new Date(2026, 3, 11, 12, 0, 0).toISOString(),
         decision: "allow",
       }),
     ];
@@ -85,17 +85,17 @@ describe("hourlyActivity computation", () => {
     const entries = [
       entry({
         agentId: "agent1",
-        timestamp: "2026-04-10T09:30:00Z",
+        timestamp: new Date(2026, 3, 10, 9, 30, 0).toISOString(),
         decision: "allow",
       }),
       entry({
         agentId: "agent1",
-        timestamp: "2026-04-10T09:45:00Z",
+        timestamp: new Date(2026, 3, 10, 9, 45, 0).toISOString(),
         decision: "allow",
       }),
       entry({
         agentId: "agent1",
-        timestamp: "2026-04-10T15:00:00Z",
+        timestamp: new Date(2026, 3, 10, 15, 0, 0).toISOString(),
         decision: "allow",
       }),
     ];
@@ -113,12 +113,12 @@ describe("hourlyActivity computation", () => {
     const entries = [
       entry({
         agentId: "agentA",
-        timestamp: "2026-04-11T10:00:00Z",
+        timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(),
         decision: "allow",
       }),
       entry({
         agentId: "agentB",
-        timestamp: "2026-04-11T11:00:00Z",
+        timestamp: new Date(2026, 3, 11, 11, 0, 0).toISOString(),
         decision: "allow",
       }),
     ];
@@ -135,7 +135,7 @@ describe("hourlyActivity computation", () => {
 describe("active vs idle sort", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-11T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 3, 11, 14, 0, 0));
   });
 
   afterEach(() => {

@@ -63,7 +63,7 @@ describe("getEffectiveDecision", () => {
 describe("computeStats", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
   });
 
   afterEach(() => {
@@ -106,11 +106,11 @@ describe("computeStats", () => {
     expect(stats.total).toBe(7);
   });
 
-  it("only counts entries from last 24 hours", () => {
+  it("only counts entries from today's local calendar day", () => {
     const entries: AuditEntry[] = [
-      entry({ timestamp: "2026-03-28T10:00:00Z", decision: "allow" }), // >24h ago
-      entry({ timestamp: "2026-03-29T00:00:00Z", decision: "allow" }), // within 24h
-      entry({ timestamp: "2026-03-29T13:00:00Z", decision: "block" }), // within 24h
+      entry({ timestamp: new Date(2026, 2, 28, 10, 0, 0).toISOString(), decision: "allow" }), // yesterday
+      entry({ timestamp: new Date(2026, 2, 29, 8, 0, 0).toISOString(), decision: "allow" }), // today
+      entry({ timestamp: new Date(2026, 2, 29, 13, 0, 0).toISOString(), decision: "block" }), // today
     ];
 
     const stats = computeStats(entries);
@@ -352,7 +352,7 @@ describe("riskPosture", () => {
 describe("computeEnhancedStats", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
   });
 
   afterEach(() => {
@@ -382,7 +382,7 @@ describe("computeEnhancedStats", () => {
   it("overrides riskPosture to critical if recent block", () => {
     const entries: AuditEntry[] = [
       entry({
-        timestamp: "2026-03-29T13:45:00Z",
+        timestamp: new Date(2026, 2, 29, 13, 45, 0).toISOString(),
         decision: "block",
         riskScore: 30,
         riskTier: "medium",
@@ -408,7 +408,7 @@ describe("getRecentEntries — category field", () => {
 describe("getAgents — new fields", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
   });
 
   afterEach(() => {

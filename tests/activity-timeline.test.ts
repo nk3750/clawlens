@@ -319,12 +319,12 @@ describe("getActivityTimeline", () => {
 
   it("filters entries by range for past day", () => {
     const entries = [
-      entry({ timestamp: "2026-04-11T01:00:00Z", agentId: "a1" }),
-      entry({ timestamp: "2026-04-11T02:00:00Z", agentId: "a1" }),
-      entry({ timestamp: "2026-04-11T05:00:00Z", agentId: "a1" }),
-      entry({ timestamp: "2026-04-11T10:00:00Z", agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 1, 0, 0).toISOString(), agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 2, 0, 0).toISOString(), agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 5, 0, 0).toISOString(), agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), agentId: "a1" }),
     ];
-    // 3h range on a past day = first 3h (00:00 to 03:00)
+    // 3h range on a past day = first 3h (00:00 to 03:00 local)
     const result = getActivityTimeline(entries, undefined, "2026-04-11", "3h");
 
     expect(result.totalActions).toBe(2);

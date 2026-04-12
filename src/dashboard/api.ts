@@ -185,10 +185,28 @@ export interface SessionDetailResponse {
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
-/** Filter entries to the last 24 hours (rolling window, timezone-agnostic). */
+/** Today's date in local time as YYYY-MM-DD. */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Extract the local-date portion (YYYY-MM-DD) of a UTC ISO timestamp. */
+export function localDateOf(isoTimestamp: string): string {
+  const d = new Date(isoTimestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Local midnight for a YYYY-MM-DD date string, as epoch ms.
+ *  The key trick: `new Date("2026-04-12T00:00:00")` without "Z" is parsed as local time. */
+function localMidnightMs(dateStr: string): number {
+  return new Date(`${dateStr}T00:00:00`).getTime();
+}
+
+/** Filter entries to today (local calendar day). */
 function getTodayEntries(entries: AuditEntry[]): AuditEntry[] {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  return entries.filter((e) => e.timestamp >= cutoff);
+  const today = localToday();
+  return entries.filter((e) => localDateOf(e.timestamp) === today);
 }
 
 /** Compute the effective user-facing decision for an entry. */
@@ -432,9 +450,9 @@ function buildSessionInfo(
 
 // ── Date-filtered helpers ──────────────────────────────
 
-/** Filter entries to a specific calendar day (YYYY-MM-DD). */
+/** Filter entries to a specific calendar day (YYYY-MM-DD, local time). */
 function getDayEntries(entries: AuditEntry[], date: string): AuditEntry[] {
-  return entries.filter((e) => e.timestamp.startsWith(date));
+  return entries.filter((e) => localDateOf(e.timestamp) === date);
 }
 
 /** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
@@ -442,7 +460,7 @@ export function computeHistoricDailyMax(entries: AuditEntry[]): number {
   const byDay = new Map<string, number>();
   for (const entry of entries) {
     if (!entry.decision) continue;
-    const day = entry.timestamp.slice(0, 10);
+    const day = localDateOf(entry.timestamp);
     byDay.set(day, (byDay.get(day) ?? 0) + 1);
   }
   if (byDay.size === 0) return 100;
@@ -728,10 +746,10 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
   }
 
   // Yesterday's total: count decision entries from the day before the viewing date
-  const viewingDate = isPastDay ? date : new Date().toISOString().slice(0, 10);
-  const yesterdayDate = new Date(`${viewingDate}T12:00:00`);
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+  const viewingDate = isPastDay ? date : localToday();
+  const yesterdayMs = localMidnightMs(viewingDate) - 86_400_000;
+  const yd = new Date(yesterdayMs);
+  const yesterdayStr = `${yd.getFullYear()}-${String(yd.getMonth() + 1).padStart(2, "0")}-${String(yd.getDate()).padStart(2, "0")}`;
   const yesterdayTotal = getDayEntries(entries, yesterdayStr).filter(isDecisionEntry).length;
 
   return {
@@ -784,7 +802,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
   }
 
   const now = Date.now();
-  const todayCutoff = isPastDay ? date : new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const todayStr = isPastDay ? date : localToday();
   const thirtyMinAgo = new Date(now - 1_800_000).toISOString();
   const evalIdx = buildEvalIndex(entries);
 
@@ -807,7 +825,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
 
     const todayDecisions = isPastDay
       ? agentEntries.filter(isDecisionEntry)
-      : agentEntries.filter((e) => e.timestamp >= todayCutoff && isDecisionEntry(e));
+      : agentEntries.filter((e) => localDateOf(e.timestamp) === todayStr && isDecisionEntry(e));
 
     let riskSum = 0;
     let riskCount = 0;
@@ -945,7 +963,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
 
     const hourlyActivity = new Array<number>(24).fill(0);
     for (const e of todayDecisions) {
-      const hour = new Date(e.timestamp).getUTCHours();
+      const hour = new Date(e.timestamp).getHours();
       hourlyActivity[hour]++;
     }
 
@@ -1171,7 +1189,7 @@ export function getActivityTimeline(
         rangeEnd = Date.now();
         rangeStart = rangeEnd - rangeMs;
       } else {
-        rangeStart = new Date(`${dateStr}T00:00:00Z`).getTime();
+        rangeStart = localMidnightMs(dateStr);
         rangeEnd = rangeStart + rangeMs;
       }
       decisions = decisions.filter((e) => {

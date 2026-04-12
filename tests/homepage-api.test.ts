@@ -59,7 +59,7 @@ describe("computeHistoricDailyMax", () => {
 describe("computeEnhancedStats with date param", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 3, 7, 14, 0, 0));
   });
 
   afterEach(() => {
@@ -168,7 +168,7 @@ describe("computeEnhancedStats with date param", () => {
 describe("getAgents with date param", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 3, 7, 14, 0, 0));
   });
 
   afterEach(() => {
@@ -199,7 +199,11 @@ describe("getAgents with date param", () => {
   it("without date uses existing behavior", () => {
     const entries = [
       // Active within 5 minutes
-      entry({ timestamp: "2026-04-07T13:57:00Z", decision: "allow", agentId: "alpha" }),
+      entry({
+        timestamp: new Date(2026, 3, 7, 13, 57, 0).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+      }),
     ];
 
     const agents = getAgents(entries);
@@ -224,7 +228,7 @@ describe("getAgents with date param", () => {
 describe("getInterventions", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T14:00:00Z"));
+    vi.setSystemTime(new Date(2026, 3, 7, 14, 0, 0));
   });
 
   afterEach(() => {
@@ -266,7 +270,7 @@ describe("getInterventions", () => {
   it("limits to 20 entries", () => {
     const entries = Array.from({ length: 30 }, (_, i) =>
       entry({
-        timestamp: `2026-04-07T${String(i % 24).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}:00Z`,
+        timestamp: new Date(2026, 3, 7, 8 + Math.floor(i / 6), i * 2, 0).toISOString(),
         decision: "block",
         agentId: `agent-${i}`,
       }),

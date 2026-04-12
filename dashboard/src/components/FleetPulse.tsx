@@ -11,13 +11,14 @@ interface Props {
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function shiftDay(iso: string, delta: number): string {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function formatDate(iso: string): string {
@@ -125,17 +126,17 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
       >
         {/* Cell 1: Actions */}
         <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cl-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--cl-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
             <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />
           </svg>
           <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
             {stats.total}
           </span>
-          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
             actions
           </span>
           {dayOverDay && (
-            <span className="font-mono text-[10px]" style={{ color: dayOverDay.color }}>
+            <span className="font-mono text-[11px]" style={{ color: dayOverDay.color }}>
               {dayOverDay.label}
             </span>
           )}
@@ -143,7 +144,7 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
 
         {/* Cell 2: Active / Idle */}
         <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={activeCount > 0 ? "var(--cl-risk-low)" : "var(--cl-text-muted)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={activeCount > 0 ? "var(--cl-risk-low)" : "var(--cl-text-muted)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
             <circle cx="9" cy="7" r="4" />
             <path d="M23 21v-2a4 4 0 00-3-3.87" />
@@ -156,18 +157,18 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
             >
               {activeCount}
             </span>
-            <span className="font-mono text-sm" style={{ color: "var(--cl-text-muted)" }}>
+            <span className="font-mono text-sm" style={{ color: "var(--cl-text-secondary)" }}>
               {" / "}{idleCount}
             </span>
           </div>
-          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
             active / idle
           </span>
         </div>
 
         {/* Cell 3: Blocked */}
         <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={stats.blocked > 0 ? riskColorRaw("high") : "var(--cl-text-muted)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stats.blocked > 0 ? riskColorRaw("high") : "var(--cl-text-muted)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
             <circle cx="12" cy="12" r="10" />
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
@@ -178,7 +179,7 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
           >
             {stats.blocked}
           </span>
-          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
             blocked actions
           </span>
         </div>
@@ -191,17 +192,17 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--cl-elevated)"; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--cl-surface)"; }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cl-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--cl-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
           <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
             {guardrailCount}
           </span>
           <div className="flex items-center gap-1">
-            <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+            <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
               guardrails
             </span>
-            <span className="text-[11px]" style={{ color: "var(--cl-text-muted)" }}>→</span>
+            <span className="text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>→</span>
           </div>
         </Link>
       </div>

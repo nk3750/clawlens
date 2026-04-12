@@ -1662,20 +1662,26 @@ describe("groupBySessions — cron run splitting", () => {
   });
 });
 
-describe("getTodayEntries — rolling 24h window", () => {
-  it("includes entries from 23h ago but excludes 25h ago", () => {
+describe("getAgents todayCutoff — local calendar day", () => {
+  it("counts only entries from the current local calendar day", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+    // Set system time to 2026-03-29 14:00 local
+    vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
+
+    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
+    const yesterday = new Date(2026, 2, 28, 15, 0, 0); // yesterday 3pm local
+    const todayMorning = new Date(2026, 2, 29, 8, 0, 0); // today 8am local
+    const todayNoon = new Date(2026, 2, 29, 12, 0, 0); // today noon local
 
     const entries = [
-      entry({ agentId: "bot-1", decision: "allow", timestamp: "2026-03-28T13:00:00Z" }), // 25h ago
-      entry({ agentId: "bot-1", decision: "allow", timestamp: "2026-03-28T15:00:00Z" }), // 23h ago
-      entry({ agentId: "bot-1", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }), // 4h ago
+      entry({ agentId: "bot-1", decision: "allow", timestamp: yesterday.toISOString() }),
+      entry({ agentId: "bot-1", decision: "allow", timestamp: todayMorning.toISOString() }),
+      entry({ agentId: "bot-1", decision: "allow", timestamp: todayNoon.toISOString() }),
     ];
 
     const agents = getAgents(entries);
     const bot = agents[0];
-    // 25h-ago entry should be excluded from today counts
+    // Only entries from today's local calendar day should count
     expect(bot.todayToolCalls).toBe(2);
 
     vi.useRealTimers();
