@@ -85,7 +85,7 @@ export default function ActivityProfile({ breakdown, sessionActions, todayAction
 
       {/* Action counts footer */}
       {(sessionActions != null || todayActions != null) && (
-        <p className="label-mono mt-5" style={{ color: "var(--cl-text-muted)" }}>
+        <p className="label-mono mt-5" style={{ color: "var(--cl-text-secondary)" }}>
           {sessionActions != null && <>{sessionActions} actions this session</>}
           {sessionActions != null && todayActions != null && " \u00b7 "}
           {todayActions != null && <>{todayActions} actions today</>}
@@ -96,7 +96,7 @@ export default function ActivityProfile({ breakdown, sessionActions, todayAction
       {decisionCounts && Object.keys(decisionCounts).length > 0 && (
         <>
           <div className="cl-divider my-5" />
-          <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
+          <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-secondary)" }}>
             DECISIONS
           </h3>
           <div className="flex items-center gap-1.5 flex-wrap font-mono text-xs">
@@ -109,7 +109,7 @@ export default function ActivityProfile({ breakdown, sessionActions, todayAction
       {tierCounts && (
         <>
           <div className="cl-divider my-5" />
-          <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
+          <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-secondary)" }}>
             RISK PROFILE
           </h3>
           <TierDistribution counts={tierCounts} />

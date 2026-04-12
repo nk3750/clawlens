@@ -46,10 +46,10 @@ function StatCell({ value, label, sublabel }: { value: number; label: string; su
       >
         {display}
       </span>
-      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}>
+      <span className="label-mono" style={{ color: "var(--cl-text-secondary)", fontSize: "11px" }}>
         {label}
       </span>
-      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "9px" }}>
+      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}>
         {sublabel}
       </span>
     </div>
@@ -69,13 +69,13 @@ function RiskStatCell({ value, label }: { value: number; label: string }) {
       >
         {display}
       </span>
-      <span className="label-mono" style={{ color: "var(--cl-text-muted)", fontSize: "10px" }}>
+      <span className="label-mono" style={{ color: "var(--cl-text-secondary)", fontSize: "11px" }}>
         {label}
       </span>
       <div className="mt-1.5" style={{ width: 120 }}>
         <RiskBar score={display} />
       </div>
-      <span className="label-mono mt-1" style={{ color, fontSize: "9px" }}>
+      <span className="label-mono mt-1" style={{ color, fontSize: "10px" }}>
         {tier.toUpperCase()}
       </span>
     </div>
@@ -92,7 +92,7 @@ function RiskBar({ score }: { score: number }) {
       {/* Empty track */}
       <div
         className="absolute inset-0 rounded-full"
-        style={{ backgroundColor: "var(--cl-border-subtle)", opacity: 0.15 }}
+        style={{ backgroundColor: "var(--cl-border-subtle)", opacity: 0.25 }}
       />
       {/* Filled portion */}
       <div
@@ -158,7 +158,7 @@ export default function AgentHeader({ agent, todayActions, avgRisk, peakRisk, to
       <Link
         to="/"
         className="inline-flex items-center gap-1.5 text-sm mb-8 group"
-        style={{ color: "var(--cl-text-muted)" }}
+        style={{ color: "var(--cl-text-secondary)" }}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:-translate-x-1" style={{ transitionDuration: "var(--cl-spring-duration)", transitionTimingFunction: "var(--cl-spring)" }}>
           <polyline points="15 18 9 12 15 6" />

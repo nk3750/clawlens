@@ -37,7 +37,7 @@ export default function RiskPanel({ riskTrend, topRisks, onDotClick }: Props) {
   return (
     <div>
       {/* Top risks */}
-      <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
+      <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-secondary)" }}>
         TOP RISKS
       </h3>
 
@@ -55,7 +55,7 @@ export default function RiskPanel({ riskTrend, topRisks, onDotClick }: Props) {
 
       {/* Trend */}
       <div className="cl-divider mb-4" />
-      <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-muted)" }}>
+      <h3 className="label-mono mb-3" style={{ color: "var(--cl-text-secondary)" }}>
         TREND
       </h3>
       <div ref={sparkRef}>
@@ -109,7 +109,7 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
 
         {/* Count badge */}
         {count != null && count > 1 && (
-          <span className="label-mono shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="label-mono shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
             &times;{count}
           </span>
         )}
@@ -130,7 +130,7 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
         {hasAi && (
           <span
             className="label-mono shrink-0"
-            style={{ color: "var(--cl-accent)", fontSize: "10px" }}
+            style={{ color: "var(--cl-accent)", fontSize: "11px" }}
           >
             AI
           </span>
@@ -210,7 +210,7 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
       {!expanded && entry.llmEvaluation?.reasoning && (
         <div
           className="text-xs italic px-3 pb-1 truncate"
-          style={{ color: "var(--cl-text-muted)", paddingLeft: "2.25rem" }}
+          style={{ color: "var(--cl-text-secondary)", paddingLeft: "2.25rem" }}
         >
           &ldquo;{entry.llmEvaluation.reasoning}&rdquo;
         </div>

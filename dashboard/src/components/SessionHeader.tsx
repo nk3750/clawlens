@@ -20,7 +20,7 @@ export default function SessionHeader({ session }: Props) {
         className="flex items-center gap-1.5 text-sm mb-8"
         style={{ color: "var(--cl-text-muted)" }}
       >
-        <Link to="/" className="transition-colors hover:underline" style={{ color: "var(--cl-text-muted)" }}>
+        <Link to="/" className="transition-colors hover:underline" style={{ color: "var(--cl-text-secondary)" }}>
           Agents
         </Link>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -29,7 +29,7 @@ export default function SessionHeader({ session }: Props) {
         <Link
           to={`/agent/${encodeURIComponent(session.agentId)}`}
           className="transition-colors hover:underline"
-          style={{ color: "var(--cl-text-muted)" }}
+          style={{ color: "var(--cl-text-secondary)" }}
         >
           {session.agentId}
         </Link>
@@ -80,7 +80,7 @@ export default function SessionHeader({ session }: Props) {
           {isLlmGenerated && (
             <span
               className="label-mono shrink-0"
-              style={{ fontSize: "9px", color: "var(--cl-text-muted)" }}
+              style={{ fontSize: "10px", color: "var(--cl-text-muted)" }}
             >
               AI
             </span>

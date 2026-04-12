@@ -61,7 +61,7 @@ export default function ActivityEntry({ entry, description }: Props) {
                 key={tag}
                 className="label-mono px-1.5 py-0.5 rounded"
                 style={{
-                  fontSize: "10px",
+                  fontSize: "11px",
                   backgroundColor: "var(--cl-accent-7)",
                   color: "var(--cl-text-secondary)",
                 }}
@@ -91,7 +91,7 @@ export default function ActivityEntry({ entry, description }: Props) {
             {entry.llmEvaluation && entry.llmEvaluation.confidence !== "none" && (
               <span
                 className="label-mono shrink-0"
-                style={{ color: "var(--cl-accent)", fontSize: "10px" }}
+                style={{ color: "var(--cl-accent)", fontSize: "11px" }}
               >
                 AI
               </span>

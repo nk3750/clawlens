@@ -202,7 +202,7 @@ function Tier2Row({ item, isLast }: { item: InterventionEntry; isLast: boolean }
           <span className="font-sans text-sm" style={{ color: borderColor }}>
             — {statusLabel}
           </span>
-          <span className="font-mono text-[11px] ml-auto shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-mono text-[11px] ml-auto shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
             {relTime(item.timestamp)}
           </span>
         </div>

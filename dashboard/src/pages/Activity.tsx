@@ -246,7 +246,7 @@ export default function Activity() {
                         key={tag}
                         className="label-mono px-1.5 py-0.5 rounded"
                         style={{
-                          fontSize: "10px",
+                          fontSize: "11px",
                           backgroundColor: "var(--cl-accent-7)",
                           color: "var(--cl-text-secondary)",
                         }}

@@ -128,7 +128,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
                   key={tag}
                   className="label-mono px-1.5 py-0.5 rounded"
                   style={{
-                    fontSize: "10px",
+                    fontSize: "11px",
                     backgroundColor: "var(--cl-accent-7)",
                     color: "var(--cl-text-secondary)",
                   }}
@@ -167,7 +167,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
                 <span
                   className="label-mono px-1 py-0.5 rounded shrink-0"
                   style={{
-                    fontSize: "10px",
+                    fontSize: "11px",
                     backgroundColor: "var(--cl-accent-7)",
                     color: "var(--cl-accent)",
                   }}
@@ -179,7 +179,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
           )}
 
           {/* Relative time */}
-          <span className="font-mono text-xs shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-mono text-xs shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
             {relTime(entry.timestamp)}
           </span>
 
@@ -207,7 +207,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
         {/* Policy rule for non-allow decisions */}
         {showBadge && entry.policyRule && (
           <div className="mt-1">
-            <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+            <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
               rule: {entry.policyRule}
             </span>
           </div>
@@ -217,7 +217,7 @@ export default function TimelineNode({ entry, index, defaultExpanded = false }: 
         {showReasoning && (
           <div
             className="mt-1 text-xs truncate"
-            style={{ color: "var(--cl-text-muted)", lineHeight: 1.4 }}
+            style={{ color: "var(--cl-text-secondary)", lineHeight: 1.4 }}
           >
             &ldquo;{entry.llmEvaluation!.reasoning}&rdquo;
           </div>

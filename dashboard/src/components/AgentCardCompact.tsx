@@ -57,7 +57,7 @@ export default function AgentCard({ agent }: Props) {
           {agent.name}
         </span>
         {hasActivity && triggerLabel && (
-          <span className="font-sans text-[11px] shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-sans text-[11px] shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
             {triggerLabel}
           </span>
         )}
@@ -82,13 +82,13 @@ export default function AgentCard({ agent }: Props) {
           style={{ color: "var(--cl-text-secondary)" }}
         >
           {agent.todayToolCalls}
-          <span className="font-sans text-[11px] font-normal ml-1" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-sans text-[11px] font-normal ml-1" style={{ color: "var(--cl-text-secondary)" }}>
             actions
           </span>
         </span>
         <span
           className="font-mono text-[11px] ml-auto"
-          style={{ color: "var(--cl-text-muted)" }}
+          style={{ color: "var(--cl-text-secondary)" }}
         >
           {agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "idle"}
         </span>
@@ -129,12 +129,12 @@ function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, 
               <path d={meta.iconPath} />
             </svg>
             <span
-              className="font-sans text-[10px] shrink-0"
-              style={{ color: "var(--cl-text-muted)", minWidth: 52 }}
+              className="font-sans text-[11px] shrink-0"
+              style={{ color: "var(--cl-text-secondary)", minWidth: 52 }}
             >
               {CATEGORY_LABELS[cat]}
             </span>
-            <div className="flex-1" style={{ height: 4, borderRadius: 2, backgroundColor: "var(--cl-elevated)" }}>
+            <div className="flex-1" style={{ height: 4, borderRadius: 2, backgroundColor: "color-mix(in srgb, var(--cl-text-muted) 15%, transparent)" }}>
               <div
                 style={{
                   width: `${pct}%`,
@@ -146,8 +146,8 @@ function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, 
               />
             </div>
             <span
-              className="font-mono text-[10px] shrink-0"
-              style={{ color: "var(--cl-text-muted)", minWidth: 24, textAlign: "right" }}
+              className="font-mono text-[11px] shrink-0"
+              style={{ color: "var(--cl-text-secondary)", minWidth: 24, textAlign: "right" }}
             >
               {pct}%
             </span>
@@ -167,7 +167,7 @@ function RiskBadge({ score }: { score: number }) {
 
   return (
     <span
-      className="font-mono text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+      className="font-mono text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
       style={{
         color,
         backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,

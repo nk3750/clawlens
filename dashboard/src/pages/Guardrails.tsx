@@ -71,7 +71,7 @@ export default function Guardrails() {
           >
             GUARDRAILS
           </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--cl-text-muted)" }}>
+          <p className="text-sm mt-1" style={{ color: "var(--cl-text-secondary)" }}>
             {guardrails.length} active
           </p>
         </div>
@@ -184,10 +184,10 @@ function GuardrailRow({
           <span className="label-mono" style={{ color: aColor }}>
             {actionLabel(g.action)}
           </span>
-          <span className="text-xs" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="text-xs" style={{ color: "var(--cl-text-secondary)" }}>
             {g.agentId ?? "all agents"}
           </span>
-          <span className="text-xs" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="text-xs" style={{ color: "var(--cl-text-secondary)" }}>
             added {relTime(g.createdAt)}
           </span>
           {g.riskScore > 0 && (

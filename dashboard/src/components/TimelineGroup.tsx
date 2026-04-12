@@ -146,7 +146,7 @@ export default function TimelineGroup({ group, startIndex }: Props) {
         </div>
 
         {/* Subtitle */}
-        <div className="mt-1 font-mono text-xs" style={{ color: "var(--cl-text-muted)" }}>
+        <div className="mt-1 font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
           {group.entries.length} actions &middot; {formatDuration(group.duration)} &middot;{" "}
           {riskSummary}
         </div>
@@ -197,9 +197,9 @@ export default function TimelineGroup({ group, startIndex }: Props) {
                     <span
                       className="label-mono px-1 py-0.5 rounded shrink-0 hidden md:inline"
                       style={{
-                        fontSize: "9px",
+                        fontSize: "10px",
                         backgroundColor: "var(--cl-accent-7)",
-                        color: "var(--cl-text-muted)",
+                        color: "var(--cl-text-secondary)",
                       }}
                     >
                       {tag.toUpperCase()}

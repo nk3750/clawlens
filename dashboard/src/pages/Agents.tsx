@@ -93,7 +93,7 @@ export default function Agents() {
             {isToday && (
               <p
                 className="text-sm mt-3 max-w-sm"
-                style={{ color: "var(--cl-text-muted)", opacity: 0.6 }}
+                style={{ color: "var(--cl-text-muted)" }}
               >
                 ClawLens is watching — activity will appear here once agents start.
               </p>

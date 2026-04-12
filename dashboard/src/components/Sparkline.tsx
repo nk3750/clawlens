@@ -268,7 +268,7 @@ export default function Sparkline({ points, width = 320, height = 100, onDotClic
             textAnchor="end"
             dominantBaseline="central"
             className="label-mono"
-            style={{ fill: "var(--cl-text-muted)", fontSize: 9 }}
+            style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
           >
             {v}
           </text>
@@ -282,7 +282,7 @@ export default function Sparkline({ points, width = 320, height = 100, onDotClic
             y={height - 4}
             textAnchor="middle"
             className="label-mono"
-            style={{ fill: "var(--cl-text-muted)", fontSize: 9 }}
+            style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
           >
             {tl.label}
           </text>

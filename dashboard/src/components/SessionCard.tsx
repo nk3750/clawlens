@@ -54,7 +54,7 @@ function ToolBreakdown({ session }: { session: SessionInfo }) {
               <path d={meta?.iconPath ?? ""} />
             </svg>
             {t.toolName}
-            <span style={{ color: "var(--cl-text-muted)" }}>{"\u00d7"}{t.count}</span>
+            <span style={{ color: "var(--cl-text-secondary)" }}>{"\u00d7"}{t.count}</span>
           </span>
         );
       })}
@@ -119,7 +119,7 @@ export default function SessionCard({ session }: Props) {
         >
           avg {session.avgRisk}
         </span>
-        <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+        <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
           {tierLabel}
         </span>
         {session.blockedCount > 0 && (

@@ -81,7 +81,7 @@ export default function RiskDetail({ entry }: Props) {
 
           {/* Score adjustment */}
           <div className="flex items-center gap-2 mb-2">
-            <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+            <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
               tier 1: {entry.originalRiskScore ?? entry.riskScore}
             </span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--cl-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -107,11 +107,11 @@ export default function RiskDetail({ entry }: Props) {
 
           {/* Confidence + Patterns */}
           <div className="flex flex-wrap gap-4">
-            <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+            <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
               confidence: {llm.confidence}
             </span>
             {llm.patterns.length > 0 && (
-              <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+              <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
                 patterns: {llm.patterns.join(", ")}
               </span>
             )}
@@ -125,12 +125,12 @@ export default function RiskDetail({ entry }: Props) {
       {/* Metadata row */}
       <div className="flex flex-wrap gap-x-5 gap-y-1.5">
         {entry.policyRule && (
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
             rule: {entry.policyRule}
           </span>
         )}
         {entry.durationMs != null && (
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
             duration: {formatDuration(entry.durationMs)}
           </span>
         )}
@@ -154,7 +154,7 @@ function ParamsSection({ entry }: { entry: EntryResponse }) {
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 w-full text-left"
       >
-        <h4 className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+        <h4 className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
           PARAMETERS
         </h4>
         <svg
