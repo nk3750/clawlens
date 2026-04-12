@@ -180,6 +180,35 @@ export interface ActivityTimelineResponse {
   bucketMinutes: number;
 }
 
+// ── Session Timeline ─────────────────────────────────
+
+export interface SessionSegment {
+  category: ActivityCategory;
+  startTime: string;
+  endTime: string;
+}
+
+export interface TimelineSession {
+  sessionKey: string;
+  agentId: string;
+  startTime: string;
+  endTime: string;
+  segments: SessionSegment[];
+  actionCount: number;
+  avgRisk: number;
+  peakRisk: number;
+  blockedCount: number;
+  isActive: boolean;
+}
+
+export interface SessionTimelineResponse {
+  agents: string[];
+  sessions: TimelineSession[];
+  startTime: string;
+  endTime: string;
+  totalActions: number;
+}
+
 // ── Guardrails ────────────────────────────────────────
 
 export type GuardrailAction =

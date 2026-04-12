@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, } from "./api";
+import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, } from "./api";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -185,6 +185,13 @@ export function registerDashboardRoutes(api, deps) {
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
                 sendJson(res, getActivityTimeline(entries, bucketMinutes, date, range));
+                return true;
+            }
+            if (subPath === "api/session-timeline") {
+                const range = url.searchParams.get("range") || undefined;
+                const date = url.searchParams.get("date") || undefined;
+                const entries = deps.auditLogger.readEntries();
+                sendJson(res, getSessionTimeline(entries, date, range));
                 return true;
             }
             if (subPath === "api/health") {

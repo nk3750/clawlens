@@ -155,6 +155,10 @@ export interface SessionDetailResponse {
     session: SessionInfo;
     entries: EntryResponse[];
 }
+/** Today's date in local time as YYYY-MM-DD. */
+export declare function localToday(): string;
+/** Extract the local-date portion (YYYY-MM-DD) of a UTC ISO timestamp. */
+export declare function localDateOf(isoTimestamp: string): string;
 /** Compute the effective user-facing decision for an entry. */
 export declare function getEffectiveDecision(entry: AuditEntry): string;
 /** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
@@ -202,5 +206,31 @@ export interface ActivityTimelineResponse {
     bucketMinutes: number;
 }
 export declare function getActivityTimeline(entries: AuditEntry[], bucketMinutes?: number, dateStr?: string, range?: string): ActivityTimelineResponse;
+export interface SessionSegment {
+    category: ActivityCategory;
+    startTime: string;
+    endTime: string;
+}
+export interface TimelineSession {
+    sessionKey: string;
+    agentId: string;
+    startTime: string;
+    endTime: string;
+    segments: SessionSegment[];
+    actionCount: number;
+    avgRisk: number;
+    peakRisk: number;
+    blockedCount: number;
+    isActive: boolean;
+}
+export interface SessionTimelineResponse {
+    agents: string[];
+    sessions: TimelineSession[];
+    startTime: string;
+    endTime: string;
+    totalActions: number;
+}
+export declare function buildSessionSegments(entries: AuditEntry[]): SessionSegment[];
+export declare function getSessionTimeline(entries: AuditEntry[], dateStr?: string, range?: string): SessionTimelineResponse;
 /** Get full detail for a single session. */
 export declare function getSessionDetail(entries: AuditEntry[], sessionKey: string): SessionDetailResponse | null;

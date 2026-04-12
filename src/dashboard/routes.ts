@@ -19,6 +19,7 @@ import {
   getRecentEntries,
   getSessionDetail,
   getSessions,
+  getSessionTimeline,
 } from "./api";
 import type { ActivityCategory } from "./categories";
 import { getCategory } from "./categories";
@@ -235,6 +236,14 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
         sendJson(res, getActivityTimeline(entries, bucketMinutes, date, range));
+        return true;
+      }
+
+      if (subPath === "api/session-timeline") {
+        const range = url.searchParams.get("range") || undefined;
+        const date = url.searchParams.get("date") || undefined;
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, getSessionTimeline(entries, date, range));
         return true;
       }
 

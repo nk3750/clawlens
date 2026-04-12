@@ -6,10 +6,25 @@ import { computeBreakdown, describeAction, getCategory, parseSessionContext, ris
 export const DEFAULT_AGENT_ID = "default";
 // ── Internal helpers ────────────────────────────────────
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
-/** Filter entries to the last 24 hours (rolling window, timezone-agnostic). */
+/** Today's date in local time as YYYY-MM-DD. */
+export function localToday() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+/** Extract the local-date portion (YYYY-MM-DD) of a UTC ISO timestamp. */
+export function localDateOf(isoTimestamp) {
+    const d = new Date(isoTimestamp);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+/** Local midnight for a YYYY-MM-DD date string, as epoch ms.
+ *  The key trick: `new Date("2026-04-12T00:00:00")` without "Z" is parsed as local time. */
+function localMidnightMs(dateStr) {
+    return new Date(`${dateStr}T00:00:00`).getTime();
+}
+/** Filter entries to today (local calendar day). */
 function getTodayEntries(entries) {
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    return entries.filter((e) => e.timestamp >= cutoff);
+    const today = localToday();
+    return entries.filter((e) => localDateOf(e.timestamp) === today);
 }
 /** Compute the effective user-facing decision for an entry. */
 export function getEffectiveDecision(entry) {
@@ -231,9 +246,9 @@ function buildSessionInfo(sessionKey, entries, evalIdx) {
     };
 }
 // ── Date-filtered helpers ──────────────────────────────
-/** Filter entries to a specific calendar day (YYYY-MM-DD). */
+/** Filter entries to a specific calendar day (YYYY-MM-DD, local time). */
 function getDayEntries(entries, date) {
-    return entries.filter((e) => e.timestamp.startsWith(date));
+    return entries.filter((e) => localDateOf(e.timestamp) === date);
 }
 /** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
 export function computeHistoricDailyMax(entries) {
@@ -241,7 +256,7 @@ export function computeHistoricDailyMax(entries) {
     for (const entry of entries) {
         if (!entry.decision)
             continue;
-        const day = entry.timestamp.slice(0, 10);
+        const day = localDateOf(entry.timestamp);
         byDay.set(day, (byDay.get(day) ?? 0) + 1);
     }
     if (byDay.size === 0)
@@ -503,10 +518,10 @@ export function computeEnhancedStats(entries, date) {
         }
     }
     // Yesterday's total: count decision entries from the day before the viewing date
-    const viewingDate = isPastDay ? date : new Date().toISOString().slice(0, 10);
-    const yesterdayDate = new Date(`${viewingDate}T12:00:00`);
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+    const viewingDate = isPastDay ? date : localToday();
+    const yesterdayMs = localMidnightMs(viewingDate) - 86_400_000;
+    const yd = new Date(yesterdayMs);
+    const yesterdayStr = `${yd.getFullYear()}-${String(yd.getMonth() + 1).padStart(2, "0")}-${String(yd.getDate()).padStart(2, "0")}`;
     const yesterdayTotal = getDayEntries(entries, yesterdayStr).filter(isDecisionEntry).length;
     return {
         total,
@@ -555,7 +570,7 @@ export function getAgents(entries, date) {
         }
     }
     const now = Date.now();
-    const todayCutoff = isPastDay ? date : new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    const todayStr = isPastDay ? date : localToday();
     const thirtyMinAgo = new Date(now - 1_800_000).toISOString();
     const evalIdx = buildEvalIndex(entries);
     const agents = [];
@@ -574,7 +589,7 @@ export function getAgents(entries, date) {
                 : false;
         const todayDecisions = isPastDay
             ? agentEntries.filter(isDecisionEntry)
-            : agentEntries.filter((e) => e.timestamp >= todayCutoff && isDecisionEntry(e));
+            : agentEntries.filter((e) => localDateOf(e.timestamp) === todayStr && isDecisionEntry(e));
         let riskSum = 0;
         let riskCount = 0;
         let peakRisk = 0;
@@ -694,7 +709,7 @@ export function getAgents(entries, date) {
         }
         const hourlyActivity = new Array(24).fill(0);
         for (const e of todayDecisions) {
-            const hour = new Date(e.timestamp).getUTCHours();
+            const hour = new Date(e.timestamp).getHours();
             hourlyActivity[hour]++;
         }
         agents.push({
@@ -864,7 +879,7 @@ export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
                 rangeStart = rangeEnd - rangeMs;
             }
             else {
-                rangeStart = new Date(`${dateStr}T00:00:00Z`).getTime();
+                rangeStart = localMidnightMs(dateStr);
                 rangeEnd = rangeStart + rangeMs;
             }
             decisions = decisions.filter((e) => {
@@ -962,6 +977,150 @@ export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
         endTime: new Date(maxTs).toISOString(),
         totalActions: decisions.length,
         bucketMinutes: effectiveBucket,
+    };
+}
+export function buildSessionSegments(entries) {
+    const sorted = [...entries]
+        .filter(isDecisionEntry)
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    if (sorted.length === 0)
+        return [];
+    const segments = [];
+    let currentCat = getCategory(sorted[0].toolName);
+    let segStart = sorted[0].timestamp;
+    let segEnd = sorted[0].timestamp;
+    for (let i = 1; i < sorted.length; i++) {
+        const cat = getCategory(sorted[i].toolName);
+        if (cat === currentCat) {
+            segEnd = sorted[i].timestamp;
+        }
+        else {
+            segments.push({ category: currentCat, startTime: segStart, endTime: segEnd });
+            currentCat = cat;
+            segStart = sorted[i].timestamp;
+            segEnd = sorted[i].timestamp;
+        }
+    }
+    segments.push({ category: currentCat, startTime: segStart, endTime: segEnd });
+    return segments;
+}
+export function getSessionTimeline(entries, dateStr, range) {
+    const emptyResponse = {
+        agents: [],
+        sessions: [],
+        startTime: "",
+        endTime: "",
+        totalActions: 0,
+    };
+    const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
+    let decisions = dayEntries.filter(isDecisionEntry);
+    // Apply range filtering
+    let rangeStart;
+    let rangeEnd;
+    if (range) {
+        const rangeMs = parseRangeMs(range);
+        if (rangeMs) {
+            const isToday = !dateStr;
+            if (isToday) {
+                rangeEnd = Date.now();
+                rangeStart = rangeEnd - rangeMs;
+            }
+            else {
+                rangeStart = localMidnightMs(dateStr);
+                rangeEnd = rangeStart + rangeMs;
+            }
+            decisions = decisions.filter((e) => {
+                const ts = new Date(e.timestamp).getTime();
+                return ts >= rangeStart && ts <= rangeEnd;
+            });
+        }
+    }
+    if (decisions.length === 0)
+        return emptyResponse;
+    // Build session index from ALL entries so #N numbering is consistent
+    const sessionMap = groupBySessions(entries);
+    const splitSessionIndex = new Map();
+    for (const [splitKey, sEntries] of sessionMap) {
+        for (const e of sEntries) {
+            const entryKey = e.toolCallId ?? e.timestamp;
+            splitSessionIndex.set(entryKey, splitKey);
+        }
+    }
+    const evalIdx = buildEvalIndex(entries);
+    const now = Date.now();
+    // Group filtered decisions by split session key
+    const sessionEntries = new Map();
+    for (const e of decisions) {
+        const entryKey = e.toolCallId ?? e.timestamp;
+        const sKey = splitSessionIndex.get(entryKey) ?? e.sessionKey ?? "unknown";
+        const existing = sessionEntries.get(sKey);
+        if (existing) {
+            existing.push(e);
+        }
+        else {
+            sessionEntries.set(sKey, [e]);
+        }
+    }
+    // Determine view window for overlap filtering
+    const viewStart = rangeStart ?? Math.min(...decisions.map((e) => new Date(e.timestamp).getTime()));
+    const viewEnd = rangeEnd ?? (dateStr ? localMidnightMs(dateStr) + 86_400_000 : now);
+    const agentTotals = new Map();
+    const sessions = [];
+    for (const [sKey, sEntries] of sessionEntries) {
+        const sorted = [...sEntries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        const startTime = sorted[0].timestamp;
+        const endTime = sorted[sorted.length - 1].timestamp;
+        const startMs = new Date(startTime).getTime();
+        const endMs = new Date(endTime).getTime();
+        // Overlap filter: session must intersect the view window
+        if (startMs > viewEnd || endMs < viewStart)
+            continue;
+        const agentId = sorted.find((e) => e.agentId)?.agentId ?? DEFAULT_AGENT_ID;
+        const segments = buildSessionSegments(sorted);
+        let riskSum = 0;
+        let riskCount = 0;
+        let peakRisk = 0;
+        let blockedCount = 0;
+        for (const e of sorted) {
+            const score = getEffectiveScore(e, evalIdx);
+            if (score !== undefined) {
+                riskSum += score;
+                riskCount++;
+                if (score > peakRisk)
+                    peakRisk = score;
+            }
+            const eff = getEffectiveDecision(e);
+            if (eff === "block" || eff === "denied")
+                blockedCount++;
+        }
+        const isActive = now - endMs <= ACTIVE_THRESHOLD_MS;
+        sessions.push({
+            sessionKey: sKey,
+            agentId,
+            startTime,
+            endTime,
+            segments,
+            actionCount: sorted.length,
+            avgRisk: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
+            peakRisk,
+            blockedCount,
+            isActive,
+        });
+        agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + sorted.length);
+    }
+    const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    const allTimestamps = sessions.flatMap((s) => [
+        new Date(s.startTime).getTime(),
+        new Date(s.endTime).getTime(),
+    ]);
+    const minTs = Math.min(...allTimestamps);
+    const maxTs = Math.max(...allTimestamps);
+    return {
+        agents,
+        sessions,
+        startTime: new Date(minTs).toISOString(),
+        endTime: new Date(maxTs).toISOString(),
+        totalActions: decisions.length,
     };
 }
 /** Get full detail for a single session. */

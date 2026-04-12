@@ -1304,6 +1304,199 @@ export function getActivityTimeline(
   };
 }
 
+// ── Session-based timeline ─────────────────────────────
+
+export interface SessionSegment {
+  category: ActivityCategory;
+  startTime: string;
+  endTime: string;
+}
+
+export interface TimelineSession {
+  sessionKey: string;
+  agentId: string;
+  startTime: string;
+  endTime: string;
+  segments: SessionSegment[];
+  actionCount: number;
+  avgRisk: number;
+  peakRisk: number;
+  blockedCount: number;
+  isActive: boolean;
+}
+
+export interface SessionTimelineResponse {
+  agents: string[];
+  sessions: TimelineSession[];
+  startTime: string;
+  endTime: string;
+  totalActions: number;
+}
+
+export function buildSessionSegments(entries: AuditEntry[]): SessionSegment[] {
+  const sorted = [...entries]
+    .filter(isDecisionEntry)
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  if (sorted.length === 0) return [];
+
+  const segments: SessionSegment[] = [];
+  let currentCat = getCategory(sorted[0].toolName);
+  let segStart = sorted[0].timestamp;
+  let segEnd = sorted[0].timestamp;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const cat = getCategory(sorted[i].toolName);
+    if (cat === currentCat) {
+      segEnd = sorted[i].timestamp;
+    } else {
+      segments.push({ category: currentCat, startTime: segStart, endTime: segEnd });
+      currentCat = cat;
+      segStart = sorted[i].timestamp;
+      segEnd = sorted[i].timestamp;
+    }
+  }
+  segments.push({ category: currentCat, startTime: segStart, endTime: segEnd });
+
+  return segments;
+}
+
+export function getSessionTimeline(
+  entries: AuditEntry[],
+  dateStr?: string,
+  range?: string,
+): SessionTimelineResponse {
+  const emptyResponse: SessionTimelineResponse = {
+    agents: [],
+    sessions: [],
+    startTime: "",
+    endTime: "",
+    totalActions: 0,
+  };
+
+  const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
+  let decisions = dayEntries.filter(isDecisionEntry);
+
+  // Apply range filtering
+  let rangeStart: number | undefined;
+  let rangeEnd: number | undefined;
+  if (range) {
+    const rangeMs = parseRangeMs(range);
+    if (rangeMs) {
+      const isToday = !dateStr;
+      if (isToday) {
+        rangeEnd = Date.now();
+        rangeStart = rangeEnd - rangeMs;
+      } else {
+        rangeStart = localMidnightMs(dateStr);
+        rangeEnd = rangeStart + rangeMs;
+      }
+      decisions = decisions.filter((e) => {
+        const ts = new Date(e.timestamp).getTime();
+        return ts >= rangeStart! && ts <= rangeEnd!;
+      });
+    }
+  }
+
+  if (decisions.length === 0) return emptyResponse;
+
+  // Build session index from ALL entries so #N numbering is consistent
+  const sessionMap = groupBySessions(entries);
+  const splitSessionIndex = new Map<string, string>();
+  for (const [splitKey, sEntries] of sessionMap) {
+    for (const e of sEntries) {
+      const entryKey = e.toolCallId ?? e.timestamp;
+      splitSessionIndex.set(entryKey, splitKey);
+    }
+  }
+
+  const evalIdx = buildEvalIndex(entries);
+  const now = Date.now();
+
+  // Group filtered decisions by split session key
+  const sessionEntries = new Map<string, AuditEntry[]>();
+  for (const e of decisions) {
+    const entryKey = e.toolCallId ?? e.timestamp;
+    const sKey = splitSessionIndex.get(entryKey) ?? e.sessionKey ?? "unknown";
+    const existing = sessionEntries.get(sKey);
+    if (existing) {
+      existing.push(e);
+    } else {
+      sessionEntries.set(sKey, [e]);
+    }
+  }
+
+  // Determine view window for overlap filtering
+  const viewStart =
+    rangeStart ?? Math.min(...decisions.map((e) => new Date(e.timestamp).getTime()));
+  const viewEnd = rangeEnd ?? (dateStr ? localMidnightMs(dateStr) + 86_400_000 : now);
+
+  const agentTotals = new Map<string, number>();
+  const sessions: TimelineSession[] = [];
+
+  for (const [sKey, sEntries] of sessionEntries) {
+    const sorted = [...sEntries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const startTime = sorted[0].timestamp;
+    const endTime = sorted[sorted.length - 1].timestamp;
+    const startMs = new Date(startTime).getTime();
+    const endMs = new Date(endTime).getTime();
+
+    // Overlap filter: session must intersect the view window
+    if (startMs > viewEnd || endMs < viewStart) continue;
+
+    const agentId = sorted.find((e) => e.agentId)?.agentId ?? DEFAULT_AGENT_ID;
+    const segments = buildSessionSegments(sorted);
+
+    let riskSum = 0;
+    let riskCount = 0;
+    let peakRisk = 0;
+    let blockedCount = 0;
+    for (const e of sorted) {
+      const score = getEffectiveScore(e, evalIdx);
+      if (score !== undefined) {
+        riskSum += score;
+        riskCount++;
+        if (score > peakRisk) peakRisk = score;
+      }
+      const eff = getEffectiveDecision(e);
+      if (eff === "block" || eff === "denied") blockedCount++;
+    }
+
+    const isActive = now - endMs <= ACTIVE_THRESHOLD_MS;
+
+    sessions.push({
+      sessionKey: sKey,
+      agentId,
+      startTime,
+      endTime,
+      segments,
+      actionCount: sorted.length,
+      avgRisk: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
+      peakRisk,
+      blockedCount,
+      isActive,
+    });
+
+    agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + sorted.length);
+  }
+
+  const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+
+  const allTimestamps = sessions.flatMap((s) => [
+    new Date(s.startTime).getTime(),
+    new Date(s.endTime).getTime(),
+  ]);
+  const minTs = Math.min(...allTimestamps);
+  const maxTs = Math.max(...allTimestamps);
+
+  return {
+    agents,
+    sessions,
+    startTime: new Date(minTs).toISOString(),
+    endTime: new Date(maxTs).toISOString(),
+    totalActions: decisions.length,
+  };
+}
+
 /** Get full detail for a single session. */
 export function getSessionDetail(
   entries: AuditEntry[],
