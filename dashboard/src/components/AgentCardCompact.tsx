@@ -1,12 +1,7 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { AgentInfo, ActivityCategory } from "../lib/types";
-import { relTime, riskColorRaw, riskTierFromScore } from "../lib/utils";
+import { CATEGORY_META, relTime, riskColorRaw, riskTierFromScore } from "../lib/utils";
 import GradientAvatar from "./GradientAvatar";
-
-const ALL_CATEGORIES: ActivityCategory[] = [
-  "exploring", "changes", "commands", "web", "comms", "data",
-];
 
 const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   exploring: "exploring",
@@ -24,7 +19,7 @@ interface Props {
 export default function AgentCard({ agent }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
-  const triggerLabel = parseTriggerLabel(agent.currentContext);
+  const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode);
 
   return (
     <Link
@@ -66,16 +61,21 @@ export default function AgentCard({ agent }: Props) {
             {triggerLabel}
           </span>
         )}
+        {hasActivity && (
+          <span className="ml-auto shrink-0">
+            <RiskBadge score={agent.avgRiskScore} />
+          </span>
+        )}
       </div>
 
-      {/* Line 2: Category bar */}
+      {/* Category breakdown bars */}
       {hasActivity && (
-        <div className="mt-2">
-          <CategoryBar breakdown={agent.todayActivityBreakdown} />
+        <div className="mt-2.5 mb-1">
+          <CategoryBreakdown breakdown={agent.todayActivityBreakdown} />
         </div>
       )}
 
-      {/* Line 3: Stats */}
+      {/* Bottom: Stats */}
       <div className="flex items-center gap-2 mt-2">
         <span
           className="font-mono text-sm tabular-nums font-bold"
@@ -86,7 +86,6 @@ export default function AgentCard({ agent }: Props) {
             actions
           </span>
         </span>
-        {hasActivity && <RiskBadge score={agent.avgRiskScore} />}
         <span
           className="font-mono text-[11px] ml-auto"
           style={{ color: "var(--cl-text-muted)" }}
@@ -98,88 +97,63 @@ export default function AgentCard({ agent }: Props) {
   );
 }
 
-// ── Category Bar ──────────────────────────────────────────
+// ── Category Breakdown ───────────────────────────────────
 
-function CategoryBar({ breakdown }: { breakdown: Record<ActivityCategory, number> }) {
-  const [showTooltip, setShowTooltip] = useState(false);
+function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, number> }) {
   const total = Object.values(breakdown).reduce((s, n) => s + n, 0);
   if (total === 0) return null;
 
-  const categories = ALL_CATEGORIES
-    .map((key) => ({ key, count: breakdown[key] }))
-    .filter((c) => c.count > 0);
+  const categories = (Object.entries(breakdown) as [ActivityCategory, number][])
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 4);
 
   return (
-    <div
-      className="relative"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      <svg width={80} height={6} className="shrink-0 rounded-full overflow-hidden" style={{ display: "block" }}>
-        {categories.reduce<{ elements: React.ReactElement[]; x: number }>(
-          (acc, c) => {
-            const w = (c.count / total) * 80;
-            acc.elements.push(
-              <rect
-                key={c.key}
-                x={acc.x}
-                y={0}
-                width={w}
-                height={6}
-                fill={`var(--cl-cat-${c.key})`}
-                opacity={0.8}
-              />,
-            );
-            acc.x += w;
-            return acc;
-          },
-          { elements: [], x: 0 },
-        ).elements}
-      </svg>
-
-      {/* Hover tooltip */}
-      {showTooltip && (
-        <div
-          className="absolute z-50"
-          style={{
-            top: 12,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "var(--cl-surface)",
-            border: "1px solid var(--cl-border-default)",
-            borderRadius: 8,
-            padding: "8px 12px",
-            boxShadow: "var(--cl-shadow-card)",
-            whiteSpace: "nowrap",
-            opacity: 1,
-            transition: "opacity 150ms",
-          }}
-        >
-          {categories
-            .sort((a, b) => b.count - a.count)
-            .map((c) => (
-              <div key={c.key} className="flex items-center gap-2" style={{ lineHeight: "20px" }}>
-                <span
-                  className="inline-block rounded-full"
-                  style={{
-                    width: 6,
-                    height: 6,
-                    backgroundColor: `var(--cl-cat-${c.key})`,
-                  }}
-                />
-                <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
-                  {CATEGORY_LABELS[c.key]}
-                </span>
-                <span className="font-mono text-[11px]" style={{ color: "var(--cl-text-primary)" }}>
-                  {c.count}
-                </span>
-                <span className="font-mono text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
-                  {Math.round((c.count / total) * 100)}%
-                </span>
-              </div>
-            ))}
-        </div>
-      )}
+    <div className="flex flex-col gap-1.5">
+      {categories.map(([cat, count]) => {
+        const meta = CATEGORY_META[cat];
+        const pct = Math.round((count / total) * 100);
+        return (
+          <div key={cat} className="flex items-center gap-1.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={meta.color}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0"
+            >
+              <path d={meta.iconPath} />
+            </svg>
+            <span
+              className="font-sans text-[10px] shrink-0"
+              style={{ color: "var(--cl-text-muted)", minWidth: 52 }}
+            >
+              {CATEGORY_LABELS[cat]}
+            </span>
+            <div className="flex-1" style={{ height: 4, borderRadius: 2, backgroundColor: "var(--cl-elevated)" }}>
+              <div
+                style={{
+                  width: `${pct}%`,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: meta.color,
+                  opacity: 0.8,
+                }}
+              />
+            </div>
+            <span
+              className="font-mono text-[10px] shrink-0"
+              style={{ color: "var(--cl-text-muted)", minWidth: 24, textAlign: "right" }}
+            >
+              {pct}%
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -209,12 +183,14 @@ function RiskBadge({ score }: { score: number }) {
 
 // ── Trigger Context Parser ────────────────────────────────
 
-function parseTriggerLabel(context: string | undefined): string | null {
-  if (!context) return null;
-  const lower = context.toLowerCase();
-  if (lower.includes("cron")) return "via cron";
-  if (lower.includes("telegram")) return "via telegram";
-  if (lower.includes("api")) return "via API";
-  if (lower.includes("interactive")) return null;
+function parseTriggerLabel(context: string | undefined, mode?: string): string | null {
+  if (context) {
+    const lower = context.toLowerCase();
+    if (lower.includes("cron")) return "via cron";
+    if (lower.includes("telegram")) return "via telegram";
+    if (lower.includes("api")) return "via API";
+    if (lower.includes("interactive")) return null;
+  }
+  if (mode === "scheduled") return "via cron";
   return null;
 }

@@ -254,6 +254,21 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
     buckets.some((b) => b.counts[cat] > 0),
   );
 
+  // Responsive chart width
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(800);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setMeasuredWidth(Math.max(Math.floor(entry.contentRect.width), 400));
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   if (loading && !apiData) {
     return (
       <div>
@@ -304,7 +319,7 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
   );
 
   // SVG dimensions
-  const chartWidth = 800;
+  const chartWidth = measuredWidth;
   const swimlaneWidth = chartWidth - LABEL_WIDTH - ACTION_COUNT_WIDTH;
   const chartHeight = PAD_TOP + sortedAgents.length * ROW_HEIGHT + TIME_AXIS_HEIGHT;
 
@@ -380,10 +395,10 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
       </div>
 
       {/* Chart */}
+      <div ref={containerRef}>
       <svg
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         className="w-full overflow-visible"
-        style={{ maxWidth: chartWidth }}
       >
         <defs>
           <filter id="risk-glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -689,6 +704,7 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
           );
         })()}
       </svg>
+      </div>
 
       {/* Tooltip */}
       {hoveredBucket && !clickedBucket && (
