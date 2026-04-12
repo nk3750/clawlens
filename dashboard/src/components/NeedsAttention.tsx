@@ -11,6 +11,8 @@ interface Props {
 const APPROVAL_TIMEOUT_MS = 300_000; // 5 minutes
 
 export default function NeedsAttention({ interventions, agents }: Props) {
+  const [expanded, setExpanded] = useState(false);
+
   const tier1: InterventionEntry[] = [];
   const tier2: InterventionEntry[] = [];
   const tier3: InterventionEntry[] = [];
@@ -25,13 +27,25 @@ export default function NeedsAttention({ interventions, agents }: Props) {
     }
   }
 
-  // Also include agents that need attention as Tier 2 items
   const agentAttention = agents.filter((a) => a.needsAttention);
 
-  const totalCount = tier1.length + tier2.length + agentAttention.length + tier3.length;
+  type OtherItem =
+    | { kind: "tier2"; entry: InterventionEntry }
+    | { kind: "agent"; agent: AgentInfo }
+    | { kind: "tier3"; entry: InterventionEntry };
+
+  const otherItems: OtherItem[] = [
+    ...tier2.map((e) => ({ kind: "tier2" as const, entry: e })),
+    ...agentAttention.map((a) => ({ kind: "agent" as const, agent: a })),
+    ...tier3.map((e) => ({ kind: "tier3" as const, entry: e })),
+  ];
+
+  const visibleOther = expanded ? otherItems : otherItems.slice(0, 3);
+  const hiddenCount = otherItems.length - 3;
+
+  const totalCount = tier1.length + otherItems.length;
   if (totalCount === 0) return null;
 
-  // Header urgency color
   const headerColor = tier1.length > 0
     ? riskColorRaw("high")
     : riskColorRaw("medium");
@@ -60,13 +74,13 @@ export default function NeedsAttention({ interventions, agents }: Props) {
         </span>
       </div>
 
-      {/* Tier 1: Pending approvals — each in its own container */}
+      {/* Tier 1: Pending approvals — always visible */}
       {tier1.map((iv) => (
         <Tier1Card key={`t1-${iv.timestamp}`} item={iv} />
       ))}
 
-      {/* Tier 2: Blocked + timed out — grouped in one container */}
-      {(tier2.length > 0 || agentAttention.length > 0) && (
+      {/* Other items: collapsible */}
+      {visibleOther.length > 0 && (
         <div
           className="rounded-xl overflow-hidden"
           style={{
@@ -74,39 +88,35 @@ export default function NeedsAttention({ interventions, agents }: Props) {
             borderRadius: 12,
           }}
         >
-          {tier2.map((iv, i) => (
-            <Tier2Row
-              key={`t2-${iv.timestamp}`}
-              item={iv}
-              isLast={i === tier2.length - 1 && agentAttention.length === 0}
-            />
-          ))}
-          {agentAttention.map((agent, i) => (
-            <Tier2AgentRow
-              key={`t2a-${agent.id}`}
-              agent={agent}
-              isLast={i === agentAttention.length - 1}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Tier 3: High-risk unguarded — grouped in one container */}
-      {tier3.length > 0 && (
-        <div
-          className="rounded-xl overflow-hidden"
-          style={{
-            border: "1px solid var(--cl-border-subtle)",
-            borderRadius: 12,
-          }}
-        >
-          {tier3.map((iv, i) => (
-            <Tier3Row
-              key={`t3-${iv.timestamp}`}
-              item={iv}
-              isLast={i === tier3.length - 1}
-            />
-          ))}
+          {visibleOther.map((item, i) => {
+            const isLast = i === visibleOther.length - 1 && (expanded || otherItems.length <= 3);
+            if (item.kind === "tier2") {
+              return <Tier2Row key={`t2-${item.entry.timestamp}`} item={item.entry} isLast={isLast} />;
+            }
+            if (item.kind === "agent") {
+              return <Tier2AgentRow key={`t2a-${item.agent.id}`} agent={item.agent} isLast={isLast} />;
+            }
+            return <Tier3Row key={`t3-${item.entry.timestamp}`} item={item.entry} isLast={isLast} />;
+          })}
+          {!expanded && hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="w-full text-center font-sans text-xs transition-colors"
+              style={{
+                color: "var(--cl-text-muted)",
+                background: "var(--cl-surface)",
+                border: "none",
+                borderTop: "1px solid var(--cl-border-subtle)",
+                cursor: "pointer",
+                padding: "8px 16px",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--cl-text-secondary)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--cl-text-muted)"; }}
+            >
+              Show {hiddenCount} more
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -101,42 +101,20 @@ export default function Agents() {
           </div>
         )}
 
-        {/* Agent list container */}
+        {/* Agent grid */}
         {(activeAgents.length > 0 || idleAgents.length > 0) && (
           <div
-            className="rounded-xl overflow-hidden"
+            className="grid"
             style={{
-              backgroundColor: "var(--cl-surface)",
-              border: "1px solid var(--cl-border-subtle)",
-              boxShadow: "var(--cl-shadow-card)",
+              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+              gap: 8,
             }}
           >
-            {activeAgents.map((agent, i) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                isLast={i === activeAgents.length - 1 && idleAgents.length === 0}
-              />
+            {activeAgents.map((agent) => (
+              <AgentRow key={agent.id} agent={agent} />
             ))}
-            {idleAgents.length > 0 && activeAgents.length > 0 && (
-              <div
-                className="px-3 py-1"
-                style={{ borderTop: "1px solid var(--cl-border-subtle)" }}
-              >
-                <span
-                  className="font-mono text-[10px] uppercase"
-                  style={{ color: "var(--cl-text-muted)", opacity: 0.5 }}
-                >
-                  Idle
-                </span>
-              </div>
-            )}
-            {idleAgents.map((agent, i) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                isLast={i === idleAgents.length - 1}
-              />
+            {idleAgents.map((agent) => (
+              <AgentRow key={agent.id} agent={agent} />
             ))}
           </div>
         )}

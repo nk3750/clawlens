@@ -115,9 +115,8 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
 
       {/* Stat grid */}
       <div
-        className="grid rounded-xl overflow-hidden"
+        className="grid grid-cols-2 sm:grid-cols-4 rounded-xl overflow-hidden"
         style={{
-          gridTemplateColumns: "repeat(4, 1fr)",
           gap: "1px",
           background: "var(--cl-border-subtle)",
           border: "1px solid var(--cl-border-subtle)",
@@ -126,6 +125,9 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
       >
         {/* Cell 1: Actions */}
         <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cl-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+            <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />
+          </svg>
           <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
             {stats.total}
           </span>
@@ -141,6 +143,12 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
 
         {/* Cell 2: Active / Idle */}
         <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={activeCount > 0 ? "var(--cl-risk-low)" : "var(--cl-text-muted)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 00-3-3.87" />
+            <path d="M16 3.13a4 4 0 010 7.75" />
+          </svg>
           <div className="flex items-baseline gap-0">
             <span
               className="font-mono text-2xl font-bold"
@@ -159,6 +167,11 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
 
         {/* Cell 3: Blocked */}
         <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={stats.blocked > 0 ? riskColorRaw("high") : "var(--cl-text-muted)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+          </svg>
           <span
             className="font-mono text-2xl font-bold"
             style={{ color: stats.blocked > 0 ? riskColorRaw("high") : "var(--cl-text-muted)" }}
@@ -178,24 +191,12 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--cl-elevated)"; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--cl-surface)"; }}
         >
-          <div className="flex items-center gap-1.5">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ color: "var(--cl-text-primary)" }}
-            >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
-              {guardrailCount}
-            </span>
-          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cl-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 4 }}>
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
+            {guardrailCount}
+          </span>
           <div className="flex items-center gap-1">
             <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
               guardrails
@@ -204,13 +205,6 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
           </div>
         </Link>
       </div>
-
-      {/* Mobile: 2-col grid */}
-      <style>{`
-        @media (max-width: 480px) {
-          .grid { grid-template-columns: repeat(2, 1fr) !important; }
-        }
-      `}</style>
     </div>
   );
 }

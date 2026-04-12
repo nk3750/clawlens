@@ -19,46 +19,42 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
 
 interface Props {
   agent: AgentInfo;
-  isLast?: boolean;
 }
 
-export default function AgentRow({ agent, isLast }: Props) {
+export default function AgentCard({ agent }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
-
-  // Parse trigger context from currentContext
   const triggerLabel = parseTriggerLabel(agent.currentContext);
 
   return (
     <Link
       to={`/agent/${encodeURIComponent(agent.id)}`}
-      className="flex items-center gap-2 px-3 py-1.5 transition-colors"
+      className="block rounded-xl transition-colors"
       style={{
+        backgroundColor: "var(--cl-surface)",
+        border: "1px solid var(--cl-border-subtle)",
+        padding: 12,
         opacity: hasActivity ? 1 : 0.35,
-        borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
+        textDecoration: "none",
       }}
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--cl-elevated)"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--cl-surface)"; }}
     >
-      {/* Status dot */}
-      <div className="w-2 shrink-0 flex justify-center">
-        {isActive && (
-          <span
-            className="inline-block w-2 h-2 rounded-full"
-            style={{
-              backgroundColor: "var(--cl-risk-low)",
-              boxShadow: "0 0 4px rgba(74, 222, 128, 0.5)",
-              animation: "pulse 2s ease-in-out infinite",
-            }}
-          />
-        )}
-      </div>
-
-      {/* Avatar */}
-      <GradientAvatar agentId={agent.id} size="xs" />
-
-      {/* Name + trigger context */}
-      <div className="min-w-0 flex items-center gap-1.5" style={{ flex: "1 1 0" }}>
+      {/* Line 1: Identity */}
+      <div className="flex items-center gap-2">
+        <div className="w-2 shrink-0 flex justify-center">
+          {isActive && (
+            <span
+              className="inline-block w-2 h-2 rounded-full"
+              style={{
+                backgroundColor: "var(--cl-risk-low)",
+                boxShadow: "0 0 4px rgba(74, 222, 128, 0.5)",
+                animation: "pulse 2s ease-in-out infinite",
+              }}
+            />
+          )}
+        </div>
+        <GradientAvatar agentId={agent.id} size="xs" />
         <span
           className="font-sans text-sm font-semibold truncate"
           style={{ color: "var(--cl-text-primary)" }}
@@ -72,38 +68,32 @@ export default function AgentRow({ agent, isLast }: Props) {
         )}
       </div>
 
-      {/* Category bar (replaces sparkline) — hidden on mobile */}
+      {/* Line 2: Category bar */}
       {hasActivity && (
-        <div className="shrink-0 hidden sm:block">
+        <div className="mt-2">
           <CategoryBar breakdown={agent.todayActivityBreakdown} />
         </div>
       )}
 
-      {/* Action count */}
-      <span
-        className="font-mono text-sm tabular-nums font-bold shrink-0"
-        style={{ color: "var(--cl-text-secondary)", minWidth: 48, textAlign: "right" }}
-      >
-        {agent.todayToolCalls}
-        <span className="font-sans text-[11px] font-normal ml-1" style={{ color: "var(--cl-text-muted)" }}>
-          actions
+      {/* Line 3: Stats */}
+      <div className="flex items-center gap-2 mt-2">
+        <span
+          className="font-mono text-sm tabular-nums font-bold"
+          style={{ color: "var(--cl-text-secondary)" }}
+        >
+          {agent.todayToolCalls}
+          <span className="font-sans text-[11px] font-normal ml-1" style={{ color: "var(--cl-text-muted)" }}>
+            actions
+          </span>
         </span>
-      </span>
-
-      {/* Risk badge — hidden on mobile */}
-      {hasActivity && (
-        <span className="hidden sm:inline-block shrink-0">
-          <RiskBadge score={agent.avgRiskScore} />
+        {hasActivity && <RiskBadge score={agent.avgRiskScore} />}
+        <span
+          className="font-mono text-[11px] ml-auto"
+          style={{ color: "var(--cl-text-muted)" }}
+        >
+          {agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "idle"}
         </span>
-      )}
-
-      {/* Relative time */}
-      <span
-        className="font-mono text-[11px] shrink-0"
-        style={{ color: "var(--cl-text-muted)", minWidth: 44, textAlign: "right" }}
-      >
-        {agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "idle"}
-      </span>
+      </div>
     </Link>
   );
 }
