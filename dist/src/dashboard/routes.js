@@ -201,7 +201,7 @@ export function registerDashboardRoutes(api, deps) {
             if (subPath === "api/interventions") {
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, getInterventions(entries, date));
+                sendJson(res, getInterventions(entries, date, deps.guardrailStore));
                 return true;
             }
             const agentMatch = subPath.match(/^api\/agent\/([^/]+)$/);

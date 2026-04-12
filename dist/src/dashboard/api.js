@@ -248,11 +248,11 @@ export function computeHistoricDailyMax(entries) {
         return 100;
     return Math.max(...byDay.values());
 }
-/** Blocked + approval_required entries for a day, most recent first. */
-export function getInterventions(entries, date) {
+/** Blocked + approval_required entries for a day, most recent first. Optionally includes high-risk allowed entries (Tier 3). */
+export function getInterventions(entries, date, guardrailStore) {
     const dayEntries = date ? getDayEntries(entries, date) : getTodayEntries(entries);
     const evalIdx = buildEvalIndex(entries);
-    return dayEntries
+    const blockAndApproval = dayEntries
         .filter((e) => e.decision === "block" || e.decision === "approval_required")
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
         .slice(0, 20)
@@ -260,8 +260,8 @@ export function getInterventions(entries, date) {
         const score = getEffectiveScore(e, evalIdx) ?? e.riskScore ?? 0;
         return {
             timestamp: e.timestamp,
-            agentId: e.agentId ?? "unknown",
-            agentName: e.agentId ?? "unknown",
+            agentId: e.agentId ?? DEFAULT_AGENT_ID,
+            agentName: e.agentId ?? DEFAULT_AGENT_ID,
             toolName: e.toolName,
             description: describeAction(e),
             riskScore: score,
@@ -271,6 +271,43 @@ export function getInterventions(entries, date) {
             sessionKey: e.sessionKey,
         };
     });
+    // Tier 3: high-risk allowed entries with no guardrail match (last 30 minutes)
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60_000).toISOString();
+    const highRisk = dayEntries
+        .filter((e) => {
+        if (e.decision !== "allow")
+            return false;
+        if (e.timestamp < thirtyMinAgo)
+            return false;
+        const score = getEffectiveScore(e, evalIdx);
+        if (score === undefined || score < 65)
+            return false;
+        // Exclude entries that have a matching guardrail
+        if (guardrailStore) {
+            const key = extractIdentityKey(e.toolName, e.params);
+            if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
+                return false;
+        }
+        return true;
+    })
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .slice(0, 10)
+        .map((e) => {
+        const score = getEffectiveScore(e, evalIdx) ?? e.riskScore ?? 0;
+        return {
+            timestamp: e.timestamp,
+            agentId: e.agentId ?? DEFAULT_AGENT_ID,
+            agentName: e.agentId ?? DEFAULT_AGENT_ID,
+            toolName: e.toolName,
+            description: describeAction(e),
+            riskScore: score,
+            riskTier: score > 75 ? "critical" : score > 50 ? "high" : score > 25 ? "medium" : "low",
+            decision: e.decision,
+            effectiveDecision: "high_risk",
+            sessionKey: e.sessionKey,
+        };
+    });
+    return [...blockAndApproval, ...highRisk];
 }
 // ── Existing functions (unchanged signatures) ───────────
 /** Compute today's decision counts. */
@@ -465,6 +502,12 @@ export function computeEnhancedStats(entries, date) {
             }
         }
     }
+    // Yesterday's total: count decision entries from the day before the viewing date
+    const viewingDate = isPastDay ? date : new Date().toISOString().slice(0, 10);
+    const yesterdayDate = new Date(`${viewingDate}T12:00:00`);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+    const yesterdayTotal = getDayEntries(entries, yesterdayStr).filter(isDecisionEntry).length;
     return {
         total,
         allowed,
@@ -479,6 +522,7 @@ export function computeEnhancedStats(entries, date) {
         activeSessions,
         riskPosture: posture,
         historicDailyMax: computeHistoricDailyMax(entries),
+        yesterdayTotal,
     };
 }
 /** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */

@@ -40,6 +40,7 @@ export interface EnhancedStatsResponse extends StatsResponse {
   activeSessions: number;
   riskPosture: RiskPosture;
   historicDailyMax: number;
+  yesterdayTotal: number;
 }
 
 export interface InterventionEntry {
@@ -448,12 +449,16 @@ export function computeHistoricDailyMax(entries: AuditEntry[]): number {
   return Math.max(...byDay.values());
 }
 
-/** Blocked + approval_required entries for a day, most recent first. */
-export function getInterventions(entries: AuditEntry[], date?: string): InterventionEntry[] {
+/** Blocked + approval_required entries for a day, most recent first. Optionally includes high-risk allowed entries (Tier 3). */
+export function getInterventions(
+  entries: AuditEntry[],
+  date?: string,
+  guardrailStore?: GuardrailStore,
+): InterventionEntry[] {
   const dayEntries = date ? getDayEntries(entries, date) : getTodayEntries(entries);
   const evalIdx = buildEvalIndex(entries);
 
-  return dayEntries
+  const blockAndApproval: InterventionEntry[] = dayEntries
     .filter((e) => e.decision === "block" || e.decision === "approval_required")
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
     .slice(0, 20)
@@ -461,8 +466,8 @@ export function getInterventions(entries: AuditEntry[], date?: string): Interven
       const score = getEffectiveScore(e, evalIdx) ?? e.riskScore ?? 0;
       return {
         timestamp: e.timestamp,
-        agentId: e.agentId ?? "unknown",
-        agentName: e.agentId ?? "unknown",
+        agentId: e.agentId ?? DEFAULT_AGENT_ID,
+        agentName: e.agentId ?? DEFAULT_AGENT_ID,
         toolName: e.toolName,
         description: describeAction(e),
         riskScore: score,
@@ -472,6 +477,41 @@ export function getInterventions(entries: AuditEntry[], date?: string): Interven
         sessionKey: e.sessionKey,
       };
     });
+
+  // Tier 3: high-risk allowed entries with no guardrail match (last 30 minutes)
+  const thirtyMinAgo = new Date(Date.now() - 30 * 60_000).toISOString();
+  const highRisk: InterventionEntry[] = dayEntries
+    .filter((e) => {
+      if (e.decision !== "allow") return false;
+      if (e.timestamp < thirtyMinAgo) return false;
+      const score = getEffectiveScore(e, evalIdx);
+      if (score === undefined || score < 65) return false;
+      // Exclude entries that have a matching guardrail
+      if (guardrailStore) {
+        const key = extractIdentityKey(e.toolName, e.params);
+        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 10)
+    .map((e) => {
+      const score = getEffectiveScore(e, evalIdx) ?? e.riskScore ?? 0;
+      return {
+        timestamp: e.timestamp,
+        agentId: e.agentId ?? DEFAULT_AGENT_ID,
+        agentName: e.agentId ?? DEFAULT_AGENT_ID,
+        toolName: e.toolName,
+        description: describeAction(e),
+        riskScore: score,
+        riskTier: score > 75 ? "critical" : score > 50 ? "high" : score > 25 ? "medium" : "low",
+        decision: e.decision!,
+        effectiveDecision: "high_risk",
+        sessionKey: e.sessionKey,
+      };
+    });
+
+  return [...blockAndApproval, ...highRisk];
 }
 
 // ── Existing functions (unchanged signatures) ───────────
@@ -687,6 +727,13 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
     }
   }
 
+  // Yesterday's total: count decision entries from the day before the viewing date
+  const viewingDate = isPastDay ? date : new Date().toISOString().slice(0, 10);
+  const yesterdayDate = new Date(`${viewingDate}T12:00:00`);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+  const yesterdayTotal = getDayEntries(entries, yesterdayStr).filter(isDecisionEntry).length;
+
   return {
     total,
     allowed,
@@ -701,6 +748,7 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
     activeSessions,
     riskPosture: posture,
     historicDailyMax: computeHistoricDailyMax(entries),
+    yesterdayTotal,
   };
 }
 

@@ -28,6 +28,7 @@ export interface StatsResponse {
   activeSessions: number;
   riskPosture: RiskPosture;
   historicDailyMax: number;
+  yesterdayTotal: number;
 }
 
 export interface InterventionEntry {

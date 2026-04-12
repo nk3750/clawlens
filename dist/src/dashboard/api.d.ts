@@ -24,6 +24,7 @@ export interface EnhancedStatsResponse extends StatsResponse {
     activeSessions: number;
     riskPosture: RiskPosture;
     historicDailyMax: number;
+    yesterdayTotal: number;
 }
 export interface InterventionEntry {
     timestamp: string;
@@ -158,8 +159,8 @@ export interface SessionDetailResponse {
 export declare function getEffectiveDecision(entry: AuditEntry): string;
 /** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
 export declare function computeHistoricDailyMax(entries: AuditEntry[]): number;
-/** Blocked + approval_required entries for a day, most recent first. */
-export declare function getInterventions(entries: AuditEntry[], date?: string): InterventionEntry[];
+/** Blocked + approval_required entries for a day, most recent first. Optionally includes high-risk allowed entries (Tier 3). */
+export declare function getInterventions(entries: AuditEntry[], date?: string, guardrailStore?: GuardrailStore): InterventionEntry[];
 /** Compute today's decision counts. */
 export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */

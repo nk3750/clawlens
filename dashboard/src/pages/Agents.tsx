@@ -43,7 +43,7 @@ export default function Agents() {
     : undefined;
 
   return (
-    <div className="page-enter">
+    <div className="page-enter flex flex-col" style={{ gap: "clamp(20px, 3vw, 32px)" }}>
       {/* Fleet Pulse */}
       {stats && (
         <FleetPulse
@@ -61,10 +61,10 @@ export default function Agents() {
       )}
 
       {/* Agent Rows */}
-      <section style={{ marginTop: "clamp(16px, 2vw, 28px)" }}>
+      <section>
         <div className="mb-3">
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-            AGENTS
+          <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
+            Agents
           </span>
         </div>
 
@@ -101,31 +101,42 @@ export default function Agents() {
           </div>
         )}
 
-        {/* Active agents */}
-        {activeAgents.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            {activeAgents.map((agent) => (
-              <AgentRow key={agent.id} agent={agent} />
-            ))}
-          </div>
-        )}
-
-        {/* Idle agents */}
-        {idleAgents.length > 0 && (
+        {/* Agent list container */}
+        {(activeAgents.length > 0 || idleAgents.length > 0) && (
           <div
-            className="flex flex-col gap-1.5"
-            style={{ marginTop: activeAgents.length > 0 ? 12 : 0 }}
+            className="rounded-xl overflow-hidden"
+            style={{
+              backgroundColor: "var(--cl-surface)",
+              border: "1px solid var(--cl-border-subtle)",
+              boxShadow: "var(--cl-shadow-card)",
+            }}
           >
-            {activeAgents.length > 0 && (
-              <span
-                className="font-mono text-[10px] uppercase mb-1"
-                style={{ color: "var(--cl-text-muted)", opacity: 0.5 }}
+            {activeAgents.map((agent, i) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                isLast={i === activeAgents.length - 1 && idleAgents.length === 0}
+              />
+            ))}
+            {idleAgents.length > 0 && activeAgents.length > 0 && (
+              <div
+                className="px-3 py-1"
+                style={{ borderTop: "1px solid var(--cl-border-subtle)" }}
               >
-                Idle
-              </span>
+                <span
+                  className="font-mono text-[10px] uppercase"
+                  style={{ color: "var(--cl-text-muted)", opacity: 0.5 }}
+                >
+                  Idle
+                </span>
+              </div>
             )}
-            {idleAgents.map((agent) => (
-              <AgentRow key={agent.id} agent={agent} />
+            {idleAgents.map((agent, i) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                isLast={i === idleAgents.length - 1}
+              />
             ))}
           </div>
         )}

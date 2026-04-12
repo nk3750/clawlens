@@ -254,7 +254,7 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       if (subPath === "api/interventions") {
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getInterventions(entries, date));
+        sendJson(res, getInterventions(entries, date, deps.guardrailStore));
         return true;
       }
 

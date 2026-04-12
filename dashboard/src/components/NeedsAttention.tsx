@@ -8,33 +8,44 @@ interface Props {
   agents: AgentInfo[];
 }
 
-interface AttentionItem {
-  key: string;
-  type: "block" | "approval" | "agent";
-  agentId: string;
-  description: string;
-  timestamp: string;
-  sessionKey?: string;
-  /** For approvals: seconds remaining until timeout */
-  remainingMs?: number;
-}
-
 const APPROVAL_TIMEOUT_MS = 300_000; // 5 minutes
 
 export default function NeedsAttention({ interventions, agents }: Props) {
-  const items = buildItems(interventions, agents);
+  const tier1: InterventionEntry[] = [];
+  const tier2: InterventionEntry[] = [];
+  const tier3: InterventionEntry[] = [];
 
-  if (items.length === 0) return null;
+  for (const iv of interventions) {
+    if (iv.effectiveDecision === "pending") {
+      tier1.push(iv);
+    } else if (iv.effectiveDecision === "block" || iv.effectiveDecision === "timeout") {
+      tier2.push(iv);
+    } else if (iv.effectiveDecision === "high_risk") {
+      tier3.push(iv);
+    }
+  }
+
+  // Also include agents that need attention as Tier 2 items
+  const agentAttention = agents.filter((a) => a.needsAttention);
+
+  const totalCount = tier1.length + tier2.length + agentAttention.length + tier3.length;
+  if (totalCount === 0) return null;
+
+  // Header urgency color
+  const headerColor = tier1.length > 0
+    ? riskColorRaw("high")
+    : riskColorRaw("medium");
 
   return (
-    <div className="mt-6">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="flex flex-col" style={{ gap: 12 }}>
+      {/* Section header */}
+      <div className="flex items-center gap-2">
         <svg
           width="14"
           height="14"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="#fbbf24"
+          stroke={headerColor}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -42,129 +53,157 @@ export default function NeedsAttention({ interventions, agents }: Props) {
           <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01" />
         </svg>
         <span
-          className="text-xs font-medium tracking-wide uppercase"
-          style={{ color: "#fbbf24" }}
+          className="font-sans text-xs font-medium tracking-wide uppercase"
+          style={{ color: headerColor }}
         >
-          {items.length} {items.length === 1 ? "item needs" : "items need"} attention
+          {totalCount} {totalCount === 1 ? "item needs" : "items need"} attention
         </span>
       </div>
 
-      <div
-        className="rounded-xl border overflow-hidden"
-        style={{
-          backgroundColor: "var(--cl-surface)",
-          borderColor: "var(--cl-border)",
-        }}
-      >
-        {items.map((item, i) => (
-          <AttentionRow
-            key={item.key}
-            item={item}
-            isLast={i === items.length - 1}
-          />
-        ))}
+      {/* Tier 1: Pending approvals — each in its own container */}
+      {tier1.map((iv) => (
+        <Tier1Card key={`t1-${iv.timestamp}`} item={iv} />
+      ))}
+
+      {/* Tier 2: Blocked + timed out — grouped in one container */}
+      {(tier2.length > 0 || agentAttention.length > 0) && (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{
+            border: "1px solid var(--cl-border-default)",
+            borderRadius: 12,
+          }}
+        >
+          {tier2.map((iv, i) => (
+            <Tier2Row
+              key={`t2-${iv.timestamp}`}
+              item={iv}
+              isLast={i === tier2.length - 1 && agentAttention.length === 0}
+            />
+          ))}
+          {agentAttention.map((agent, i) => (
+            <Tier2AgentRow
+              key={`t2a-${agent.id}`}
+              agent={agent}
+              isLast={i === agentAttention.length - 1}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Tier 3: High-risk unguarded — grouped in one container */}
+      {tier3.length > 0 && (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{
+            border: "1px solid var(--cl-border-subtle)",
+            borderRadius: 12,
+          }}
+        >
+          {tier3.map((iv, i) => (
+            <Tier3Row
+              key={`t3-${iv.timestamp}`}
+              item={iv}
+              isLast={i === tier3.length - 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tier 1: Pending Approval ──────────────────────────────
+
+function Tier1Card({ item }: { item: InterventionEntry }) {
+  const elapsed = Date.now() - new Date(item.timestamp).getTime();
+  const remainingMs = Math.max(0, APPROVAL_TIMEOUT_MS - elapsed);
+
+  return (
+    <div
+      className="rounded-xl attention-pulse"
+      style={{
+        background: "rgba(248, 113, 113, 0.08)",
+        border: "1px solid rgba(248, 113, 113, 0.2)",
+        borderRadius: 12,
+        borderLeft: `4px solid ${riskColorRaw("high")}`,
+        padding: "16px 20px",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-base">&#9203;</span>
+            <span className="font-sans text-sm font-bold" style={{ color: "var(--cl-text-primary)" }}>
+              {item.agentName}
+            </span>
+            <span className="font-sans text-sm" style={{ color: "var(--cl-text-secondary)" }}>
+              is waiting for approval
+            </span>
+          </div>
+          <p className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
+            {item.description}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <ApprovalCountdown initialMs={remainingMs} />
+          {item.sessionKey && (
+            <Link
+              to={`/session/${encodeURIComponent(item.sessionKey)}`}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity"
+              style={{
+                backgroundColor: riskColorRaw("high"),
+                color: "white",
+              }}
+            >
+              Review →
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function AttentionRow({ item, isLast }: { item: AttentionItem; isLast: boolean }) {
+// ── Tier 2: Blocked / Timed Out ───────────────────────────
+
+function Tier2Row({ item, isLast }: { item: InterventionEntry; isLast: boolean }) {
+  const isBlock = item.effectiveDecision === "block";
+  const borderColor = isBlock ? riskColorRaw("high") : riskColorRaw("medium");
+  const statusLabel = isBlock ? "blocked action" : "timed out";
+  const icon = isBlock ? "\uD83D\uDEAB" : "\u23F0";
+  const bgColor = isBlock ? "rgba(248, 113, 113, 0.05)" : "rgba(251, 191, 36, 0.06)";
+
   return (
     <div
       className="flex items-center gap-3 px-4 py-3"
       style={{
+        borderLeft: `3px solid ${borderColor}`,
+        backgroundColor: bgColor,
         borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
-        backgroundColor:
-          item.type === "block"
-            ? "rgba(248, 113, 113, 0.03)"
-            : item.type === "approval"
-              ? "rgba(251, 191, 36, 0.03)"
-              : undefined,
       }}
     >
-      {/* Icon */}
-      {item.type === "block" && (
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke={riskColorRaw("high")}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="shrink-0"
-        >
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        </svg>
-      )}
-      {item.type === "approval" && (
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#fbbf24"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="shrink-0"
-        >
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        </svg>
-      )}
-      {item.type === "agent" && (
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#fbbf24"
-          strokeWidth="2"
-          strokeLinecap="round"
-        >
-          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01" />
-        </svg>
-      )}
-
-      {/* Content */}
+      <span className="text-sm shrink-0">{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm" style={{ color: "var(--cl-text-primary)" }}>
-          <span className="font-semibold">{item.agentId}</span>
-          <span style={{ color: "var(--cl-text-muted)" }}>
-            {" \u00B7 "}
-            {item.type === "block" ? "blocked" : item.type === "approval" ? "awaiting approval" : "needs attention"}
+        <div className="flex items-center gap-1.5">
+          <span className="font-sans text-sm font-semibold" style={{ color: "var(--cl-text-primary)" }}>
+            {item.agentName}
           </span>
-        </p>
-        <p className="text-xs mt-0.5 truncate" style={{ color: "var(--cl-text-secondary)" }}>
-          {item.description}
-          <span className="font-mono ml-1.5" style={{ color: "var(--cl-text-muted)" }}>
+          <span className="font-sans text-sm" style={{ color: borderColor }}>
+            — {statusLabel}
+          </span>
+          <span className="font-mono text-[11px] ml-auto shrink-0" style={{ color: "var(--cl-text-muted)" }}>
             {relTime(item.timestamp)}
           </span>
+        </div>
+        <p className="font-mono text-xs mt-0.5 truncate" style={{ color: "var(--cl-text-secondary)" }}>
+          {item.description}
         </p>
       </div>
-
-      {/* Approval countdown */}
-      {item.type === "approval" && item.remainingMs != null && (
-        <ApprovalCountdown initialMs={item.remainingMs} />
-      )}
-
-      {/* Action link */}
-      {item.type === "agent" ? (
-        <Link
-          to={`/agent/${encodeURIComponent(item.agentId)}`}
-          className="px-3 py-1 text-xs rounded-lg transition-colors shrink-0"
-          style={{
-            backgroundColor: "var(--cl-elevated)",
-            color: "var(--cl-text-secondary)",
-          }}
-        >
-          View
-        </Link>
-      ) : item.sessionKey ? (
+      {item.sessionKey && (
         <Link
           to={`/session/${encodeURIComponent(item.sessionKey)}`}
-          className="px-3 py-1 text-xs rounded-lg transition-colors shrink-0"
+          className="px-3 py-1 rounded-lg text-xs transition-colors shrink-0"
           style={{
             backgroundColor: "var(--cl-elevated)",
             color: "var(--cl-text-secondary)",
@@ -172,10 +211,95 @@ function AttentionRow({ item, isLast }: { item: AttentionItem; isLast: boolean }
         >
           Review
         </Link>
-      ) : null}
+      )}
     </div>
   );
 }
+
+function Tier2AgentRow({ agent, isLast }: { agent: AgentInfo; isLast: boolean }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3"
+      style={{
+        borderLeft: `3px solid ${riskColorRaw("medium")}`,
+        backgroundColor: "rgba(251, 191, 36, 0.05)",
+        borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
+      }}
+    >
+      <span className="text-sm shrink-0">&#9888;</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="font-sans text-sm font-semibold" style={{ color: "var(--cl-text-primary)" }}>
+            {agent.id}
+          </span>
+          <span className="font-sans text-sm" style={{ color: riskColorRaw("medium") }}>
+            — needs attention
+          </span>
+        </div>
+        <p className="font-mono text-xs mt-0.5 truncate" style={{ color: "var(--cl-text-secondary)" }}>
+          {agent.attentionReason ?? "Multiple high-risk actions"}
+        </p>
+      </div>
+      <Link
+        to={`/agent/${encodeURIComponent(agent.id)}`}
+        className="px-3 py-1 rounded-lg text-xs transition-colors shrink-0"
+        style={{
+          backgroundColor: "var(--cl-elevated)",
+          color: "var(--cl-text-secondary)",
+        }}
+      >
+        View
+      </Link>
+    </div>
+  );
+}
+
+// ── Tier 3: High Risk Unguarded ───────────────────────────
+
+function Tier3Row({ item, isLast }: { item: InterventionEntry; isLast: boolean }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-2.5"
+      style={{
+        borderLeft: `2px solid ${riskColorRaw("medium")}`,
+        backgroundColor: "rgba(251, 191, 36, 0.04)",
+        borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
+      }}
+    >
+      <span className="text-sm shrink-0">&#9888;</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="font-sans text-sm font-semibold" style={{ color: "var(--cl-text-primary)" }}>
+            {item.agentName}
+          </span>
+          <span className="font-sans text-sm" style={{ color: riskColorRaw("medium") }}>
+            — high risk action
+          </span>
+          <span className="font-mono text-[11px] ml-auto shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+            {relTime(item.timestamp)}
+          </span>
+        </div>
+        <p className="font-mono text-xs mt-0.5 truncate" style={{ color: "var(--cl-text-secondary)" }}>
+          {item.description} <span style={{ color: "var(--cl-text-muted)" }}>(score {item.riskScore})</span>
+        </p>
+      </div>
+      {item.sessionKey && (
+        <Link
+          to={`/session/${encodeURIComponent(item.sessionKey)}`}
+          className="px-3 py-1 rounded-lg text-xs transition-colors shrink-0"
+          style={{
+            backgroundColor: "var(--cl-elevated)",
+            color: "var(--cl-text-secondary)",
+          }}
+        >
+          Review
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// ── Shared: Approval Countdown ────────────────────────────
 
 function ApprovalCountdown({ initialMs }: { initialMs: number }) {
   const [remaining, setRemaining] = useState(initialMs);
@@ -190,7 +314,7 @@ function ApprovalCountdown({ initialMs }: { initialMs: number }) {
 
   if (remaining <= 0) {
     return (
-      <span className="font-mono text-[10px] shrink-0" style={{ color: "var(--cl-text-muted)" }}>
+      <span className="font-mono text-[11px] shrink-0" style={{ color: "var(--cl-text-muted)" }}>
         Timed out
       </span>
     );
@@ -201,50 +325,11 @@ function ApprovalCountdown({ initialMs }: { initialMs: number }) {
   const sec = totalSec % 60;
 
   return (
-    <span className="font-mono text-[10px] shrink-0" style={{ color: "#fbbf24" }}>
-      &#9201; {min}:{sec.toString().padStart(2, "0")} remaining
+    <span
+      className="font-mono text-lg font-bold attention-pulse"
+      style={{ color: riskColorRaw("high") }}
+    >
+      {min}:{sec.toString().padStart(2, "0")}
     </span>
   );
-}
-
-function buildItems(interventions: InterventionEntry[], agents: AgentInfo[]): AttentionItem[] {
-  const items: AttentionItem[] = [];
-
-  for (const iv of interventions) {
-    if (iv.effectiveDecision === "block") {
-      items.push({
-        key: `block-${iv.timestamp}`,
-        type: "block",
-        agentId: iv.agentId,
-        description: iv.description,
-        timestamp: iv.timestamp,
-        sessionKey: iv.sessionKey,
-      });
-    } else if (iv.effectiveDecision === "pending") {
-      const elapsed = Date.now() - new Date(iv.timestamp).getTime();
-      items.push({
-        key: `approval-${iv.timestamp}`,
-        type: "approval",
-        agentId: iv.agentId,
-        description: iv.description,
-        timestamp: iv.timestamp,
-        sessionKey: iv.sessionKey,
-        remainingMs: Math.max(0, APPROVAL_TIMEOUT_MS - elapsed),
-      });
-    }
-  }
-
-  for (const agent of agents) {
-    if (agent.needsAttention) {
-      items.push({
-        key: `agent-${agent.id}`,
-        type: "agent",
-        agentId: agent.id,
-        description: agent.attentionReason ?? "Multiple high-risk actions",
-        timestamp: agent.lastActiveTimestamp ?? new Date().toISOString(),
-      });
-    }
-  }
-
-  return items;
 }

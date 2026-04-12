@@ -256,9 +256,9 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
 
   if (loading && !apiData) {
     return (
-      <div className="mt-8">
-        <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-          FLEET ACTIVITY
+      <div>
+        <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
+          Fleet Activity
         </span>
         <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>
           Loading...
@@ -269,10 +269,10 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
 
   if (totalActions === 0) {
     return (
-      <div className="mt-8">
+      <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-            FLEET ACTIVITY
+          <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
+            Fleet Activity
           </span>
           <RangeSelector range={range} onRangeChange={setRange} />
         </div>
@@ -348,12 +348,12 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
   };
 
   return (
-    <div className="mt-8" ref={wrapperRef} style={{ position: "relative" }}>
+    <div ref={wrapperRef} style={{ position: "relative" }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-            FLEET ACTIVITY
+          <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
+            Fleet Activity
           </span>
           {isToday && <LiveIndicator pulseKey={pulseKey} />}
         </div>
@@ -376,9 +376,6 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
             </span>
           ))}
           <RangeSelector range={range} onRangeChange={setRange} />
-          <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-            {totalActions} {isToday ? "today" : "actions"}
-          </span>
         </div>
       </div>
 

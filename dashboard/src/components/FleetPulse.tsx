@@ -48,68 +48,31 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
     onDateChange(next === today ? null : next);
   };
 
-  // Risk distribution bar
-  const { low, medium, high, critical } = stats.riskBreakdown;
-  const riskTotal = low + medium + high + critical;
-  const tiers = [
-    { key: "low", count: low, color: riskColorRaw("low") },
-    { key: "medium", count: medium, color: riskColorRaw("medium") },
-    { key: "high", count: high, color: riskColorRaw("high") },
-    { key: "critical", count: critical, color: riskColorRaw("critical") },
-  ] as const;
+  // Day-over-day comparison
+  const yesterdayTotal = stats.yesterdayTotal;
+  const dayOverDay = (() => {
+    if (yesterdayTotal === 0 && stats.total === 0) return null;
+    if (yesterdayTotal === 0) return null; // no data for yesterday
+    if (stats.total === yesterdayTotal) return { label: "— same", color: "var(--cl-text-muted)" };
+    const pct = Math.round(((stats.total - yesterdayTotal) / yesterdayTotal) * 100);
+    if (pct > 0) return { label: `↑ ${pct}%`, color: "var(--cl-text-secondary)" };
+    return { label: `↓ ${Math.abs(pct)}%`, color: "var(--cl-text-secondary)" };
+  })();
+
+  // Active / idle agents
+  const activeCount = stats.activeAgents;
+  const idleCount = totalAgents - activeCount;
 
   return (
-    <div className="page-enter">
-      {/* Row 1: Date label + stats + nav */}
-      <div
-        className="font-mono text-xs flex items-center gap-2 flex-wrap"
-        style={{ color: "var(--cl-text-secondary)" }}
-      >
+    <div>
+      {/* Date row */}
+      <div className="flex items-center gap-2 mb-3">
         <span
-          className="text-sm font-medium tracking-widest uppercase select-none font-sans"
+          className="font-sans text-sm font-medium tracking-widest uppercase select-none"
           style={{ color: isToday ? "var(--cl-accent)" : "var(--cl-text-primary)" }}
         >
           {isToday ? "TODAY" : formatDate(viewing)}
         </span>
-        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-        <span>{totalAgents} agents</span>
-        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-        <span>{stats.activeSessions} active</span>
-        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-        <span>{stats.total} actions</span>
-        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-        <span style={{ color: stats.blocked > 0 ? riskColorRaw("high") : undefined }}>
-          {stats.blocked} blocked
-        </span>
-        {stats.timedOut > 0 && (
-          <>
-            <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-            <span style={{ color: riskColorRaw("medium") }}>
-              {stats.timedOut} timed out
-            </span>
-          </>
-        )}
-        <span style={{ color: "var(--cl-text-muted)" }}>&middot;</span>
-        <Link
-          to="/guardrails"
-          className="inline-flex items-center gap-1 transition-colors"
-          style={{ color: "var(--cl-text-secondary)" }}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-          {guardrailCount} guardrails
-        </Link>
-        <span className="flex-1" />
         <button
           type="button"
           onClick={goBack}
@@ -150,38 +113,104 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
         </button>
       </div>
 
-      {/* Row 3: Risk distribution bar */}
-      {riskTotal > 0 && (
-        <div className="mt-3 flex items-center gap-3">
-          <div
-            className="flex-1 h-1.5 rounded-full overflow-hidden flex"
-            style={{ backgroundColor: "var(--cl-elevated)" }}
-          >
-            {tiers.map(
-              (t) =>
-                t.count > 0 && (
-                  <div
-                    key={t.key}
-                    style={{
-                      width: `${(t.count / riskTotal) * 100}%`,
-                      backgroundColor: t.color,
-                    }}
-                  />
-                ),
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {tiers.map(
-              (t) =>
-                t.count > 0 && (
-                  <span key={t.key} className="font-mono text-[10px]" style={{ color: t.color }}>
-                    {t.count} {t.key === "critical" ? "crit" : t.key === "medium" ? "med" : t.key}
-                  </span>
-                ),
-            )}
-          </div>
+      {/* Stat grid */}
+      <div
+        className="grid rounded-xl overflow-hidden"
+        style={{
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "1px",
+          background: "var(--cl-border-subtle)",
+          border: "1px solid var(--cl-border-subtle)",
+          borderRadius: 12,
+        }}
+      >
+        {/* Cell 1: Actions */}
+        <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
+          <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
+            {stats.total}
+          </span>
+          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+            actions
+          </span>
+          {dayOverDay && (
+            <span className="font-mono text-[10px]" style={{ color: dayOverDay.color }}>
+              {dayOverDay.label}
+            </span>
+          )}
         </div>
-      )}
+
+        {/* Cell 2: Active / Idle */}
+        <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
+          <div className="flex items-baseline gap-0">
+            <span
+              className="font-mono text-2xl font-bold"
+              style={{ color: activeCount > 0 ? "var(--cl-risk-low)" : "var(--cl-text-primary)" }}
+            >
+              {activeCount}
+            </span>
+            <span className="font-mono text-sm" style={{ color: "var(--cl-text-muted)" }}>
+              {" / "}{idleCount}
+            </span>
+          </div>
+          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+            active / idle
+          </span>
+        </div>
+
+        {/* Cell 3: Blocked */}
+        <div className="flex flex-col items-center justify-center text-center" style={{ background: "var(--cl-surface)", padding: "16px 12px" }}>
+          <span
+            className="font-mono text-2xl font-bold"
+            style={{ color: stats.blocked > 0 ? riskColorRaw("high") : "var(--cl-text-muted)" }}
+          >
+            {stats.blocked}
+          </span>
+          <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+            blocked actions
+          </span>
+        </div>
+
+        {/* Cell 4: Guardrails (clickable) */}
+        <Link
+          to="/guardrails"
+          className="flex flex-col items-center justify-center text-center transition-colors"
+          style={{ background: "var(--cl-surface)", padding: "16px 12px", textDecoration: "none" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--cl-elevated)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--cl-surface)"; }}
+        >
+          <div className="flex items-center gap-1.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ color: "var(--cl-text-primary)" }}
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span className="font-mono text-2xl font-bold" style={{ color: "var(--cl-text-primary)" }}>
+              {guardrailCount}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="font-sans text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
+              guardrails
+            </span>
+            <span className="text-[11px]" style={{ color: "var(--cl-text-muted)" }}>→</span>
+          </div>
+        </Link>
+      </div>
+
+      {/* Mobile: 2-col grid */}
+      <style>{`
+        @media (max-width: 480px) {
+          .grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+      `}</style>
     </div>
   );
 }
