@@ -1668,7 +1668,6 @@ describe("getAgents todayCutoff — local calendar day", () => {
     // Set system time to 2026-03-29 14:00 local
     vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
 
-    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
     const yesterday = new Date(2026, 2, 28, 15, 0, 0); // yesterday 3pm local
     const todayMorning = new Date(2026, 2, 29, 8, 0, 0); // today 8am local
     const todayNoon = new Date(2026, 2, 29, 12, 0, 0); // today noon local
