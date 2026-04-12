@@ -530,8 +530,13 @@ export function getAgents(entries, date) {
     const isPastDay = date !== undefined;
     // When viewing a past day, pre-filter all entries to that day
     const scopedEntries = isPastDay ? getDayEntries(entries, date) : entries;
+    // Only group decision entries — result/eval entries without agentId must not
+    // create phantom agents (e.g. "default"). Eval data is still accessible via
+    // the buildEvalIndex() lookup, which indexes ALL entries by toolCallId.
     const agentMap = new Map();
     for (const e of scopedEntries) {
+        if (!isDecisionEntry(e))
+            continue;
         const id = e.agentId || DEFAULT_AGENT_ID;
         const existing = agentMap.get(id);
         if (existing) {

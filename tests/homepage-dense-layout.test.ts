@@ -55,7 +55,21 @@ describe("hourlyActivity computation", () => {
   });
 
   it("returns all zeros when agent has no decision entries today", () => {
-    // Entry without a decision field won't count as todayDecision
+    // Agent has an old decision (creates the bucket) but no decisions today
+    const entries = [
+      entry({
+        agentId: "agent1",
+        timestamp: "2026-04-10T10:00:00Z",
+        decision: "allow",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents).toHaveLength(1);
+    expect(agents[0].hourlyActivity).toHaveLength(24);
+    expect(agents[0].hourlyActivity.every((v) => v === 0)).toBe(true);
+  });
+
+  it("does not create an agent from only non-decision entries", () => {
     const entries = [
       entry({
         agentId: "agent1",
@@ -64,9 +78,7 @@ describe("hourlyActivity computation", () => {
       }),
     ];
     const agents = getAgents(entries);
-    expect(agents).toHaveLength(1);
-    expect(agents[0].hourlyActivity).toHaveLength(24);
-    expect(agents[0].hourlyActivity.every((v) => v === 0)).toBe(true);
+    expect(agents).toHaveLength(0);
   });
 
   it("computes hourly buckets for past-day view", () => {
@@ -138,11 +150,11 @@ describe("active vs idle sort", () => {
         timestamp: "2026-04-11T10:00:00Z",
         decision: "allow",
       }),
-      // agentIdle: only has non-decision entries
+      // agentIdle: has an old decision but nothing today
       entry({
         agentId: "agentIdle",
-        timestamp: "2026-04-11T13:58:00Z",
-        executionResult: "success",
+        timestamp: "2026-04-10T10:00:00Z",
+        decision: "allow",
       }),
     ];
     const agents = getAgents(entries);
