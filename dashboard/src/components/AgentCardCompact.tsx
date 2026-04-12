@@ -1,16 +1,20 @@
 import { Link } from "react-router-dom";
-import type { AgentInfo, RiskTier } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw } from "../lib/utils";
+import type { AgentInfo } from "../lib/types";
+import { relTime, riskColorRaw } from "../lib/utils";
 import GradientAvatar from "./GradientAvatar";
 
 interface Props {
   agent: AgentInfo;
   guardrailCount: number;
+  isTopAgent?: boolean;
 }
 
-export default function AgentCardCompact({ agent, guardrailCount }: Props) {
-  const tier = riskTierFromScore(agent.avgRiskScore);
-  const tierColor = riskColorRaw(tier);
+export default function AgentCardCompact({ agent, guardrailCount, isTopAgent }: Props) {
+  const borderColor = isTopAgent
+    ? "var(--cl-accent)"
+    : agent.status === "active"
+      ? riskColorRaw("low")
+      : undefined;
 
   return (
     <Link
@@ -19,7 +23,7 @@ export default function AgentCardCompact({ agent, guardrailCount }: Props) {
       style={{
         backgroundColor: "var(--cl-surface)",
         border: "1px solid var(--cl-border)",
-        boxShadow: agent.status === "active" ? `inset 3px 0 0 0 ${riskColorRaw("low")}` : undefined,
+        boxShadow: borderColor ? `inset 3px 0 0 0 ${borderColor}` : undefined,
       }}
     >
       <div className="flex items-center gap-3">
@@ -52,19 +56,19 @@ export default function AgentCardCompact({ agent, guardrailCount }: Props) {
           <StatusLine agent={agent} />
         </div>
 
-        {/* Risk profile mini bar */}
-        <MiniRiskBar profile={agent.riskProfile} />
-
-        {/* Risk score */}
+        {/* Action count */}
         <div className="text-right shrink-0">
-          <span className="font-mono text-sm font-bold" style={{ color: tierColor }}>
-            {agent.avgRiskScore}
+          <span
+            className="font-mono text-lg font-bold leading-none"
+            style={{ color: "var(--cl-text-primary)" }}
+          >
+            {agent.todayToolCalls}
           </span>
           <span
             className="block font-mono text-[10px] uppercase"
-            style={{ color: tierColor, opacity: 0.8 }}
+            style={{ color: "var(--cl-text-muted)" }}
           >
-            {tier === "critical" ? "CRIT" : tier === "medium" ? "MED" : tier.toUpperCase()}
+            actions
           </span>
         </div>
 
@@ -91,90 +95,47 @@ export default function AgentCardCompact({ agent, guardrailCount }: Props) {
         )}
       </div>
 
-      {/* Footer: action count + latest action */}
-      <div className="flex items-center justify-between mt-2 ml-11">
-        <span className="font-mono text-[11px]" style={{ color: "var(--cl-text-muted)" }}>
-          {agent.todayToolCalls} actions
-        </span>
-        {agent.latestAction && (
+      {/* Latest action — own line, full width */}
+      {agent.latestAction && (
+        <div className="mt-2 ml-11 truncate">
           <span
-            className="text-[11px] truncate ml-3 max-w-[180px]"
+            className="text-[11px]"
             style={{ color: "var(--cl-text-secondary)" }}
           >
             {agent.latestAction}
-            {agent.latestActionTime && (
-              <span className="font-mono ml-1" style={{ color: "var(--cl-text-muted)" }}>
-                {relTime(agent.latestActionTime)}
-              </span>
-            )}
           </span>
-        )}
-      </div>
+          {agent.latestActionTime && (
+            <span
+              className="font-mono text-[11px] ml-1"
+              style={{ color: "var(--cl-text-muted)" }}
+            >
+              {relTime(agent.latestActionTime)}
+            </span>
+          )}
+        </div>
+      )}
     </Link>
   );
 }
 
-function MiniRiskBar({ profile }: { profile: Record<RiskTier, number> }) {
-  const total = profile.low + profile.medium + profile.high + profile.critical;
-  if (total === 0) return null;
-
-  const tiers: { key: RiskTier; count: number }[] = [
-    { key: "low", count: profile.low },
-    { key: "medium", count: profile.medium },
-    { key: "high", count: profile.high },
-    { key: "critical", count: profile.critical },
-  ];
-
+function ScheduledIcon() {
   return (
-    <svg width="60" height="16" className="shrink-0">
-      {tiers.reduce<{ elements: React.ReactElement[]; x: number }>(
-        (acc, t) => {
-          if (t.count === 0) return acc;
-          const w = (t.count / total) * 60;
-          acc.elements.push(
-            <rect
-              key={t.key}
-              x={acc.x}
-              y={4}
-              width={w}
-              height={8}
-              rx={t.key === "low" ? 2 : 0}
-              fill={riskColorRaw(t.key)}
-              opacity={0.8}
-            />,
-          );
-          acc.x += w;
-          return acc;
-        },
-        { elements: [], x: 0 },
-      ).elements}
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--cl-text-muted)"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
     </svg>
   );
 }
 
 function StatusLine({ agent }: { agent: AgentInfo }) {
-  if (agent.mode === "scheduled") {
-    return (
-      <span className="flex items-center gap-1 mt-0.5">
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#a78bfa"
-          strokeWidth="2"
-          strokeLinecap="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
-        <span className="font-mono text-[10px]" style={{ color: "#a78bfa" }}>
-          {agent.schedule ?? "scheduled"}
-        </span>
-      </span>
-    );
-  }
-
   if (agent.status === "active") {
     return (
       <span className="flex items-center gap-1 mt-0.5">
@@ -189,13 +150,15 @@ function StatusLine({ agent }: { agent: AgentInfo }) {
         <span className="font-mono text-[10px]" style={{ color: "var(--cl-risk-low)" }}>
           Active
         </span>
+        {agent.mode === "scheduled" && <ScheduledIcon />}
       </span>
     );
   }
 
   return (
-    <span className="font-mono text-[10px] mt-0.5 inline-block" style={{ color: "var(--cl-text-muted)" }}>
-      {agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "idle"}
+    <span className="flex items-center gap-1 font-mono text-[10px] mt-0.5" style={{ color: "var(--cl-text-muted)" }}>
+      <span>{agent.lastActiveTimestamp ? relTime(agent.lastActiveTimestamp) : "idle"}</span>
+      {agent.mode === "scheduled" && <ScheduledIcon />}
     </span>
   );
 }

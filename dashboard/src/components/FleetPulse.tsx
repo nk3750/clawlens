@@ -69,11 +69,6 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
           {isToday ? "TODAY" : formatDate(viewing)}
         </span>
         <div className="flex items-center gap-3">
-          {stats.peakRiskScore > 0 && (
-            <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-              peak {stats.peakRiskScore}
-            </span>
-          )}
           <button
             type="button"
             onClick={goBack}

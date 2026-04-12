@@ -89,7 +89,6 @@ export declare class AuditLogger extends EventEmitter {
         guardrailId: string;
         action: {
             type: string;
-            hours?: number;
         };
         identityKey: string;
         agentId: string;
@@ -102,6 +101,7 @@ export declare class AuditLogger extends EventEmitter {
         toolName: string;
         approved: boolean;
         decision: string;
+        storeAction?: "removed" | "unchanged";
     }): void;
     /** Flush the write stream. */
     flush(): Promise<void>;

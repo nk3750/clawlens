@@ -10,6 +10,7 @@ import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../type
 import {
   checkHealth,
   computeEnhancedStats,
+  DEFAULT_AGENT_ID,
   type EntryFilters,
   getActivityTimeline,
   getAgentDetail,
@@ -228,10 +229,12 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       }
 
       if (subPath === "api/activity-timeline") {
-        const bucketMinutes = clampInt(url.searchParams.get("bucketMinutes"), 5, 60, 15);
+        const range = url.searchParams.get("range") || undefined;
+        const rawBucket = url.searchParams.get("bucketMinutes");
+        const bucketMinutes = rawBucket !== null ? clampInt(rawBucket, 1, 60, 15) : undefined;
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getActivityTimeline(entries, bucketMinutes, date));
+        sendJson(res, getActivityTimeline(entries, bucketMinutes, date, range));
         return true;
       }
 
@@ -335,7 +338,7 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           if (deps.guardrailStore && entry.decision) {
             const key = extractIdentityKey(entry.toolName, entry.params);
             const matched = deps.guardrailStore.peek(
-              entry.agentId || "unknown",
+              entry.agentId || DEFAULT_AGENT_ID,
               entry.toolName,
               key,
             );

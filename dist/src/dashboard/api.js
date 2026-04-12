@@ -2,6 +2,8 @@ import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import { parseExecCommand } from "../risk/exec-parser";
 import { computeBreakdown, describeAction, getCategory, parseSessionContext, riskPosture, } from "./categories";
+/** Fallback agent ID when audit entries have no agentId. */
+export const DEFAULT_AGENT_ID = "default";
 // ── Internal helpers ────────────────────────────────────
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 /** Filter entries to the last 24 hours (rolling window, timezone-agnostic). */
@@ -486,7 +488,7 @@ export function getAgents(entries, date) {
     const scopedEntries = isPastDay ? getDayEntries(entries, date) : entries;
     const agentMap = new Map();
     for (const e of scopedEntries) {
-        const id = e.agentId || "default";
+        const id = e.agentId || DEFAULT_AGENT_ID;
         const existing = agentMap.get(id);
         if (existing) {
             existing.push(e);
@@ -667,6 +669,8 @@ export function getAgents(entries, date) {
     agents.sort((a, b) => {
         if (a.status !== b.status)
             return a.status === "active" ? -1 : 1;
+        if (b.todayToolCalls !== a.todayToolCalls)
+            return b.todayToolCalls - a.todayToolCalls;
         return (b.lastActiveTimestamp || "").localeCompare(a.lastActiveTimestamp || "");
     });
     return agents;
@@ -766,6 +770,143 @@ export function getSessions(entries, agentId, limit = 10, offset = 0) {
     return {
         sessions: allSessions.slice(offset, offset + limit),
         total: allSessions.length,
+    };
+}
+const AUTO_BUCKET = {
+    "1h": 5,
+    "3h": 5,
+    "6h": 15,
+    "12h": 15,
+    "24h": 30,
+};
+function parseRangeMs(range) {
+    const match = range.match(/^(\d+)h$/);
+    if (!match)
+        return undefined;
+    return Number(match[1]) * 3_600_000;
+}
+export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
+    const effectiveBucket = bucketMinutes ?? AUTO_BUCKET[range ?? ""] ?? 15;
+    const emptyResponse = {
+        agents: [],
+        buckets: [],
+        startTime: "",
+        endTime: "",
+        totalActions: 0,
+        bucketMinutes: effectiveBucket,
+    };
+    const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
+    let decisions = dayEntries.filter(isDecisionEntry);
+    // Apply range filtering
+    if (range) {
+        const rangeMs = parseRangeMs(range);
+        if (rangeMs) {
+            const isToday = !dateStr;
+            let rangeStart;
+            let rangeEnd;
+            if (isToday) {
+                rangeEnd = Date.now();
+                rangeStart = rangeEnd - rangeMs;
+            }
+            else {
+                rangeStart = new Date(`${dateStr}T00:00:00Z`).getTime();
+                rangeEnd = rangeStart + rangeMs;
+            }
+            decisions = decisions.filter((e) => {
+                const ts = new Date(e.timestamp).getTime();
+                return ts >= rangeStart && ts <= rangeEnd;
+            });
+        }
+    }
+    if (decisions.length === 0) {
+        return emptyResponse;
+    }
+    const bucketMs = effectiveBucket * 60_000;
+    const bucketMap = new Map();
+    const agentTotals = new Map();
+    // Build split session index from ALL entries (not day/range-filtered) so #N
+    // numbering matches resolveSessionEntries, which also operates on the full log
+    const sessionMap = groupBySessions(entries);
+    const splitSessionIndex = new Map();
+    for (const [splitKey, sEntries] of sessionMap) {
+        for (const e of sEntries) {
+            const entryKey = e.toolCallId ?? e.timestamp;
+            splitSessionIndex.set(entryKey, splitKey);
+        }
+    }
+    // Per-bucket tracking maps
+    const sessionMaps = new Map();
+    const toolMaps = new Map();
+    const tagSets = new Map();
+    for (const entry of decisions) {
+        const agentId = entry.agentId ?? DEFAULT_AGENT_ID;
+        const ts = new Date(entry.timestamp).getTime();
+        const bucketStart = Math.floor(ts / bucketMs) * bucketMs;
+        const key = `${agentId}:${bucketStart}`;
+        const category = getCategory(entry.toolName);
+        const risk = entry.riskScore ?? 0;
+        let bucket = bucketMap.get(key);
+        if (!bucket) {
+            bucket = {
+                start: new Date(bucketStart).toISOString(),
+                agentId,
+                counts: { exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0 },
+                total: 0,
+                peakRisk: 0,
+                sessions: [],
+                topTools: [],
+                tags: [],
+            };
+            bucketMap.set(key, bucket);
+            sessionMaps.set(key, new Map());
+            toolMaps.set(key, new Map());
+            tagSets.set(key, new Set());
+        }
+        bucket.counts[category]++;
+        bucket.total++;
+        if (risk > bucket.peakRisk)
+            bucket.peakRisk = risk;
+        agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + 1);
+        // Track sessions — use split key so cron runs resolve to sub-sessions
+        const entryKey = entry.toolCallId ?? entry.timestamp;
+        const sessionKey = splitSessionIndex.get(entryKey) ?? entry.sessionKey ?? "unknown";
+        const sm = sessionMaps.get(key);
+        sm.set(sessionKey, (sm.get(sessionKey) ?? 0) + 1);
+        // Track tools
+        const tm = toolMaps.get(key);
+        tm.set(entry.toolName, (tm.get(entry.toolName) ?? 0) + 1);
+        // Track tags
+        if (entry.riskTags) {
+            const ts = tagSets.get(key);
+            for (const tag of entry.riskTags)
+                ts.add(tag);
+        }
+    }
+    // Convert tracking maps to sorted arrays on each bucket
+    for (const [key, bucket] of bucketMap) {
+        const sm = sessionMaps.get(key);
+        bucket.sessions = [...sm.entries()]
+            .map(([k, count]) => ({ key: k, count }))
+            .sort((a, b) => b.count - a.count);
+        const tm = toolMaps.get(key);
+        bucket.topTools = [...tm.entries()]
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 3);
+        bucket.tags = [...(tagSets.get(key) ?? [])];
+    }
+    const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    const buckets = [...bucketMap.values()];
+    const timestamps = buckets.map((b) => new Date(b.start).getTime());
+    const minTs = Math.min(...timestamps);
+    const maxTs = Math.max(...timestamps) + bucketMs;
+    return {
+        agents,
+        buckets,
+        startTime: new Date(minTs).toISOString(),
+        endTime: new Date(maxTs).toISOString(),
+        totalActions: decisions.length,
+        bucketMinutes: effectiveBucket,
     };
 }
 /** Get full detail for a single session. */

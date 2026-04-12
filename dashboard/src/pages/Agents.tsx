@@ -23,14 +23,16 @@ export default function Agents() {
 
   const guardrails = guardrailsData?.guardrails ?? [];
 
-  // Sort: needsAttention first, then by peakRiskScore desc
+  // Sort: needsAttention first, then by todayToolCalls desc
   const sortedAgents = useMemo(() => {
     if (!agents) return [];
     return [...agents].sort((a, b) => {
       if (a.needsAttention !== b.needsAttention) return a.needsAttention ? -1 : 1;
-      return b.peakRiskScore - a.peakRiskScore;
+      return b.todayToolCalls - a.todayToolCalls;
     });
   }, [agents]);
+
+  const topAgentId = sortedAgents.length > 0 ? sortedAgents[0].id : null;
 
   // Per-agent guardrail counts: agent-specific + globals (agentId === null)
   const guardrailCounts = useMemo(() => {
@@ -128,6 +130,7 @@ export default function Agents() {
                 key={agent.id}
                 agent={agent}
                 guardrailCount={guardrailCounts.get(agent.id) ?? 0}
+                isTopAgent={agent.id === topAgentId}
               />
             ))}
           </div>

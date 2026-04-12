@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { checkHealth, computeEnhancedStats, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, } from "./api";
+import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, } from "./api";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -43,7 +43,7 @@ export function registerDashboardRoutes(api, deps) {
                     return true;
                 }
                 const body = await readBody(req);
-                const { toolCallId, action, agentScope, expiresIn } = body;
+                const { toolCallId, action, agentScope } = body;
                 if (!toolCallId || !action) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ error: "toolCallId and action are required" }));
@@ -52,13 +52,8 @@ export function registerDashboardRoutes(api, deps) {
                 if (!isValidGuardrailAction(action)) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({
-                        error: "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+                        error: "Invalid action. Must be block or require_approval",
                     }));
-                    return true;
-                }
-                if (typeof expiresIn === "number" && expiresIn <= 0) {
-                    res.writeHead(400, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "expiresIn must be positive" }));
                     return true;
                 }
                 const entries = deps.auditLogger.readEntries();
@@ -70,9 +65,6 @@ export function registerDashboardRoutes(api, deps) {
                 }
                 const identityKey = extractIdentityKey(entry.toolName, entry.params);
                 const agentId = agentScope === "global" ? null : (entry.agentId ?? null);
-                const expiresAt = action.type === "allow_hours" && typeof expiresIn === "number"
-                    ? new Date(Date.now() + expiresIn * 3600_000).toISOString()
-                    : null;
                 const describeAction = (tn, p) => {
                     const val = typeof p.command === "string"
                         ? p.command
@@ -93,7 +85,6 @@ export function registerDashboardRoutes(api, deps) {
                     action,
                     agentId,
                     createdAt: new Date().toISOString(),
-                    expiresAt,
                     source: {
                         toolCallId,
                         sessionKey: entry.sessionKey ?? "",
@@ -128,7 +119,7 @@ export function registerDashboardRoutes(api, deps) {
                 if (patch.action !== undefined && !isValidGuardrailAction(patch.action)) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({
-                        error: "Invalid action. Must be block, require_approval, allow_once, or allow_hours (with hours > 0)",
+                        error: "Invalid action. Must be block or require_approval",
                     }));
                     return true;
                 }
@@ -185,6 +176,15 @@ export function registerDashboardRoutes(api, deps) {
                     filters.since = since;
                 const entries = deps.auditLogger.readEntries();
                 sendJson(res, getRecentEntries(entries, limit, offset, filters, deps.guardrailStore));
+                return true;
+            }
+            if (subPath === "api/activity-timeline") {
+                const range = url.searchParams.get("range") || undefined;
+                const rawBucket = url.searchParams.get("bucketMinutes");
+                const bucketMinutes = rawBucket !== null ? clampInt(rawBucket, 1, 60, 15) : undefined;
+                const date = url.searchParams.get("date") || undefined;
+                const entries = deps.auditLogger.readEntries();
+                sendJson(res, getActivityTimeline(entries, bucketMinutes, date, range));
                 return true;
             }
             if (subPath === "api/health") {
@@ -271,7 +271,17 @@ export function registerDashboardRoutes(api, deps) {
                     Connection: "keep-alive",
                 });
                 const listener = (entry) => {
-                    const enriched = { ...entry, category: getCategory(entry.toolName) };
+                    const enriched = {
+                        ...entry,
+                        category: getCategory(entry.toolName),
+                    };
+                    if (deps.guardrailStore && entry.decision) {
+                        const key = extractIdentityKey(entry.toolName, entry.params);
+                        const matched = deps.guardrailStore.peek(entry.agentId || DEFAULT_AGENT_ID, entry.toolName, key);
+                        if (matched) {
+                            enriched.guardrailMatch = { id: matched.id, action: matched.action };
+                        }
+                    }
                     res.write(`data: ${JSON.stringify(enriched)}\n\n`);
                 };
                 deps.auditLogger.on("entry", listener);

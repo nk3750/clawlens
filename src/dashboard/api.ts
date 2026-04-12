@@ -13,6 +13,9 @@ import {
   riskPosture,
 } from "./categories";
 
+/** Fallback agent ID when audit entries have no agentId. */
+export const DEFAULT_AGENT_ID = "default";
+
 // ── Response types ──────────────────────────────────────
 
 export interface StatsResponse {
@@ -709,7 +712,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
 
   const agentMap = new Map<string, AuditEntry[]>();
   for (const e of scopedEntries) {
-    const id = e.agentId || "default";
+    const id = e.agentId || DEFAULT_AGENT_ID;
     const existing = agentMap.get(id);
     if (existing) {
       existing.push(e);
@@ -913,6 +916,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
 
   agents.sort((a, b) => {
     if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+    if (b.todayToolCalls !== a.todayToolCalls) return b.todayToolCalls - a.todayToolCalls;
     return (b.lastActiveTimestamp || "").localeCompare(a.lastActiveTimestamp || "");
   });
 
@@ -1049,6 +1053,9 @@ export interface ActivityTimelineBucket {
   counts: Record<ActivityCategory, number>;
   total: number;
   peakRisk: number;
+  sessions: { key: string; count: number }[];
+  topTools: { name: string; count: number }[];
+  tags: string[];
 }
 
 export interface ActivityTimelineResponse {
@@ -1057,26 +1064,89 @@ export interface ActivityTimelineResponse {
   startTime: string;
   endTime: string;
   totalActions: number;
+  bucketMinutes: number;
+}
+
+const AUTO_BUCKET: Record<string, number> = {
+  "1h": 5,
+  "3h": 5,
+  "6h": 15,
+  "12h": 15,
+  "24h": 30,
+};
+
+function parseRangeMs(range: string): number | undefined {
+  const match = range.match(/^(\d+)h$/);
+  if (!match) return undefined;
+  return Number(match[1]) * 3_600_000;
 }
 
 export function getActivityTimeline(
   entries: AuditEntry[],
-  bucketMinutes = 15,
+  bucketMinutes?: number,
   dateStr?: string,
+  range?: string,
 ): ActivityTimelineResponse {
-  const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
-  const decisions = dayEntries.filter(isDecisionEntry);
+  const effectiveBucket = bucketMinutes ?? AUTO_BUCKET[range ?? ""] ?? 15;
+  const emptyResponse: ActivityTimelineResponse = {
+    agents: [],
+    buckets: [],
+    startTime: "",
+    endTime: "",
+    totalActions: 0,
+    bucketMinutes: effectiveBucket,
+  };
 
-  if (decisions.length === 0) {
-    return { agents: [], buckets: [], startTime: "", endTime: "", totalActions: 0 };
+  const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
+  let decisions = dayEntries.filter(isDecisionEntry);
+
+  // Apply range filtering
+  if (range) {
+    const rangeMs = parseRangeMs(range);
+    if (rangeMs) {
+      const isToday = !dateStr;
+      let rangeStart: number;
+      let rangeEnd: number;
+      if (isToday) {
+        rangeEnd = Date.now();
+        rangeStart = rangeEnd - rangeMs;
+      } else {
+        rangeStart = new Date(`${dateStr}T00:00:00Z`).getTime();
+        rangeEnd = rangeStart + rangeMs;
+      }
+      decisions = decisions.filter((e) => {
+        const ts = new Date(e.timestamp).getTime();
+        return ts >= rangeStart && ts <= rangeEnd;
+      });
+    }
   }
 
-  const bucketMs = bucketMinutes * 60_000;
+  if (decisions.length === 0) {
+    return emptyResponse;
+  }
+
+  const bucketMs = effectiveBucket * 60_000;
   const bucketMap = new Map<string, ActivityTimelineBucket>();
   const agentTotals = new Map<string, number>();
 
+  // Build split session index from ALL entries (not day/range-filtered) so #N
+  // numbering matches resolveSessionEntries, which also operates on the full log
+  const sessionMap = groupBySessions(entries);
+  const splitSessionIndex = new Map<string, string>();
+  for (const [splitKey, sEntries] of sessionMap) {
+    for (const e of sEntries) {
+      const entryKey = e.toolCallId ?? e.timestamp;
+      splitSessionIndex.set(entryKey, splitKey);
+    }
+  }
+
+  // Per-bucket tracking maps
+  const sessionMaps = new Map<string, Map<string, number>>();
+  const toolMaps = new Map<string, Map<string, number>>();
+  const tagSets = new Map<string, Set<string>>();
+
   for (const entry of decisions) {
-    const agentId = entry.agentId ?? "unknown";
+    const agentId = entry.agentId ?? DEFAULT_AGENT_ID;
     const ts = new Date(entry.timestamp).getTime();
     const bucketStart = Math.floor(ts / bucketMs) * bucketMs;
     const key = `${agentId}:${bucketStart}`;
@@ -1091,14 +1161,52 @@ export function getActivityTimeline(
         counts: { exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0 },
         total: 0,
         peakRisk: 0,
+        sessions: [],
+        topTools: [],
+        tags: [],
       };
       bucketMap.set(key, bucket);
+      sessionMaps.set(key, new Map());
+      toolMaps.set(key, new Map());
+      tagSets.set(key, new Set());
     }
 
     bucket.counts[category]++;
     bucket.total++;
     if (risk > bucket.peakRisk) bucket.peakRisk = risk;
     agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + 1);
+
+    // Track sessions — use split key so cron runs resolve to sub-sessions
+    const entryKey = entry.toolCallId ?? entry.timestamp;
+    const sessionKey = splitSessionIndex.get(entryKey) ?? entry.sessionKey ?? "unknown";
+    const sm = sessionMaps.get(key)!;
+    sm.set(sessionKey, (sm.get(sessionKey) ?? 0) + 1);
+
+    // Track tools
+    const tm = toolMaps.get(key)!;
+    tm.set(entry.toolName, (tm.get(entry.toolName) ?? 0) + 1);
+
+    // Track tags
+    if (entry.riskTags) {
+      const ts = tagSets.get(key)!;
+      for (const tag of entry.riskTags) ts.add(tag);
+    }
+  }
+
+  // Convert tracking maps to sorted arrays on each bucket
+  for (const [key, bucket] of bucketMap) {
+    const sm = sessionMaps.get(key)!;
+    bucket.sessions = [...sm.entries()]
+      .map(([k, count]) => ({ key: k, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const tm = toolMaps.get(key)!;
+    bucket.topTools = [...tm.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    bucket.tags = [...(tagSets.get(key) ?? [])];
   }
 
   const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
@@ -1114,6 +1222,7 @@ export function getActivityTimeline(
     startTime: new Date(minTs).toISOString(),
     endTime: new Date(maxTs).toISOString(),
     totalActions: decisions.length,
+    bucketMinutes: effectiveBucket,
   };
 }
 

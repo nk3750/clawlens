@@ -1,6 +1,8 @@
 import type { AuditEntry } from "../audit/logger";
 import type { GuardrailStore } from "../guardrails/store";
 import { type ActivityCategory, type RiskPosture } from "./categories";
+/** Fallback agent ID when audit entries have no agentId. */
+export declare const DEFAULT_AGENT_ID = "default";
 export interface StatsResponse {
     total: number;
     allowed: number;
@@ -69,7 +71,6 @@ export interface EntryResponse {
         id: string;
         action: {
             type: string;
-            hours?: number;
         };
     };
 }
@@ -174,5 +175,30 @@ export declare function getSessions(entries: AuditEntry[], agentId?: string, lim
     sessions: SessionInfo[];
     total: number;
 };
+export interface ActivityTimelineBucket {
+    start: string;
+    agentId: string;
+    counts: Record<ActivityCategory, number>;
+    total: number;
+    peakRisk: number;
+    sessions: {
+        key: string;
+        count: number;
+    }[];
+    topTools: {
+        name: string;
+        count: number;
+    }[];
+    tags: string[];
+}
+export interface ActivityTimelineResponse {
+    agents: string[];
+    buckets: ActivityTimelineBucket[];
+    startTime: string;
+    endTime: string;
+    totalActions: number;
+    bucketMinutes: number;
+}
+export declare function getActivityTimeline(entries: AuditEntry[], bucketMinutes?: number, dateStr?: string, range?: string): ActivityTimelineResponse;
 /** Get full detail for a single session. */
 export declare function getSessionDetail(entries: AuditEntry[], sessionKey: string): SessionDetailResponse | null;

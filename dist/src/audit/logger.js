@@ -140,6 +140,7 @@ export class AuditLogger extends EventEmitter {
             params: {
                 guardrailId: data.guardrailId,
                 resolution: data.decision,
+                storeAction: data.storeAction,
             },
             decision: data.approved ? "allow" : "block",
             userResponse: data.approved ? "approved" : "denied",

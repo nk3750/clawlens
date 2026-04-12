@@ -164,6 +164,9 @@ export interface ActivityTimelineBucket {
   counts: Record<ActivityCategory, number>;
   total: number;
   peakRisk: number;
+  sessions: { key: string; count: number }[];
+  topTools: { name: string; count: number }[];
+  tags: string[];
 }
 
 export interface ActivityTimelineResponse {
@@ -172,6 +175,7 @@ export interface ActivityTimelineResponse {
   startTime: string;
   endTime: string;
   totalActions: number;
+  bucketMinutes: number;
 }
 
 // ── Guardrails ────────────────────────────────────────

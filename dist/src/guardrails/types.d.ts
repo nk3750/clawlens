@@ -2,11 +2,6 @@ export type GuardrailAction = {
     type: "block";
 } | {
     type: "require_approval";
-} | {
-    type: "allow_once";
-} | {
-    type: "allow_hours";
-    hours: number;
 };
 export interface Guardrail {
     id: string;
@@ -16,7 +11,6 @@ export interface Guardrail {
     action: GuardrailAction;
     agentId: string | null;
     createdAt: string;
-    expiresAt: string | null;
     source: {
         toolCallId: string;
         sessionKey: string;
