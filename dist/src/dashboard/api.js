@@ -989,19 +989,32 @@ export function buildSessionSegments(entries) {
     let currentCat = getCategory(sorted[0].toolName);
     let segStart = sorted[0].timestamp;
     let segEnd = sorted[0].timestamp;
+    let segCount = 1;
     for (let i = 1; i < sorted.length; i++) {
         const cat = getCategory(sorted[i].toolName);
         if (cat === currentCat) {
             segEnd = sorted[i].timestamp;
+            segCount++;
         }
         else {
-            segments.push({ category: currentCat, startTime: segStart, endTime: segEnd });
+            segments.push({
+                category: currentCat,
+                startTime: segStart,
+                endTime: segEnd,
+                actionCount: segCount,
+            });
             currentCat = cat;
             segStart = sorted[i].timestamp;
             segEnd = sorted[i].timestamp;
+            segCount = 1;
         }
     }
-    segments.push({ category: currentCat, startTime: segStart, endTime: segEnd });
+    segments.push({
+        category: currentCat,
+        startTime: segStart,
+        endTime: segEnd,
+        actionCount: segCount,
+    });
     return segments;
 }
 export function getSessionTimeline(entries, dateStr, range) {

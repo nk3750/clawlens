@@ -89,6 +89,54 @@ describe("buildSessionSegments", () => {
     ];
     expect(buildSessionSegments(entries)).toEqual([]);
   });
+
+  it("returns actionCount: 1 for a single-entry segment", () => {
+    const entries = [
+      entry({ toolName: "exec", timestamp: "2026-04-12T09:00:00Z", decision: "allow" }),
+    ];
+    const segments = buildSessionSegments(entries);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].actionCount).toBe(1);
+  });
+
+  it("returns cumulative actionCount for merged same-category entries", () => {
+    const entries = [
+      entry({ toolName: "read", timestamp: "2026-04-12T09:00:00Z", decision: "allow" }),
+      entry({ toolName: "grep", timestamp: "2026-04-12T09:05:00Z", decision: "allow" }),
+      entry({ toolName: "glob", timestamp: "2026-04-12T09:10:00Z", decision: "allow" }),
+    ];
+    const segments = buildSessionSegments(entries);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].actionCount).toBe(3);
+  });
+
+  it("tracks actionCount per segment across category transitions", () => {
+    const entries = [
+      entry({ toolName: "read", timestamp: "2026-04-12T09:00:00Z", decision: "allow" }),
+      entry({ toolName: "grep", timestamp: "2026-04-12T09:02:00Z", decision: "allow" }),
+      entry({ toolName: "exec", timestamp: "2026-04-12T09:05:00Z", decision: "allow" }),
+      entry({ toolName: "read", timestamp: "2026-04-12T09:10:00Z", decision: "allow" }),
+      entry({ toolName: "search", timestamp: "2026-04-12T09:12:00Z", decision: "allow" }),
+    ];
+    const segments = buildSessionSegments(entries);
+    expect(segments).toHaveLength(3);
+    expect(segments[0].actionCount).toBe(2); // read + grep
+    expect(segments[1].actionCount).toBe(1); // exec
+    expect(segments[2].actionCount).toBe(2); // read + search
+  });
+
+  it("segment actionCounts sum to total entry count", () => {
+    const entries = [
+      entry({ toolName: "read", timestamp: "2026-04-12T09:00:00Z", decision: "allow" }),
+      entry({ toolName: "exec", timestamp: "2026-04-12T09:01:00Z", decision: "allow" }),
+      entry({ toolName: "exec", timestamp: "2026-04-12T09:02:00Z", decision: "allow" }),
+      entry({ toolName: "write", timestamp: "2026-04-12T09:03:00Z", decision: "allow" }),
+      entry({ toolName: "read", timestamp: "2026-04-12T09:04:00Z", decision: "allow" }),
+    ];
+    const segments = buildSessionSegments(entries);
+    const totalActionCount = segments.reduce((sum, s) => sum + s.actionCount, 0);
+    expect(totalActionCount).toBe(5);
+  });
 });
 
 // ── getSessionTimeline ───────────────────────────────────

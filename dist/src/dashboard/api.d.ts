@@ -210,6 +210,7 @@ export interface SessionSegment {
     category: ActivityCategory;
     startTime: string;
     endTime: string;
+    actionCount: number;
 }
 export interface TimelineSession {
     sessionKey: string;
