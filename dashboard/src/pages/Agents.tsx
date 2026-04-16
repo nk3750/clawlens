@@ -71,8 +71,8 @@ export default function Agents() {
       {/* Agent Rows */}
       <section>
         <div className="mb-3">
-          <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
-            Agents
+          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+            AGENTS
           </span>
         </div>
 

@@ -65,10 +65,10 @@ export default function LiveFeed() {
     <section>
       <div className="flex items-center gap-2 mb-2">
         <span
-          className="font-display text-sm font-medium"
-          style={{ color: "var(--cl-text-secondary)" }}
+          className="label-mono"
+          style={{ color: "var(--cl-text-muted)" }}
         >
-          Live
+          LIVE
         </span>
         <span
           className="inline-block w-1.5 h-1.5 rounded-full"

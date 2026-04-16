@@ -209,8 +209,8 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
   if (loading && !apiData) {
     return (
       <div>
-        <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
-          Fleet Activity
+        <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+          FLEET ACTIVITY
         </span>
         <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>
           Loading...
@@ -477,7 +477,7 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
                       y={axisY + 16}
                       textAnchor="middle"
                       className="label-mono"
-                      style={{ fill: "var(--cl-text-muted)", fontSize: 9 }}
+                      style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
                     >
                       {tick.label}
                     </text>
@@ -521,7 +521,7 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
                       y={PAD_TOP - 2}
                       textAnchor="middle"
                       className="label-mono"
-                      style={{ fill: "var(--cl-accent)", fontSize: 9 }}
+                      style={{ fill: "var(--cl-accent)", fontSize: 10 }}
                     >
                       NOW
                     </text>
