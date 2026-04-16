@@ -8,7 +8,7 @@
  * Switch to "stress" to test the shape-from-count algorithm at scale.
  */
 
-export const MOCK_SCENARIO: "standard" | "stress" = "stress";
+export const MOCK_SCENARIO: "standard" | "stress" = "standard";
 
 import type {
   AgentInfo,
@@ -16,6 +16,9 @@ import type {
   EntryResponse,
   SessionInfo,
   ActivityCategory,
+  ActivityTimelineResponse,
+  ActivityTimelineBucket,
+  Guardrail,
 } from "./src/lib/types";
 
 const now = Date.now();
@@ -391,6 +394,15 @@ function riskPosture(avg: number): PostureType {
   return "calm";
 }
 
+function buildHourlyActivity(entries: EntryResponse[]): number[] {
+  const hours = new Array<number>(24).fill(0);
+  for (const e of entries) {
+    const h = new Date(e.timestamp).getHours();
+    hours[h]++;
+  }
+  return hours;
+}
+
 export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
   const agentMap = new Map<string, EntryResponse[]>();
   for (const e of entries) {
@@ -514,6 +526,7 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
       blockedCount,
       riskProfile: riskProfileData,
       topRisk,
+      hourlyActivity: buildHourlyActivity(ae),
     });
   }
 
@@ -527,7 +540,7 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
 
 export function generateMockStats(entries: EntryResponse[]): StatsResponse {
   const todayCutoff = new Date();
-  todayCutoff.setUTCHours(0, 0, 0, 0);
+  todayCutoff.setHours(0, 0, 0, 0);
   const today = entries.filter((e) => new Date(e.timestamp) >= todayCutoff && e.decision);
 
   let allowed = 0, approved = 0, blocked = 0, timedOut = 0, pending = 0;
@@ -585,6 +598,12 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
   }
   const historicDailyMax = byDay.size > 0 ? Math.max(...byDay.values()) : 100;
 
+  // Yesterday's total for day-over-day comparison
+  const yesterdayCutoff = new Date(todayCutoff.getTime() - 86_400_000);
+  const yesterdayTotal = entries.filter(
+    (e) => e.decision && new Date(e.timestamp) >= yesterdayCutoff && new Date(e.timestamp) < todayCutoff,
+  ).length;
+
   return {
     total: allowed + approved + blocked + timedOut,
     allowed,
@@ -599,6 +618,7 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
     activeSessions: activeSessions.size,
     riskPosture: posture,
     historicDailyMax,
+    yesterdayTotal,
   };
 }
 
@@ -696,4 +716,152 @@ export function generateRiskTrend(
       score: e.llmEvaluation?.adjustedScore ?? e.riskScore!,
       toolName: e.toolName,
     }));
+}
+
+/** Generate activity timeline buckets from entries. */
+export function generateMockTimeline(
+  entries: EntryResponse[],
+  rangeStr: string,
+): ActivityTimelineResponse {
+  const rangeMs: Record<string, number> = {
+    "1h": 60 * 60_000,
+    "6h": 6 * 60 * 60_000,
+    "24h": 24 * 60 * 60_000,
+    "7d": 7 * 24 * 60 * 60_000,
+  };
+  const bucketMinutesMap: Record<string, number> = {
+    "1h": 5,
+    "6h": 15,
+    "24h": 30,
+    "7d": 360,
+  };
+  const range = rangeMs[rangeStr] ?? rangeMs["24h"];
+  const bucketMinutes = bucketMinutesMap[rangeStr] ?? 30;
+  const bucketMs = bucketMinutes * 60_000;
+
+  const cutoff = now - range;
+  const filtered = entries.filter(
+    (e) => new Date(e.timestamp).getTime() >= cutoff,
+  );
+  const agents = [...new Set(filtered.map((e) => e.agentId ?? "unknown"))];
+  const startTime = new Date(cutoff).toISOString();
+  const endTime = new Date(now).toISOString();
+
+  const bucketMap = new Map<string, EntryResponse[]>();
+  for (const e of filtered) {
+    const t = new Date(e.timestamp).getTime();
+    const bucketStart = new Date(
+      Math.floor(t / bucketMs) * bucketMs,
+    ).toISOString();
+    const key = `${e.agentId ?? "unknown"}|${bucketStart}`;
+    const list = bucketMap.get(key) ?? [];
+    list.push(e);
+    bucketMap.set(key, list);
+  }
+
+  const buckets: ActivityTimelineBucket[] = [];
+  for (const [key, bEntries] of bucketMap) {
+    const [agentId, start] = key.split("|");
+    const counts: Record<ActivityCategory, number> = {
+      exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0,
+    };
+    let peakRisk = 0;
+    for (const e of bEntries) {
+      counts[e.category]++;
+      if (e.riskScore != null && e.riskScore > peakRisk) peakRisk = e.riskScore;
+    }
+
+    const sessionCounts = new Map<string, number>();
+    for (const e of bEntries) {
+      if (e.sessionKey)
+        sessionCounts.set(e.sessionKey, (sessionCounts.get(e.sessionKey) ?? 0) + 1);
+    }
+    const sessions = [...sessionCounts.entries()].map(([k, c]) => ({
+      key: k,
+      count: c,
+    }));
+
+    const toolCounts = new Map<string, number>();
+    for (const e of bEntries) toolCounts.set(e.toolName, (toolCounts.get(e.toolName) ?? 0) + 1);
+    const topTools = [...toolCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, count]) => ({ name, count }));
+
+    buckets.push({
+      start,
+      agentId,
+      counts,
+      total: bEntries.length,
+      peakRisk,
+      sessions,
+      topTools,
+      tags: peakRisk > 50 ? ["elevated"] : [],
+    });
+  }
+
+  buckets.sort((a, b) => a.start.localeCompare(b.start));
+
+  return {
+    agents,
+    buckets,
+    startTime,
+    endTime,
+    totalActions: filtered.length,
+    bucketMinutes,
+  };
+}
+
+/** Generate mock guardrails for development. */
+export function generateMockGuardrails(): Guardrail[] {
+  return [
+    {
+      id: "gr_001",
+      tool: "exec",
+      identityKey: "kubectl delete",
+      matchMode: "exact",
+      action: { type: "block" },
+      agentId: null,
+      createdAt: new Date(now - 2 * 24 * 60 * 60_000).toISOString(),
+      source: {
+        toolCallId: "tc_abc123",
+        sessionKey: "agent:deploy-bot:web:ci-pipeline:run-480",
+        agentId: "deploy-bot",
+      },
+      description: "Block kubectl delete commands",
+      riskScore: 92,
+    },
+    {
+      id: "gr_002",
+      tool: "exec",
+      identityKey: "rm -rf",
+      matchMode: "exact",
+      action: { type: "block" },
+      agentId: null,
+      createdAt: new Date(now - 5 * 24 * 60 * 60_000).toISOString(),
+      source: {
+        toolCallId: "tc_def456",
+        sessionKey: "agent:code-reviewer:telegram:pr-review:pr-200",
+        agentId: "code-reviewer",
+      },
+      description: "Block recursive force delete",
+      riskScore: 95,
+    },
+    {
+      id: "gr_003",
+      tool: "fetch_url",
+      identityKey: "https://pastebin.com",
+      matchMode: "exact",
+      action: { type: "require_approval" },
+      agentId: "nightly-scan",
+      createdAt: new Date(now - 1 * 24 * 60 * 60_000).toISOString(),
+      source: {
+        toolCallId: "tc_ghi789",
+        sessionKey: "agent:nightly-scan:cron:security-audit",
+        agentId: "nightly-scan",
+      },
+      description: "Require approval for pastebin access",
+      riskScore: 88,
+    },
+  ];
 }
