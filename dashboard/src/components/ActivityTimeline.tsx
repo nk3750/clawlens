@@ -253,8 +253,6 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
     (a, b) => (agentTotals.get(b) ?? 0) - (agentTotals.get(a) ?? 0),
   );
 
-  const maxSessionActions = Math.max(...sessions.map((s) => s.actionCount), 1);
-
   // SVG dimensions
   const chartWidth = measuredWidth;
   const swimlaneWidth = chartWidth - LABEL_WIDTH - ACTION_COUNT_WIDTH;
@@ -537,185 +535,7 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
 
       {/* Tooltip */}
       {hoveredSession && (
-        <SessionTooltip session={hoveredSession} pos={hoveredPos} />
-      )}
-
-      {/* Session Detail Cards — below dot timeline */}
-      <div className="mt-4 flex flex-col" style={{ gap: 12 }}>
-        {sortedAgents.map((agentId) => {
-          const agentSessions = sessions
-            .filter((s) => s.agentId === agentId)
-            .sort((a, b) => b.startTime.localeCompare(a.startTime));
-
-          if (agentSessions.length === 0) return null;
-          const total = agentTotals.get(agentId) ?? 0;
-
-          return (
-            <div key={agentId}>
-              {/* Agent header */}
-              <div className="flex items-center justify-between mb-1.5 px-1">
-                <Link
-                  to={`/agent/${encodeURIComponent(agentId)}`}
-                  className="font-sans text-sm font-semibold transition-colors"
-                  style={{ color: "var(--cl-text-primary)", textDecoration: "none" }}
-                >
-                  {agentId}
-                </Link>
-                <span className="font-mono text-[11px]" style={{ color: "var(--cl-text-secondary)" }}>
-                  {total} action{total !== 1 ? "s" : ""}
-                </span>
-              </div>
-
-              {/* Session rows */}
-              <div
-                className="rounded-xl overflow-hidden"
-                style={{
-                  border: "1px solid var(--cl-border-subtle)",
-                  backgroundColor: "var(--cl-surface)",
-                }}
-              >
-                {agentSessions.map((session, i) => (
-                  <SessionRow
-                    key={session.sessionKey}
-                    session={session}
-                    maxActions={maxSessionActions}
-                    isLast={i === agentSessions.length - 1}
-                    navigate={navigate}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* View all link */}
-      <div className="mt-3 text-center">
-        <Link to="/activity" className="text-xs" style={{ color: "var(--cl-text-muted)" }}>
-          View all activity &rarr;
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-function sessionTrigger(sessionKey: string): string | null {
-  const lower = sessionKey.toLowerCase();
-  if (lower.includes(":cron:")) return "via cron";
-  if (lower.includes(":telegram")) return "via telegram";
-  if (lower.includes(":api:")) return "via API";
-  return null;
-}
-
-function SessionRow({
-  session,
-  maxActions,
-  isLast,
-  navigate,
-}: {
-  session: TimelineSession;
-  maxActions: number;
-  isLast: boolean;
-  navigate: (path: string) => void;
-}) {
-  const duration = fmtDuration(session.startTime, session.endTime);
-  const trigger = sessionTrigger(session.sessionKey);
-  const tier = riskTierFromScore(session.avgRisk);
-  const showRisk = session.avgRisk > 25;
-  const barWidthPct = (session.actionCount / maxActions) * 100;
-
-  return (
-    <div
-      className="flex items-center gap-3 px-3 py-2.5 transition-colors cursor-pointer"
-      style={{
-        borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
-      }}
-      onClick={() => navigate(`/session/${encodeURIComponent(session.sessionKey)}`)}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--cl-elevated)"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
-    >
-      {/* Time */}
-      <span
-        className="font-mono text-[11px] shrink-0"
-        style={{ color: "var(--cl-text-secondary)", minWidth: 72 }}
-      >
-        {fmtTime(session.startTime)}
-      </span>
-
-      {/* Category bar — proportional to action count */}
-      <div className="flex-1" style={{ height: 8, borderRadius: 4, backgroundColor: "var(--cl-elevated)", overflow: "hidden" }}>
-        <div
-          className="h-full flex"
-          style={{ width: `${barWidthPct}%`, borderRadius: 4, overflow: "hidden" }}
-        >
-          {session.segments.map((seg, i) => (
-            <div
-              key={`${seg.category}-${i}`}
-              style={{
-                flex: seg.actionCount ?? 1,
-                backgroundColor: CATEGORY_COLORS[seg.category],
-                opacity: 0.85,
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Action count + duration */}
-      <span
-        className="font-mono text-[11px] shrink-0"
-        style={{ color: "var(--cl-text-secondary)", minWidth: 80, textAlign: "right" }}
-      >
-        {session.actionCount} · {duration}
-      </span>
-
-      {/* Trigger */}
-      {trigger && (
-        <span
-          className="font-sans text-[11px] shrink-0"
-          style={{ color: "var(--cl-text-secondary)", minWidth: 80 }}
-        >
-          {trigger}
-        </span>
-      )}
-
-      {/* Risk badge */}
-      {showRisk && (
-        <span
-          className="font-mono text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0"
-          style={{
-            color: riskColorRaw(tier),
-            backgroundColor: `color-mix(in srgb, ${riskColorRaw(tier)} 12%, transparent)`,
-            minWidth: 28,
-            textAlign: "center",
-          }}
-        >
-          {tier === "critical" ? "CRIT" : tier === "medium" ? "MED" : tier.toUpperCase()}
-        </span>
-      )}
-
-      {/* LIVE indicator */}
-      {session.isActive && (
-        <span className="flex items-center gap-1 shrink-0">
-          <span
-            className="inline-block w-2 h-2 rounded-full"
-            style={{
-              backgroundColor: "var(--cl-risk-low)",
-              boxShadow: "0 0 4px rgba(74, 222, 128, 0.5)",
-              animation: "pulse 2s ease-in-out infinite",
-            }}
-          />
-          <span className="font-mono text-[10px] font-bold" style={{ color: "var(--cl-risk-low)" }}>
-            LIVE
-          </span>
-        </span>
-      )}
-
-      {/* Blocked count */}
-      {session.blockedCount > 0 && (
-        <span className="font-mono text-[10px] shrink-0" style={{ color: "var(--cl-risk-high)" }}>
-          {session.blockedCount} blocked
-        </span>
+        <SessionTooltip session={hoveredSession} pos={hoveredPos} wrapperRef={wrapperRef} />
       )}
     </div>
   );
@@ -758,9 +578,11 @@ function RangeSelector({
 function SessionTooltip({
   session,
   pos,
+  wrapperRef,
 }: {
   session: TimelineSession;
   pos: { x: number; y: number };
+  wrapperRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const tier = riskTierFromScore(session.peakRisk);
   const duration = fmtDuration(session.startTime, session.endTime);
@@ -776,8 +598,9 @@ function SessionTooltip({
     .map(([cat, count]) => ({ cat, pct: Math.round((count / totalCount) * 100) }));
 
   const tooltipW = 230;
+  const wrapperW = wrapperRef.current?.offsetWidth ?? 800;
   let left = pos.x - tooltipW / 2;
-  left = Math.max(4, left);
+  left = Math.max(4, Math.min(left, wrapperW - tooltipW - 4));
   const top = pos.y - 12;
 
   return (

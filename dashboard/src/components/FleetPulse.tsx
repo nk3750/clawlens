@@ -112,6 +112,23 @@ export default function FleetPulse({ stats, totalAgents, guardrailCount, selecte
         >
           &#8250;
         </button>
+        <span className="ml-auto">
+          <button
+            type="button"
+            disabled
+            className="font-sans text-[11px] font-medium tracking-wide uppercase px-3 py-1.5 rounded-lg transition-opacity"
+            style={{
+              color: "var(--cl-text-muted)",
+              backgroundColor: "var(--cl-surface)",
+              border: "1px solid var(--cl-border-subtle)",
+              opacity: 0.4,
+              cursor: "default",
+            }}
+            title="Coming soon"
+          >
+            Generate Report
+          </button>
+        </span>
       </div>
 
       {/* Stat grid */}

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { AgentInfo, ActivityCategory } from "../lib/types";
 import { CATEGORY_META, relTime, riskColorRaw, riskTierFromScore } from "../lib/utils";
+import { useSessionSummary } from "../hooks/useSessionSummary";
 import GradientAvatar from "./GradientAvatar";
 
 const CATEGORY_LABELS: Record<ActivityCategory, string> = {
@@ -20,6 +21,8 @@ export default function AgentCard({ agent }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
   const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode);
+  const sessionKey = agent.currentSession?.sessionKey ?? null;
+  const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
 
   return (
     <Link
@@ -72,6 +75,63 @@ export default function AgentCard({ agent }: Props) {
       {hasActivity && (
         <div className="mt-2.5 mb-1">
           <CategoryBreakdown breakdown={agent.todayActivityBreakdown} />
+        </div>
+      )}
+
+      {/* AI Summary — on-demand */}
+      {hasActivity && sessionKey && (
+        <div className="mt-2 mb-0.5">
+          {!summary && !summaryLoading && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fetchSummary();
+              }}
+              className="flex items-center gap-1 font-sans text-[11px] transition-colors"
+              style={{
+                color: "var(--cl-text-muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.color = "var(--cl-accent)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.color = "var(--cl-text-muted)";
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              Summarize
+            </button>
+          )}
+          {summaryLoading && (
+            <span
+              className="font-sans text-[11px] italic"
+              style={{ color: "var(--cl-text-muted)" }}
+            >
+              Summarizing...
+            </span>
+          )}
+          {summary && (
+            <p
+              className="font-sans text-[11px] leading-relaxed"
+              style={{
+                color: "var(--cl-text-secondary)",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {summary}
+            </p>
+          )}
         </div>
       )}
 

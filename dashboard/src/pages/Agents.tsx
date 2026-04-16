@@ -5,10 +5,12 @@ import FleetPulse from "../components/FleetPulse";
 import NeedsAttention from "../components/NeedsAttention";
 import AgentRow from "../components/AgentCardCompact";
 import ActivityTimeline from "../components/ActivityTimeline";
+import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
 
 export default function Agents() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showIdle, setShowIdle] = useState(false);
   const isToday = selectedDate === null;
   const dateParam = selectedDate ? `?date=${selectedDate}` : "";
 
@@ -60,6 +62,12 @@ export default function Agents() {
         <NeedsAttention interventions={interventions} agents={agents} />
       )}
 
+      {/* Activity Timeline */}
+      <ActivityTimeline isToday={isToday} selectedDate={selectedDate} />
+
+      {/* Live Feed (today only) */}
+      {isToday && <LiveFeed />}
+
       {/* Agent Rows */}
       <section>
         <div className="mb-3">
@@ -101,8 +109,8 @@ export default function Agents() {
           </div>
         )}
 
-        {/* Agent grid */}
-        {(activeAgents.length > 0 || idleAgents.length > 0) && (
+        {/* Active agent grid */}
+        {activeAgents.length > 0 && (
           <div
             className="grid"
             style={{
@@ -113,15 +121,64 @@ export default function Agents() {
             {activeAgents.map((agent) => (
               <AgentRow key={agent.id} agent={agent} />
             ))}
-            {idleAgents.map((agent) => (
-              <AgentRow key={agent.id} agent={agent} />
-            ))}
           </div>
         )}
-      </section>
 
-      {/* Activity Timeline */}
-      <ActivityTimeline isToday={isToday} selectedDate={selectedDate} />
+        {/* Idle agents toggle */}
+        {idleAgents.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setShowIdle((prev) => !prev)}
+              className="flex items-center gap-1.5 mt-3 font-sans text-[11px] transition-colors"
+              style={{
+                color: "var(--cl-text-muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "4px 0",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.color = "var(--cl-text-secondary)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.color = "var(--cl-text-muted)";
+              }}
+            >
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transform: showIdle ? "rotate(90deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s ease",
+                }}
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              {showIdle ? "Hide" : "Show"} {idleAgents.length} idle agent{idleAgents.length !== 1 ? "s" : ""}
+            </button>
+            {showIdle && (
+              <div
+                className="grid mt-2"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {idleAgents.map((agent) => (
+                  <AgentRow key={agent.id} agent={agent} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }
