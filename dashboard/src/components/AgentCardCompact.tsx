@@ -20,7 +20,7 @@ interface Props {
 export default function AgentCard({ agent }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
-  const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode);
+  const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode, agent.schedule);
   const sessionKey = agent.lastSessionKey ?? agent.currentSession?.sessionKey ?? null;
   const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
 
@@ -243,14 +243,18 @@ function RiskBadge({ score }: { score: number }) {
 
 // ── Trigger Context Parser ────────────────────────────────
 
-function parseTriggerLabel(context: string | undefined, mode?: string): string | null {
+function parseTriggerLabel(
+  context: string | undefined,
+  mode?: string,
+  schedule?: string,
+): string | null {
   if (context) {
     const lower = context.toLowerCase();
-    if (lower.includes("cron")) return "via cron";
+    if (lower.includes("cron")) return schedule ?? "via cron";
     if (lower.includes("telegram")) return "via telegram";
     if (lower.includes("api")) return "via API";
     if (lower.includes("interactive")) return null;
   }
-  if (mode === "scheduled") return "via cron";
+  if (mode === "scheduled") return schedule ?? "via cron";
   return null;
 }
