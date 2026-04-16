@@ -21,7 +21,7 @@ export default function AgentCard({ agent }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
   const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode);
-  const sessionKey = agent.currentSession?.sessionKey ?? null;
+  const sessionKey = agent.lastSessionKey ?? agent.currentSession?.sessionKey ?? null;
   const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
 
   return (

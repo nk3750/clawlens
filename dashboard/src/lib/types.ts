@@ -112,6 +112,7 @@ export interface AgentInfo {
     tier: RiskTier;
   };
   hourlyActivity: number[];
+  lastSessionKey?: string;
 }
 
 export interface ToolSummaryItem {

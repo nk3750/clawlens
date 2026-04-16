@@ -111,6 +111,7 @@ export interface AgentInfo {
         tier: string;
     };
     hourlyActivity: number[];
+    lastSessionKey?: string;
 }
 export interface ToolSummaryItem {
     toolName: string;

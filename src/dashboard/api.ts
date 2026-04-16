@@ -129,6 +129,7 @@ export interface AgentInfo {
     tier: string;
   };
   hourlyActivity: number[];
+  lastSessionKey?: string;
 }
 
 export interface ToolSummaryItem {
@@ -989,6 +990,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
       riskProfile,
       topRisk,
       hourlyActivity,
+      lastSessionKey: currentSessionKey,
     });
   }
 

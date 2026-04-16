@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
+import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
 import type { EntryResponse, ActivityCategory } from "../lib/types";
 import { CATEGORY_META, riskColorRaw, riskTierFromScore, relTime } from "../lib/utils";
@@ -9,14 +10,15 @@ import GradientAvatar from "./GradientAvatar";
 const MAX_ITEMS = 8;
 
 export default function LiveFeed() {
-  const [entries, setEntries] = useState<EntryResponse[]>([]);
+  const { data: initialEntries } = useApi<EntryResponse[]>("api/entries?limit=8");
+  const [sseEntries, setSseEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
 
   useSSE<EntryResponse>(
     "api/stream",
     useCallback((entry: EntryResponse) => {
-      setEntries((prev) => {
+      setSseEntries((prev) => {
         const next = [entry, ...prev].slice(0, MAX_ITEMS);
         return next;
       });
@@ -34,7 +36,30 @@ export default function LiveFeed() {
     }, []),
   );
 
-  if (entries.length === 0) return null;
+  // Merge SSE entries (newest) with initial API entries (backfill), deduped
+  const entries = useMemo(() => {
+    if (sseEntries.length === 0 && !initialEntries) return [];
+    const seen = new Set<string>();
+    const merged: EntryResponse[] = [];
+    for (const e of sseEntries) {
+      const key = e.toolCallId ?? e.timestamp;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(e);
+      }
+    }
+    for (const e of initialEntries ?? []) {
+      if (merged.length >= MAX_ITEMS) break;
+      const key = e.toolCallId ?? e.timestamp;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(e);
+      }
+    }
+    return merged.slice(0, MAX_ITEMS);
+  }, [sseEntries, initialEntries]);
+
+  if (entries.length === 0 && !initialEntries) return null;
 
   return (
     <section>

@@ -734,6 +734,7 @@ export function getAgents(entries, date) {
             riskProfile,
             topRisk,
             hourlyActivity,
+            lastSessionKey: currentSessionKey,
         });
     }
     agents.sort((a, b) => {
