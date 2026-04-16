@@ -1,56 +1,60 @@
-> **Status:** Initial draft — under review
->
 > **TODOs before launch:**
 > - [ ] Wordsmith — review tone, phrasing, and flow with Neelabh
 > - [ ] Screenshot — take real dashboard screenshot, save to `docs/screenshots/homepage.png`
 > - [ ] GitHub org — decide AvidClaw vs nk3750 vs new `clawlens` org, update clone URL
 > - [ ] Test install flow — run the Quick Start steps on a clean machine end-to-end
 > - [ ] Add logo — once designed, add at top of README
+> - [ ] Remove this TODO block before launch
+
+<!-- TODO: Add logo here once designed -->
 
 # ClawLens
 
-Agent observability for OpenClaw. See everything your AI agents do, score risk in real-time, get alerted when something looks dangerous.
+**Your agents are doing things right now. Do you know what?**
 
-## The Problem
+ClawLens is an open-source [OpenClaw](https://openclaw.ai/) plugin that watches every tool call your AI agents make, scores each one for risk, and tells you when something needs your attention — before it's too late.
 
-A Meta AI researcher told her OpenClaw agent to "confirm before acting." It deleted 200+ emails without asking -- the instruction was lost when the context window compacted. A developer gave his agent access to iMessage for a morning digest. It sent 500+ messages to his contacts. He had to pull the power cord.
-
-These are real incidents. In every case, the agent had permission to use the tool but no governance layer on *when* or *how much*. ClawLens fills that gap.
-
-## What You Get
-
-- **Multi-agent dashboard** -- see all your agents, their status, and what they're doing right now
-- **Every tool call scored 0-100 for risk** -- instantly, using a two-tier scoring engine
-- **LLM evaluation for suspicious actions** -- explains *why* a command is dangerous, not just *that* it is
-- **Real-time Telegram alerts** -- high-risk actions trigger notifications within seconds
-- **Live activity feed** -- tool calls stream in as they happen, color-coded by risk level
-- **Tamper-evident audit trail** -- SHA-256 hash-chained JSONL log of every action
-- **User-defined guardrails** -- block or require approval for specific actions, created from observed behavior
-- **Zero-config start** -- install, open dashboard, see your agents. No policy writing required.
-
-<!-- TODO: Replace with actual screenshot after dashboard is running -->
+<!-- TODO: Replace with actual screenshot of dashboard showing agents, risk scores, and activity feed -->
 ![ClawLens Dashboard](docs/screenshots/homepage.png)
 
-## Quick Start
+## Why This Exists
 
-### Install from npm
+An AI researcher told her agent to "confirm before acting." It deleted 200 emails — the instruction vanished during context window compaction. A developer set up a morning digest agent. It sent 500+ iMessages to his contacts. He pulled the power cord to stop it.
+
+In every case, the agent had permission. What was missing: a layer *outside the agent's memory* that watches what it does and asks — **does the user actually want this?**
+
+That's ClawLens.
+
+## What You See
+
+- **Every agent, one dashboard** — status, current session, activity breakdown, risk posture
+- **Every action, scored for risk** — a two-tier engine evaluates tool calls instantly as they happen
+- **Intelligent evaluation** — high-risk calls get LLM analysis that explains *why* something is dangerous, with risk tags like `exfiltration`, `destructive`, `persistence`
+- **Alerts in real-time** — dangerous actions trigger Telegram notifications within seconds
+- **Live activity feed** — tool calls stream in as they happen, color-coded by risk
+- **Guardrails you create** — block or require approval for specific actions, built from behavior you've observed
+- **Tamper-evident audit trail** — every action logged, hash-chained, exportable, verifiable
+- **Zero configuration** — install, open the dashboard, your agents appear. No YAML. No setup wizard.
+
+## Get Started
 
 ```bash
 openclaw plugins install clawlens
 ```
 
-Restart the gateway, then open the dashboard:
+Restart the gateway. Open the dashboard:
 
 ```
 http://localhost:18789/plugins/clawlens/
 ```
 
-That's it. Your agents will appear as soon as they make their first tool call.
+Your agents show up the moment they make their first tool call. That's the entire setup.
 
-### Install from source
+<details>
+<summary><strong>Install from source</strong></summary>
 
 ```bash
-<!-- TODO: Confirm GitHub org — AvidClaw or nk3750 or new clawlens org? -->
+# TODO: Confirm GitHub org before launch
 git clone https://github.com/AvidClaw/clawLens.git
 cd clawLens
 npm install
@@ -58,43 +62,65 @@ cd dashboard && npm install && npm run build && cd ..
 npx tsc -p tsconfig.json
 ```
 
-Add the plugin path to your `openclaw.json`:
+Add to your OpenClaw config (`~/.openclaw/openclaw.json`):
 
 ```json
 {
-  "plugins": { "load": { "paths": ["/path/to/clawLens"] } }
+  "plugins": {
+    "load": { "paths": ["/path/to/clawLens"] },
+    "entries": { "clawlens": { "enabled": true } }
+  }
 }
 ```
 
 Restart the gateway.
 
+</details>
+
 ## How It Works
 
-ClawLens hooks into OpenClaw's plugin system. Every tool call passes through ClawLens before execution:
+ClawLens sits inside OpenClaw's plugin hook system. Every tool call passes through it *before* execution — not after.
 
+```mermaid
+flowchart LR
+    A[Agent Tool Call] --> B[ClawLens Hook]
+    B --> C[Risk Scoring]
+    C --> D{Risk Level}
+    D -->|Low| E[Allow + Log]
+    D -->|Elevated| F[LLM Evaluation]
+    D -->|High| G[Alert + Log]
+    F --> H[Reasoning + Tags]
+    H --> E
+    B --> I[Audit Trail]
+    style G fill:#d32f2f,color:#fff
+    style F fill:#f9a825,color:#000
+    style E fill:#388e3c,color:#fff
 ```
-Agent Tool Call --> ClawLens Hook --> Risk Score + Audit --> Tool Executes
-                        |
-                   Score >= 50?  -->  LLM Evaluation (async)
-                   Score >= 80?  -->  Telegram Alert
-```
 
-**Tier 1** scores every call deterministically in under 5ms -- tool type, parameters, and context. **Tier 2** sends high-risk calls to an LLM for deeper evaluation with reasoning and risk tags. About 70-80% of calls (reads, searches, globs) never need Tier 2.
+**Tier 1** scores every call deterministically — tool type, parameters, command patterns. Instant, every call.
 
-ClawLens complements OpenClaw's built-in security. It does not replace exec approvals or tool profiles -- it adds the observability and risk intelligence layer on top.
+**Tier 2** kicks in for elevated-risk actions — an LLM evaluates the command in context, returns structured reasoning and risk tags. Most routine calls (reads, searches, file lookups) never reach Tier 2.
 
-## Tech Stack
+ClawLens **complements** OpenClaw's built-in security. It doesn't replace exec approvals or tool profiles — it adds the layer that asks *"is this what the user intended?"* on top.
 
-TypeScript (strict mode) + React 18 + Tailwind CSS + Vite. Three production dependencies. 717 tests.
+## What ClawLens Catches
+
+| Scenario | What happens |
+|----------|-------------|
+| Agent reads `.env` then calls an external URL | Risk spikes. LLM flags the sequence as a potential exfiltration pattern. Alert fires. |
+| Agent runs `rm -rf` or force-pushes to main | Guardrail blocks it before execution. Logged with full context. |
+| Agent sends messages to your contacts | Flagged as high-risk communication. You decide whether it goes through. |
+| Agent installs packages or modifies cron jobs | Elevated risk — persistence and supply chain actions are scored and tracked. |
+| Agent does 200 routine reads | Low risk, scored instantly, no friction. You see them in the feed but nothing demands attention. |
+
+## Built With
+
+TypeScript (strict mode) · React · Tailwind CSS · Vite · [OpenClaw Plugin SDK](https://openclaw.ai/)
 
 ## Contributing
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and PR expectations.
-
-```bash
-npm run check   # tests + lint -- run this before submitting
-```
+PRs and issues welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
 
 ## License
 
-MIT
+[MIT](LICENSE)
