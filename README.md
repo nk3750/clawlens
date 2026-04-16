@@ -79,29 +79,11 @@ Restart the gateway.
 
 ## How It Works
 
-ClawLens sits inside OpenClaw's plugin hook system. Every tool call passes through it *before* execution — not after.
+ClawLens is an [OpenClaw](https://openclaw.ai/) plugin. It hooks into the tool-call pipeline and intercepts every action *before* execution — not after.
 
-```mermaid
-flowchart LR
-    A[Agent Tool Call] --> B[ClawLens Hook]
-    B --> C[Risk Scoring]
-    C --> D{Risk Level}
-    D -->|Low| E[Allow + Log]
-    D -->|Elevated| F[LLM Evaluation]
-    D -->|High| G[Alert + Log]
-    F --> H[Reasoning + Tags]
-    H --> E
-    B --> I[Audit Trail]
-    style G fill:#d32f2f,color:#fff
-    style F fill:#f9a825,color:#000
-    style E fill:#388e3c,color:#fff
-```
+**Two-tier risk scoring:** Every tool call gets an instant risk score based on what it does — tool type, parameters, command patterns. Routine actions pass through quietly. High-risk calls get a second layer: an LLM evaluates the command in context and returns structured reasoning explaining *why* it's dangerous.
 
-**Tier 1** scores every call deterministically — tool type, parameters, command patterns. Instant, every call.
-
-**Tier 2** kicks in for elevated-risk actions — an LLM evaluates the command in context, returns structured reasoning and risk tags. Most routine calls (reads, searches, file lookups) never reach Tier 2.
-
-ClawLens **complements** OpenClaw's built-in security. It doesn't replace exec approvals or tool profiles — it adds the layer that asks *"is this what the user intended?"* on top.
+**Complements, doesn't replace:** ClawLens works alongside OpenClaw's built-in security (exec approvals, tool profiles). It adds the question that built-in security doesn't ask — *"is this what the user intended?"*
 
 ## What ClawLens Catches
 
