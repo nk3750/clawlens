@@ -132,6 +132,12 @@
 
 /* ── Page main container (homepage-v3-layout-spec §1) ── */
 .cl-page-main {
+  /* width: 100% is required so that when <main> is a flex child
+     (App.tsx wraps in `min-h-screen flex flex-col` to pin the footer),
+     horizontal `margin: auto` doesn't shrink the item to its content
+     width. Without this the page renders as a narrow ~500px strip
+     on 1440px viewports. */
+  width: 100%;
   max-width: 1360px;
   margin-left: auto;
   margin-right: auto;
