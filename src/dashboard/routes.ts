@@ -20,6 +20,7 @@ import {
   getSessionDetail,
   getSessions,
   getSessionTimeline,
+  resolveSplitKeyForEntry,
 } from "./api";
 import type { ActivityCategory } from "./categories";
 import { getCategory } from "./categories";
@@ -344,6 +345,12 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
             ...entry,
             category: getCategory(entry.toolName),
           };
+          // Resolve split session key so SSE consumers link to the correct sub-session
+          if (entry.sessionKey) {
+            const allEntries = deps.auditLogger.readEntries();
+            const splitKey = resolveSplitKeyForEntry(allEntries, entry);
+            if (splitKey) enriched.sessionKey = splitKey;
+          }
           if (deps.guardrailStore && entry.decision) {
             const key = extractIdentityKey(entry.toolName, entry.params);
             const matched = deps.guardrailStore.peek(

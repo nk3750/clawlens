@@ -8,6 +8,7 @@ import {
   getAgents,
   getEffectiveDecision,
   getRecentEntries,
+  resolveSplitKeyForEntry,
 } from "../src/dashboard/api";
 import {
   computeBreakdown,
@@ -486,5 +487,147 @@ describe("getAgents — new fields", () => {
     const agents = getAgents(entries);
     const sum = Object.values(agents[0].activityBreakdown).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
+  });
+});
+
+describe("getRecentEntries — split session keys", () => {
+  it("returns split session key for entries in a multi-run cron session", () => {
+    const entries: AuditEntry[] = [
+      // Run 1: morning
+      entry({
+        timestamp: "2026-04-10T08:00:00Z",
+        toolName: "read",
+        decision: "allow",
+        agentId: "cron-bot",
+        sessionKey: "agent:cron-bot:main",
+        toolCallId: "tc-1",
+      }),
+      entry({
+        timestamp: "2026-04-10T08:05:00Z",
+        toolName: "exec",
+        decision: "allow",
+        agentId: "cron-bot",
+        sessionKey: "agent:cron-bot:main",
+        toolCallId: "tc-2",
+      }),
+      // Run 2: evening (>30min gap → split)
+      entry({
+        timestamp: "2026-04-10T14:00:00Z",
+        toolName: "read",
+        decision: "allow",
+        agentId: "cron-bot",
+        sessionKey: "agent:cron-bot:main",
+        toolCallId: "tc-3",
+      }),
+      entry({
+        timestamp: "2026-04-10T14:02:00Z",
+        toolName: "write",
+        decision: "allow",
+        agentId: "cron-bot",
+        sessionKey: "agent:cron-bot:main",
+        toolCallId: "tc-4",
+      }),
+    ];
+
+    const result = getRecentEntries(entries, 50, 0);
+    // Reversed: tc-4, tc-3, tc-2, tc-1
+    // tc-4 and tc-3 belong to run 2 → agent:cron-bot:main#2
+    // tc-2 and tc-1 belong to run 1 → agent:cron-bot:main
+    expect(result[0].sessionKey).toBe("agent:cron-bot:main#2");
+    expect(result[1].sessionKey).toBe("agent:cron-bot:main#2");
+    expect(result[2].sessionKey).toBe("agent:cron-bot:main");
+    expect(result[3].sessionKey).toBe("agent:cron-bot:main");
+  });
+
+  it("preserves original session key when no split is needed", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-04-10T08:00:00Z",
+        toolName: "read",
+        decision: "allow",
+        sessionKey: "agent:bot:single-session",
+        toolCallId: "tc-a",
+      }),
+      entry({
+        timestamp: "2026-04-10T08:05:00Z",
+        toolName: "exec",
+        decision: "allow",
+        sessionKey: "agent:bot:single-session",
+        toolCallId: "tc-b",
+      }),
+    ];
+
+    const result = getRecentEntries(entries, 50, 0);
+    expect(result[0].sessionKey).toBe("agent:bot:single-session");
+    expect(result[1].sessionKey).toBe("agent:bot:single-session");
+  });
+});
+
+describe("resolveSplitKeyForEntry", () => {
+  it("returns split key for entry in second run of a split session", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-04-10T08:00:00Z",
+        sessionKey: "agent:cron:main",
+        toolCallId: "run1-tc",
+      }),
+      entry({
+        timestamp: "2026-04-10T14:00:00Z",
+        sessionKey: "agent:cron:main",
+        toolCallId: "run2-tc",
+      }),
+    ];
+    const target = entries[1]; // second run entry
+    expect(resolveSplitKeyForEntry(entries, target)).toBe("agent:cron:main#2");
+  });
+
+  it("returns original key when entry is in the first run", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-04-10T08:00:00Z",
+        sessionKey: "agent:cron:main",
+        toolCallId: "run1-tc",
+      }),
+      entry({
+        timestamp: "2026-04-10T14:00:00Z",
+        sessionKey: "agent:cron:main",
+        toolCallId: "run2-tc",
+      }),
+    ];
+    const target = entries[0]; // first run entry
+    expect(resolveSplitKeyForEntry(entries, target)).toBe("agent:cron:main");
+  });
+
+  it("returns original key when session has no splits", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-04-10T08:00:00Z",
+        sessionKey: "agent:bot:session",
+        toolCallId: "tc-1",
+      }),
+      entry({
+        timestamp: "2026-04-10T08:02:00Z",
+        sessionKey: "agent:bot:session",
+        toolCallId: "tc-2",
+      }),
+    ];
+    expect(resolveSplitKeyForEntry(entries, entries[0])).toBe("agent:bot:session");
+    expect(resolveSplitKeyForEntry(entries, entries[1])).toBe("agent:bot:session");
+  });
+
+  it("returns undefined for entries without a session key", () => {
+    const e = entry({ timestamp: "2026-04-10T08:00:00Z", toolCallId: "tc-x" });
+    expect(resolveSplitKeyForEntry([e], e)).toBeUndefined();
+  });
+
+  it("handles three-way split correctly", () => {
+    const entries: AuditEntry[] = [
+      entry({ timestamp: "2026-04-10T06:00:00Z", sessionKey: "s", toolCallId: "a" }),
+      entry({ timestamp: "2026-04-10T10:00:00Z", sessionKey: "s", toolCallId: "b" }),
+      entry({ timestamp: "2026-04-10T16:00:00Z", sessionKey: "s", toolCallId: "c" }),
+    ];
+    expect(resolveSplitKeyForEntry(entries, entries[0])).toBe("s");
+    expect(resolveSplitKeyForEntry(entries, entries[1])).toBe("s#2");
+    expect(resolveSplitKeyForEntry(entries, entries[2])).toBe("s#3");
   });
 });

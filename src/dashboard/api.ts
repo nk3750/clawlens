@@ -617,8 +617,45 @@ export function getRecentEntries(
     }
   }
 
+  // Build split session index so entries get correct sub-session keys (#2, #3, etc.)
+  const sessionMap = groupBySessions(entries.filter((e) => e.sessionKey));
+  const splitSessionIndex = new Map<string, string>();
+  for (const [splitKey, sEntries] of sessionMap) {
+    for (const e of sEntries) {
+      const entryKey = e.toolCallId ?? e.timestamp;
+      splitSessionIndex.set(entryKey, splitKey);
+    }
+  }
+
   const reversed = filtered.reverse();
-  return reversed.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx, guardrailStore));
+  return reversed.slice(offset, offset + limit).map((e) => {
+    const mapped = mapEntry(e, evalIdx, guardrailStore);
+    const entryKey = e.toolCallId ?? e.timestamp;
+    mapped.sessionKey = splitSessionIndex.get(entryKey) ?? mapped.sessionKey;
+    return mapped;
+  });
+}
+
+/**
+ * Resolve the split session key for a single entry.
+ * Used by the SSE handler to emit entries with correct sub-session keys.
+ */
+export function resolveSplitKeyForEntry(
+  allEntries: AuditEntry[],
+  entry: AuditEntry,
+): string | undefined {
+  if (!entry.sessionKey) return undefined;
+  const sessionEntries = allEntries.filter((e) => e.sessionKey === entry.sessionKey);
+  if (sessionEntries.length <= 1) return entry.sessionKey;
+
+  const grouped = groupBySessions(sessionEntries);
+  const entryKey = entry.toolCallId ?? entry.timestamp;
+  for (const [splitKey, splitEntries] of grouped) {
+    if (splitEntries.some((e) => (e.toolCallId ?? e.timestamp) === entryKey)) {
+      return splitKey;
+    }
+  }
+  return entry.sessionKey;
 }
 
 /** Verify the hash chain integrity of all entries. */
