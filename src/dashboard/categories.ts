@@ -6,6 +6,7 @@
  */
 
 import { parseExecCommand } from "../risk/exec-parser";
+import { parseSessionKey } from "./channel-catalog";
 
 // ── Activity categories ──────────────────────────────────
 
@@ -104,38 +105,33 @@ export function computeBreakdown(
 // ── Session context parsing ──────────────────────────────
 
 /**
- * Parse a sessionKey into a human-readable context string.
- *
- * Known formats from production:
- *   agent:{id}:cron:{job-name}           → "Cron: {humanized job name}"
- *   agent:{id}:telegram:direct:{userId}  → "Telegram DM"
- *   agent:{id}:main                      → "Direct session"
+ * Adapter over the channel catalog. Preserves existing outputs for
+ * `main` / `cron:<job>` / `telegram` and extends to the rest of the
+ * OpenClaw channel space (messaging, subagent, heartbeat, hook, unknown).
  */
 export function parseSessionContext(sessionKey: string): string | undefined {
-  if (!sessionKey) return undefined;
+  const parsed = parseSessionKey(sessionKey);
+  if (!parsed) return undefined;
+  const { channel, subPath } = parsed;
 
-  const parts = sessionKey.split(":");
-
-  // agent:{id}:{channel}:...
-  if (parts.length < 3) return undefined;
-
-  const channel = parts[2];
-
-  if (channel === "cron" && parts.length >= 4) {
-    // agent:social-manager:cron:trend-scan-tweet-006
-    const jobName = parts.slice(3).join(":");
-    return `Cron: ${humanizeJobName(jobName)}`;
+  if (channel.id === "cron" && subPath.length > 0) {
+    return `Cron: ${humanizeJobName(subPath.join(":"))}`;
   }
-
-  if (channel === "telegram") {
-    return "Telegram DM";
+  if (channel.id === "main") return "Direct session";
+  if (channel.id === "heartbeat") return "Heartbeat";
+  if (channel.id === "subagent") return "Subagent";
+  if (channel.id === "hook") {
+    return subPath.length > 0 ? `Hook: ${subPath.join(":")}` : "Hook";
   }
-
-  if (channel === "main") {
-    return "Direct session";
+  if (channel.kind === "messaging") {
+    const sub = subPath[0];
+    if (sub === "channel" || sub === "group" || sub === "room") {
+      return `${channel.label} room`;
+    }
+    return `${channel.label} DM`;
   }
-
-  return undefined;
+  // Synthesized unknown or any other kind — surface the catalog label.
+  return channel.label;
 }
 
 /** Turn "trend-scan-tweet-006" into "Trend scan tweet" */

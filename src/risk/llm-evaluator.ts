@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { llmHealthTracker } from "../audit/llm-health";
 import type { EmbeddedAgentRuntime, ModelAuth, PluginLogger } from "../types";
 import type { SessionAction } from "./session-context";
 import type { LlmRiskEvaluation, RiskScore } from "./types";
@@ -169,6 +170,16 @@ export async function callLlmApi(
     });
 
     if (!response.ok) {
+      // Read the body so `credit balance too low` / 429 / 5xx messages
+      // reach the health tracker for classification.
+      let errBody = "";
+      try {
+        errBody = await response.text();
+      } catch {
+        // ignore — status code still carries enough signal
+      }
+      const errMsg = `${response.status} ${response.statusText} ${errBody}`.trim();
+      llmHealthTracker.recordAttempt(false, errMsg);
       logger?.warn(`ClawLens: LLM API returned ${response.status} ${response.statusText}`);
       return null;
     }
@@ -179,21 +190,34 @@ export async function callLlmApi(
     if (provider === "anthropic") {
       // Anthropic: { content: [{ type: "text", text: "..." }] }
       const content = data.content as Array<Record<string, unknown>> | undefined;
-      if (!content || !Array.isArray(content)) return null;
-      return content
+      if (!content || !Array.isArray(content)) {
+        llmHealthTracker.recordAttempt(false, "anthropic: missing content");
+        return null;
+      }
+      const text = content
         .filter((b) => b.type === "text" && typeof b.text === "string")
         .map((b) => b.text as string)
         .join("\n");
+      llmHealthTracker.recordAttempt(true);
+      return text;
     }
 
     // OpenAI-compatible: { choices: [{ message: { content: "..." } }] }
     const choices = data.choices as Array<Record<string, unknown>> | undefined;
-    if (!choices || !Array.isArray(choices) || choices.length === 0) return null;
+    if (!choices || !Array.isArray(choices) || choices.length === 0) {
+      llmHealthTracker.recordAttempt(false, "openai-compat: missing choices");
+      return null;
+    }
     const msg = choices[0].message as Record<string, unknown> | undefined;
-    if (!msg || typeof msg.content !== "string") return null;
+    if (!msg || typeof msg.content !== "string") {
+      llmHealthTracker.recordAttempt(false, "openai-compat: missing message.content");
+      return null;
+    }
+    llmHealthTracker.recordAttempt(true);
     return msg.content;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    llmHealthTracker.recordAttempt(false, errMsg);
     if (errMsg.includes("abort")) {
       logger?.warn("ClawLens: LLM API call timed out (15s)");
     } else {
@@ -272,9 +296,14 @@ export async function evaluateWithLlm(
         const text = collectEmbeddedText(result.payloads);
         if (text) {
           const parsed = parseEvalResponse(text);
-          if (parsed) return parsed;
+          if (parsed) {
+            llmHealthTracker.recordAttempt(true);
+            return parsed;
+          }
+          llmHealthTracker.recordAttempt(false, "embedded-agent: unparseable response");
           logger?.warn("ClawLens: Embedded agent returned unparseable response, falling through");
         } else {
+          llmHealthTracker.recordAttempt(false, "embedded-agent: no text");
           logger?.warn("ClawLens: Embedded agent returned no text, falling through");
         }
       } finally {
@@ -282,6 +311,7 @@ export async function evaluateWithLlm(
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      llmHealthTracker.recordAttempt(false, errMsg);
       logger?.warn(
         `ClawLens: Embedded agent eval failed: ${errMsg}, falling through to direct API`,
       );

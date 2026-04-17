@@ -2,10 +2,15 @@ import * as crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { dedupeAuditEntries } from "./reader";
+/** Window for detecting near-simultaneous double-writes of the same entry kind. */
+const DOUBLE_WRITE_WINDOW_MS = 100;
 export class AuditLogger extends EventEmitter {
     filePath;
     lastHash = "0";
     writeStream = null;
+    /** Map of `toolCallId:kind` → last write epoch-ms. Used to flag suspected double-writes. */
+    recentWrites = new Map();
     constructor(filePath) {
         super();
         this.filePath = filePath;
@@ -59,8 +64,41 @@ export class AuditLogger extends EventEmitter {
             this.writeStream = fs.createWriteStream(this.filePath, { flags: "a" });
         }
     }
+    /**
+     * Warn if the same (toolCallId, kind) was just appended within 100ms.
+     * Helps diagnose duplicate hook firings or redundant writer callers —
+     * production logs show 7× identical-timestamp decision bursts that
+     * dedupe masks at read time; this instrumentation finds the source.
+     */
+    maybeWarnDoubleWrite(data) {
+        if (!data.toolCallId)
+            return;
+        const kind = data.decision
+            ? "dec"
+            : data.executionResult
+                ? "res"
+                : data.llmEvaluation
+                    ? "eval"
+                    : "other";
+        const key = `${data.toolCallId}:${kind}`;
+        const now = Date.now();
+        const last = this.recentWrites.get(key);
+        if (last !== undefined && now - last < DOUBLE_WRITE_WINDOW_MS) {
+            const stack = new Error("audit double-write").stack?.split("\n").slice(2, 6).join("\n") ?? "";
+            console.warn(`[clawlens] audit double-write: toolCallId=${data.toolCallId} kind=${kind} delta=${now - last}ms\n${stack}`);
+        }
+        this.recentWrites.set(key, now);
+        // Prune stale tracker entries so the map doesn't grow unbounded.
+        if (this.recentWrites.size > 500) {
+            for (const [k, t] of this.recentWrites) {
+                if (now - t > 10_000)
+                    this.recentWrites.delete(k);
+            }
+        }
+    }
     append(data) {
         this.ensureStream();
+        this.maybeWarnDoubleWrite(data);
         const entryWithPrev = {
             ...data,
             prevHash: this.lastHash,
@@ -163,8 +201,16 @@ export class AuditLogger extends EventEmitter {
             }
         });
     }
-    /** Read all entries from the audit log file. */
+    /**
+     * Read all entries from the audit log file, with duplicate entries removed.
+     * Wrapping at this level means every route.ts read path gets dedupe for free
+     * without needing to change 10 call sites.
+     */
     readEntries() {
+        return dedupeAuditEntries(this.readEntriesRaw());
+    }
+    /** Read entries with no post-processing. Used for hash-chain verification. */
+    readEntriesRaw() {
         if (!fs.existsSync(this.filePath))
             return [];
         const content = fs.readFileSync(this.filePath, "utf-8").trim();

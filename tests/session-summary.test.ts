@@ -28,7 +28,7 @@ describe("getSessionSummary", () => {
     vi.useRealTimers();
   });
 
-  it("returns null for unknown session", async () => {
+  it("returns { ok: false, reason: 'not_found' } for unknown session", async () => {
     const entries = [
       entry({ sessionKey: "s1", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
     ];
@@ -36,7 +36,11 @@ describe("getSessionSummary", () => {
       llmModel: "claude-haiku-4-5-20251001",
       llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
-    expect(result).toBeNull();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("not_found");
+      expect(result.message).toContain("nonexistent");
+    }
   });
 
   it("generates template summary for <3 entries", async () => {
@@ -61,11 +65,13 @@ describe("getSessionSummary", () => {
       llmModel: "claude-haiku-4-5-20251001",
       llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
-    expect(result).not.toBeNull();
-    expect(result!.sessionKey).toBe("s1");
-    expect(result!.summary).toMatch(/Ran \d+ action/);
-    expect(result!.summary).toMatch(/Avg risk: \d+/);
-    expect(result!.generatedAt).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary.sessionKey).toBe("s1");
+      expect(result.summary.summary).toMatch(/Ran \d+ action/);
+      expect(result.summary.summary).toMatch(/Avg risk: \d+/);
+      expect(result.summary.generatedAt).toBeDefined();
+    }
   });
 
   it("caches results and returns cached on second call", async () => {
@@ -114,8 +120,11 @@ describe("getSessionSummary", () => {
       llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     // Template now says "Ran N actions" — matches stat strip format
-    expect(result!.summary).toMatch(/Ran 2 action/);
-    expect(result!.summary).toMatch(/Avg risk: \d+/);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary.summary).toMatch(/Ran 2 action/);
+      expect(result.summary.summary).toMatch(/Avg risk: \d+/);
+    }
   });
 
   it("falls back to template when no API key and no modelAuth", async () => {
@@ -138,8 +147,10 @@ describe("getSessionSummary", () => {
       llmModel: "claude-haiku-4-5-20251001",
       llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
-    expect(result).not.toBeNull();
-    expect(result!.summary).toMatch(/Ran \d+ action/);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary.summary).toMatch(/Ran \d+ action/);
+    }
 
     // Restore
     if (original !== undefined) {
@@ -180,8 +191,10 @@ describe("getSessionSummary", () => {
       cfg: undefined,
     });
     // Falls back to template
-    expect(result).not.toBeNull();
-    expect(result!.summary).toMatch(/Ran \d+ action/);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary.summary).toMatch(/Ran \d+ action/);
+    }
 
     if (original !== undefined) {
       process.env.ANTHROPIC_API_KEY = original;

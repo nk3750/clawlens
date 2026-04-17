@@ -13,6 +13,54 @@ export function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// ── Schedule cadence (mirror of src/dashboard/cadence.ts) ──
+
+const CADENCE_SEC = 1000;
+const CADENCE_MIN = 60 * CADENCE_SEC;
+const CADENCE_HR = 60 * CADENCE_MIN;
+const CADENCE_DAY = 24 * CADENCE_HR;
+
+/**
+ * Derive a human-readable schedule label from recent cron session starts.
+ * Used by the fleet chart + any UI that needs to show cadence client-side.
+ * Keep semantics identical to the backend implementation.
+ */
+export function deriveScheduleLabel(
+  mode: "interactive" | "scheduled",
+  recentCronStarts: string[],
+  explicitSchedule?: string,
+): string | null {
+  if (explicitSchedule) return explicitSchedule;
+  if (mode !== "scheduled") return null;
+  if (recentCronStarts.length < 2) return null;
+
+  const sorted = [...recentCronStarts].sort((a, b) => b.localeCompare(a));
+  const intervals: number[] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const diff = new Date(sorted[i]).getTime() - new Date(sorted[i + 1]).getTime();
+    if (diff > 0) intervals.push(diff);
+  }
+  if (intervals.length === 0) return null;
+
+  intervals.sort((a, b) => a - b);
+  const median = intervals[Math.floor(intervals.length / 2)];
+  return formatCadenceInterval(median);
+}
+
+function formatCadenceInterval(ms: number): string {
+  if (ms < CADENCE_MIN) {
+    return `every ${Math.max(1, Math.round(ms / CADENCE_SEC))}s`;
+  }
+  if (ms < CADENCE_HR) {
+    return `every ${Math.round(ms / CADENCE_MIN)}m`;
+  }
+  if (ms < 22 * CADENCE_HR) {
+    return `every ${Math.round(ms / CADENCE_HR)}h`;
+  }
+  if (ms < 26 * CADENCE_HR) return "daily";
+  return `every ${Math.round(ms / CADENCE_DAY)}d`;
+}
+
 export function formatDuration(ms: number | null | undefined): string {
   if (ms == null) return "\u2014";
   if (ms < 1000) return `${ms}ms`;

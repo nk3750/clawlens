@@ -294,9 +294,9 @@ describe("parseSessionContext", () => {
     expect(parseSessionContext("agent:main:telegram:direct:123")).toBe("Telegram DM");
   });
 
-  it("parses web sessions", () => {
-    // web channel returns undefined in the remote's implementation
-    expect(parseSessionContext("agent:main:web:session:abc")).toBeUndefined();
+  it("surfaces synthesized labels for unknown channel ids", () => {
+    // 'web' is not a registered channel — the catalog title-cases the id.
+    expect(parseSessionContext("agent:main:web:session:abc")).toBe("Web");
   });
 
   it("returns undefined for short keys", () => {

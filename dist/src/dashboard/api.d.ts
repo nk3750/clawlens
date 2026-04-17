@@ -1,3 +1,4 @@
+import { type LlmHealthSnapshot } from "../audit/llm-health";
 import type { AuditEntry } from "../audit/logger";
 import type { GuardrailStore } from "../guardrails/store";
 import { type ActivityCategory, type RiskPosture } from "./categories";
@@ -25,6 +26,7 @@ export interface EnhancedStatsResponse extends StatsResponse {
     riskPosture: RiskPosture;
     historicDailyMax: number;
     yesterdayTotal: number;
+    llmHealth: LlmHealthSnapshot;
 }
 export interface InterventionEntry {
     timestamp: string;
@@ -170,6 +172,11 @@ export declare function getInterventions(entries: AuditEntry[], date?: string, g
 export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */
 export declare function getRecentEntries(entries: AuditEntry[], limit: number, offset: number, filters?: EntryFilters, guardrailStore?: GuardrailStore): EntryResponse[];
+/**
+ * Resolve the split session key for a single entry.
+ * Used by the SSE handler to emit entries with correct sub-session keys.
+ */
+export declare function resolveSplitKeyForEntry(allEntries: AuditEntry[], entry: AuditEntry): string | undefined;
 /** Verify the hash chain integrity of all entries. */
 export declare function checkHealth(entries: AuditEntry[]): HealthResponse;
 /** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */

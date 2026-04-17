@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { llmHealthTracker } from "../audit/llm-health";
 import { callLlmApi, collectEmbeddedText, DEFAULT_EVAL_MODELS, PROVIDER_ENDPOINTS, } from "../risk/llm-evaluator";
 import { describeAction } from "./categories";
 /** Build index of eval entries keyed by the toolCallId they reference. */
@@ -124,7 +125,11 @@ ${toolLines}${riskySection}`;
 }
 /**
  * Get or generate a session summary.
- * Returns null if the session has no entries.
+ *
+ * Returns `{ ok: true, summary }` for any session with entries — either the
+ * LLM-generated summary or the template fallback. Returns
+ * `{ ok: false, reason: "not_found", ... }` when the session key has no
+ * entries. Never throws; the HTTP layer branches on `result.ok`.
  */
 export async function getSessionSummary(sessionKey, entries, config) {
     let sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
@@ -157,13 +162,18 @@ export async function getSessionSummary(sessionKey, entries, config) {
             sessionEntries = runs[runNum - 1] ?? [];
         }
     }
-    if (sessionEntries.length === 0)
-        return null;
+    if (sessionEntries.length === 0) {
+        return {
+            ok: false,
+            reason: "not_found",
+            message: `No entries for sessionKey ${sessionKey}`,
+        };
+    }
     // Check cache
     const cached = summaryCache.get(sessionKey);
     if (cached) {
         if (cached.expiresAt === null || Date.now() < cached.expiresAt) {
-            return cached.summary;
+            return { ok: true, summary: cached.summary };
         }
         // Expired — remove and regenerate
         summaryCache.delete(sessionKey);
@@ -186,7 +196,7 @@ export async function getSessionSummary(sessionKey, entries, config) {
         summary,
         expiresAt: active ? Date.now() + ACTIVE_SESSION_TTL_MS : null,
     });
-    return summary;
+    return { ok: true, summary };
 }
 async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
     const prompt = buildSummaryPrompt(sessionKey, entries, evalIdx);
@@ -224,6 +234,7 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
                 });
                 const text = collectEmbeddedText(result.payloads);
                 if (text) {
+                    llmHealthTracker.recordAttempt(true);
                     return {
                         sessionKey,
                         summary: stripMarkdown(text),
@@ -231,12 +242,15 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
                         isLlmGenerated: true,
                     };
                 }
+                llmHealthTracker.recordAttempt(false, "embedded-agent: no text");
             }
             finally {
                 await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
             }
         }
-        catch {
+        catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            llmHealthTracker.recordAttempt(false, errMsg);
             // Fall through to direct API paths
         }
     }

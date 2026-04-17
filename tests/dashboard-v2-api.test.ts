@@ -949,6 +949,68 @@ describe("getAgents — new fields", () => {
     expect(scanner.mode).toBe("scheduled");
   });
 
+  it("populates schedule cadence from run starts (not per-entry timestamps)", () => {
+    // Three distinct cron runs, each with 4 tool calls ~1s apart.
+    // Without run-start dedupe, the median interval would be ~1s
+    // and we'd report "every 1s". Correct output: every 8h.
+    const runStarts = ["2026-04-16T07:05:00Z", "2026-04-16T15:05:00Z", "2026-04-16T23:05:00Z"];
+    const entries = runStarts.flatMap((start, runIdx) => {
+      const base = new Date(start).getTime();
+      return [0, 1, 2, 3].map((i) =>
+        entry({
+          agentId: "seo-growth",
+          sessionKey: "agent:seo-growth:cron:trending-watch-001",
+          decision: "allow",
+          toolName: "exec",
+          riskScore: 10,
+          timestamp: new Date(base + i * 1000).toISOString(),
+          toolCallId: `run${runIdx}-${i}`,
+        }),
+      );
+    });
+    const agents = getAgents(entries);
+    const seo = agents.find((a) => a.id === "seo-growth")!;
+    expect(seo.mode).toBe("scheduled");
+    expect(seo.schedule).toBe("every 8h");
+  });
+
+  it("handles rapid-fire cron (minute-level) without collapsing runs", () => {
+    // 5 runs at 1-minute intervals, each with 3 within-run tool calls.
+    const runStarts = Array.from({ length: 5 }, (_, i) =>
+      new Date(Date.parse("2026-04-16T12:00:00Z") + i * 60_000).toISOString(),
+    );
+    const entries = runStarts.flatMap((start, runIdx) => {
+      const base = new Date(start).getTime();
+      return [0, 1, 2].map((k) =>
+        entry({
+          agentId: "watcher",
+          sessionKey: "agent:watcher:cron:tick",
+          decision: "allow",
+          toolName: "exec",
+          riskScore: 5,
+          timestamp: new Date(base + k * 500).toISOString(),
+          toolCallId: `r${runIdx}-${k}`,
+        }),
+      );
+    });
+    const agents = getAgents(entries);
+    const watcher = agents.find((a) => a.id === "watcher")!;
+    expect(watcher.schedule).toBe("every 1m");
+  });
+
+  it("leaves schedule undefined for interactive agents", () => {
+    const entries = [
+      entry({
+        agentId: "main",
+        sessionKey: "agent:main:telegram:direct:1234",
+        decision: "allow",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const agents = getAgents(entries);
+    expect(agents[0].schedule).toBeUndefined();
+  });
+
   it("detects interactive mode from telegram session key", () => {
     const entries = [
       entry({

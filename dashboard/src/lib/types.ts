@@ -9,6 +9,18 @@ export type ActivityCategory =
 export type RiskTier = "low" | "medium" | "high" | "critical";
 export type RiskPosture = "calm" | "elevated" | "high" | "critical";
 
+// Mirror of src/audit/llm-health.ts. Keep in sync.
+export type LlmFailureReason = "billing" | "rate_limit" | "provider" | "other";
+export type LlmHealthStatus = "ok" | "degraded" | "down";
+
+export interface LlmHealthSnapshot {
+  recentAttempts: number;
+  recentFailures: number;
+  lastFailureIso?: string;
+  lastFailureReason?: LlmFailureReason;
+  status: LlmHealthStatus;
+}
+
 export interface StatsResponse {
   total: number;
   allowed: number;
@@ -29,6 +41,7 @@ export interface StatsResponse {
   riskPosture: RiskPosture;
   historicDailyMax: number;
   yesterdayTotal: number;
+  llmHealth: LlmHealthSnapshot;
 }
 
 export interface InterventionEntry {

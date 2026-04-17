@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, } from "./api";
+import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, resolveSplitKeyForEntry, } from "./api";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -195,7 +195,9 @@ export function registerDashboardRoutes(api, deps) {
                 return true;
             }
             if (subPath === "api/health") {
-                const entries = deps.auditLogger.readEntries();
+                // Hash-chain verification must run against the raw, un-deduped log
+                // or prev-hash links across dropped duplicates look broken.
+                const entries = deps.auditLogger.readEntriesRaw();
                 sendJson(res, checkHealth(entries));
                 return true;
             }
@@ -241,7 +243,7 @@ export function registerDashboardRoutes(api, deps) {
                     llmModel: "claude-haiku-4-5-20251001",
                     llmApiKeyEnv: "ANTHROPIC_API_KEY",
                 };
-                const summary = await getSessionSummary(sessionKey, entries, {
+                const result = await getSessionSummary(sessionKey, entries, {
                     llmModel: riskConfig.llmModel,
                     llmApiKeyEnv: riskConfig.llmApiKeyEnv,
                     modelAuth: deps.modelAuth,
@@ -249,12 +251,12 @@ export function registerDashboardRoutes(api, deps) {
                     agent: deps.agent,
                     openClawConfig: deps.openClawConfig,
                 });
-                if (!summary) {
+                if (!result.ok) {
                     res.writeHead(404, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "Session not found" }));
+                    res.end(JSON.stringify({ error: result.message, reason: result.reason }));
                     return true;
                 }
-                sendJson(res, summary);
+                sendJson(res, result.summary);
                 return true;
             }
             const sessionMatch = subPath.match(/^api\/session\/(.+)$/);
@@ -282,6 +284,13 @@ export function registerDashboardRoutes(api, deps) {
                         ...entry,
                         category: getCategory(entry.toolName),
                     };
+                    // Resolve split session key so SSE consumers link to the correct sub-session
+                    if (entry.sessionKey) {
+                        const allEntries = deps.auditLogger.readEntries();
+                        const splitKey = resolveSplitKeyForEntry(allEntries, entry);
+                        if (splitKey)
+                            enriched.sessionKey = splitKey;
+                    }
                     if (deps.guardrailStore && entry.decision) {
                         const key = extractIdentityKey(entry.toolName, entry.params);
                         const matched = deps.guardrailStore.peek(entry.agentId || DEFAULT_AGENT_ID, entry.toolName, key);

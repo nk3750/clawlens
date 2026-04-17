@@ -14,12 +14,9 @@ export declare function computeBreakdown(entries: Array<{
     toolName: string;
 }>): Record<ActivityCategory, number>;
 /**
- * Parse a sessionKey into a human-readable context string.
- *
- * Known formats from production:
- *   agent:{id}:cron:{job-name}           → "Cron: {humanized job name}"
- *   agent:{id}:telegram:direct:{userId}  → "Telegram DM"
- *   agent:{id}:main                      → "Direct session"
+ * Adapter over the channel catalog. Preserves existing outputs for
+ * `main` / `cron:<job>` / `telegram` and extends to the rest of the
+ * OpenClaw channel space (messaging, subagent, heartbeat, hook, unknown).
  */
 export declare function parseSessionContext(sessionKey: string): string | undefined;
 /**

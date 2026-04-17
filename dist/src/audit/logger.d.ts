@@ -45,11 +45,20 @@ export declare class AuditLogger extends EventEmitter {
     private filePath;
     private lastHash;
     private writeStream;
+    /** Map of `toolCallId:kind` → last write epoch-ms. Used to flag suspected double-writes. */
+    private recentWrites;
     constructor(filePath: string);
     init(): Promise<void>;
     private computeHash;
     /** Ensure write stream is open. Called lazily on first write. */
     private ensureStream;
+    /**
+     * Warn if the same (toolCallId, kind) was just appended within 100ms.
+     * Helps diagnose duplicate hook firings or redundant writer callers —
+     * production logs show 7× identical-timestamp decision bursts that
+     * dedupe masks at read time; this instrumentation finds the source.
+     */
+    private maybeWarnDoubleWrite;
     private append;
     /** Log a policy decision (from before_tool_call). */
     logDecision(data: AuditDecisionData): void;
@@ -105,8 +114,14 @@ export declare class AuditLogger extends EventEmitter {
     }): void;
     /** Flush the write stream. */
     flush(): Promise<void>;
-    /** Read all entries from the audit log file. */
+    /**
+     * Read all entries from the audit log file, with duplicate entries removed.
+     * Wrapping at this level means every route.ts read path gets dedupe for free
+     * without needing to change 10 call sites.
+     */
     readEntries(): AuditEntry[];
+    /** Read entries with no post-processing. Used for hash-chain verification. */
+    readEntriesRaw(): AuditEntry[];
     /** Verify the hash chain integrity of audit entries. */
     static verifyChain(entries: AuditEntry[]): {
         valid: boolean;

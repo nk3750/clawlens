@@ -126,8 +126,30 @@ describe("parseSessionContext", () => {
     expect(parseSessionContext("agent:main")).toBeUndefined();
   });
 
-  it("returns undefined for unknown channel", () => {
-    expect(parseSessionContext("agent:main:unknown")).toBeUndefined();
+  it("surfaces 'Unknown' for OpenClaw's explicit unknown channel", () => {
+    // Per channel-catalog spec, `unknown` is a documented OpenClaw fallback
+    // and should render its catalog label rather than disappear.
+    expect(parseSessionContext("agent:main:unknown")).toBe("Unknown");
+  });
+
+  it("surfaces messaging DMs for all catalog channels", () => {
+    expect(parseSessionContext("agent:main:slack:direct:U123")).toBe("Slack DM");
+    expect(parseSessionContext("agent:main:discord:direct:456")).toBe("Discord DM");
+  });
+
+  it("surfaces messaging rooms for Matrix / group chats", () => {
+    expect(parseSessionContext("agent:x:matrix:channel:!room:example.org")).toBe("Matrix room");
+    expect(parseSessionContext("agent:x:slack:group:G123")).toBe("Slack room");
+  });
+
+  it("parses heartbeat / subagent / hook session keys", () => {
+    expect(parseSessionContext("agent:x:heartbeat")).toBe("Heartbeat");
+    expect(parseSessionContext("agent:x:subagent:abc-123")).toBe("Subagent");
+    expect(parseSessionContext("agent:x:hook:before_tool_call")).toBe("Hook: before_tool_call");
+  });
+
+  it("title-cases an unrecognized new channel id", () => {
+    expect(parseSessionContext("agent:x:some-new-thing")).toBe("Some New Thing");
   });
 });
 

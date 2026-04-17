@@ -1,8 +1,10 @@
+import { type LlmHealthSnapshot, llmHealthTracker } from "../audit/llm-health";
 import type { AuditEntry } from "../audit/logger";
 import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import type { GuardrailStore } from "../guardrails/store";
 import { parseExecCommand } from "../risk/exec-parser";
+import { deriveScheduleLabel } from "./cadence";
 import {
   type ActivityCategory,
   computeBreakdown,
@@ -41,6 +43,7 @@ export interface EnhancedStatsResponse extends StatsResponse {
   riskPosture: RiskPosture;
   historicDailyMax: number;
   yesterdayTotal: number;
+  llmHealth: LlmHealthSnapshot;
 }
 
 export interface InterventionEntry {
@@ -805,6 +808,7 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
     riskPosture: posture,
     historicDailyMax: computeHistoricDailyMax(entries),
     yesterdayTotal,
+    llmHealth: llmHealthTracker.snapshot(),
   };
 }
 
@@ -911,6 +915,38 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
     });
     const mode: "interactive" | "scheduled" = hasCronSession ? "scheduled" : "interactive";
 
+    // Derive schedule cadence from the 20 most-recent *run starts*.
+    // A single cron run produces many tool-call entries within a few seconds;
+    // we need one timestamp per run, not per entry, or the median reports the
+    // tool-call interval instead of the schedule interval.
+    //
+    // Run starts: group cron entries by session key, then within each group a
+    // new run begins at entry 0 and any entry separated from its predecessor
+    // by >= 30s (short enough to catch minute-level cadence, long enough to
+    // stay above within-run tool-call gaps).
+    const CRON_RUN_GAP_MS = 30_000;
+    const cronByKey = new Map<string, AuditEntry[]>();
+    for (const e of agentEntries) {
+      if (!e.sessionKey) continue;
+      const parts = e.sessionKey.split(":");
+      if (parts.length < 3 || parts[2] !== "cron") continue;
+      const list = cronByKey.get(e.sessionKey);
+      if (list) list.push(e);
+      else cronByKey.set(e.sessionKey, [e]);
+    }
+    const cronStarts: string[] = [];
+    for (const list of cronByKey.values()) {
+      const sorted = [...list].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      cronStarts.push(sorted[0].timestamp);
+      for (let i = 1; i < sorted.length; i++) {
+        const gapMs =
+          new Date(sorted[i].timestamp).getTime() - new Date(sorted[i - 1].timestamp).getTime();
+        if (gapMs >= CRON_RUN_GAP_MS) cronStarts.push(sorted[i].timestamp);
+      }
+    }
+    cronStarts.sort((a, b) => b.localeCompare(a));
+    const schedule = deriveScheduleLabel(mode, cronStarts.slice(0, 20)) ?? undefined;
+
     const currentContext = currentSessionKey ? parseSessionContext(currentSessionKey) : undefined;
 
     const breakdownEntries = currentSessionKey
@@ -1015,6 +1051,7 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
       lastActiveTimestamp: lastTimestamp,
       currentSession,
       mode,
+      schedule,
       currentContext,
       riskPosture: agentPosture,
       activityBreakdown,

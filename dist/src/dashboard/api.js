@@ -1,6 +1,8 @@
+import { llmHealthTracker } from "../audit/llm-health";
 import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import { parseExecCommand } from "../risk/exec-parser";
+import { deriveScheduleLabel } from "./cadence";
 import { computeBreakdown, describeAction, getCategory, parseSessionContext, riskPosture, } from "./categories";
 /** Fallback agent ID when audit entries have no agentId. */
 export const DEFAULT_AGENT_ID = "default";
@@ -395,8 +397,41 @@ export function getRecentEntries(entries, limit, offset, filters, guardrailStore
             filtered = filtered.filter((e) => e.timestamp >= cutoff);
         }
     }
+    // Build split session index so entries get correct sub-session keys (#2, #3, etc.)
+    const sessionMap = groupBySessions(entries.filter((e) => e.sessionKey));
+    const splitSessionIndex = new Map();
+    for (const [splitKey, sEntries] of sessionMap) {
+        for (const e of sEntries) {
+            const entryKey = e.toolCallId ?? e.timestamp;
+            splitSessionIndex.set(entryKey, splitKey);
+        }
+    }
     const reversed = filtered.reverse();
-    return reversed.slice(offset, offset + limit).map((e) => mapEntry(e, evalIdx, guardrailStore));
+    return reversed.slice(offset, offset + limit).map((e) => {
+        const mapped = mapEntry(e, evalIdx, guardrailStore);
+        const entryKey = e.toolCallId ?? e.timestamp;
+        mapped.sessionKey = splitSessionIndex.get(entryKey) ?? mapped.sessionKey;
+        return mapped;
+    });
+}
+/**
+ * Resolve the split session key for a single entry.
+ * Used by the SSE handler to emit entries with correct sub-session keys.
+ */
+export function resolveSplitKeyForEntry(allEntries, entry) {
+    if (!entry.sessionKey)
+        return undefined;
+    const sessionEntries = allEntries.filter((e) => e.sessionKey === entry.sessionKey);
+    if (sessionEntries.length <= 1)
+        return entry.sessionKey;
+    const grouped = groupBySessions(sessionEntries);
+    const entryKey = entry.toolCallId ?? entry.timestamp;
+    for (const [splitKey, splitEntries] of grouped) {
+        if (splitEntries.some((e) => (e.toolCallId ?? e.timestamp) === entryKey)) {
+            return splitKey;
+        }
+    }
+    return entry.sessionKey;
 }
 /** Verify the hash chain integrity of all entries. */
 export function checkHealth(entries) {
@@ -538,6 +573,7 @@ export function computeEnhancedStats(entries, date) {
         riskPosture: posture,
         historicDailyMax: computeHistoricDailyMax(entries),
         yesterdayTotal,
+        llmHealth: llmHealthTracker.snapshot(),
     };
 }
 /** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */
@@ -635,6 +671,41 @@ export function getAgents(entries, date) {
             return parts.length >= 3 && parts[2] === "cron";
         });
         const mode = hasCronSession ? "scheduled" : "interactive";
+        // Derive schedule cadence from the 20 most-recent *run starts*.
+        // A single cron run produces many tool-call entries within a few seconds;
+        // we need one timestamp per run, not per entry, or the median reports the
+        // tool-call interval instead of the schedule interval.
+        //
+        // Run starts: group cron entries by session key, then within each group a
+        // new run begins at entry 0 and any entry separated from its predecessor
+        // by >= 30s (short enough to catch minute-level cadence, long enough to
+        // stay above within-run tool-call gaps).
+        const CRON_RUN_GAP_MS = 30_000;
+        const cronByKey = new Map();
+        for (const e of agentEntries) {
+            if (!e.sessionKey)
+                continue;
+            const parts = e.sessionKey.split(":");
+            if (parts.length < 3 || parts[2] !== "cron")
+                continue;
+            const list = cronByKey.get(e.sessionKey);
+            if (list)
+                list.push(e);
+            else
+                cronByKey.set(e.sessionKey, [e]);
+        }
+        const cronStarts = [];
+        for (const list of cronByKey.values()) {
+            const sorted = [...list].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            cronStarts.push(sorted[0].timestamp);
+            for (let i = 1; i < sorted.length; i++) {
+                const gapMs = new Date(sorted[i].timestamp).getTime() - new Date(sorted[i - 1].timestamp).getTime();
+                if (gapMs >= CRON_RUN_GAP_MS)
+                    cronStarts.push(sorted[i].timestamp);
+            }
+        }
+        cronStarts.sort((a, b) => b.localeCompare(a));
+        const schedule = deriveScheduleLabel(mode, cronStarts.slice(0, 20)) ?? undefined;
         const currentContext = currentSessionKey ? parseSessionContext(currentSessionKey) : undefined;
         const breakdownEntries = currentSessionKey
             ? agentEntries.filter((e) => e.sessionKey === currentSessionKey && isDecisionEntry(e))
@@ -722,6 +793,7 @@ export function getAgents(entries, date) {
             lastActiveTimestamp: lastTimestamp,
             currentSession,
             mode,
+            schedule,
             currentContext,
             riskPosture: agentPosture,
             activityBreakdown,
