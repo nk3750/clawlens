@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTotalFlash } from "../../hooks/useTotalFlash";
 import { computeTrend } from "./utils";
 
 interface Props {
@@ -23,6 +24,7 @@ export default function ActionsStat({
   historicDailyMax,
 }: Props) {
   const [tipOpen, setTipOpen] = useState(false);
+  const flashing = useTotalFlash(total);
   const trend = computeTrend(total, yesterdayTotal);
 
   let trendNode: React.ReactNode = null;
@@ -62,7 +64,11 @@ export default function ActionsStat({
         <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />
       </svg>
       <span
-        className="font-mono"
+        // Re-keying on the flash flag forces React to remount the span so the
+        // CSS keyframe restarts even when consecutive deltas trigger flashes
+        // back-to-back.
+        key={flashing ? `flash-${total}` : "rest"}
+        className={`font-mono${flashing ? " cl-total-flash" : ""}`}
         style={{
           fontSize: 20,
           fontWeight: 700,
