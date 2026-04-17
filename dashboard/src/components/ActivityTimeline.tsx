@@ -19,7 +19,6 @@ interface Props {
   selectedDate: string | null;
   /** Owned by Agents.tsx so the FleetHeader pill group can drive both. */
   range: RangeOption;
-  onRangeChange: (next: RangeOption) => void;
 }
 
 const CATEGORY_COLORS: Record<ActivityCategory, string> = {

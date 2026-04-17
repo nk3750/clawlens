@@ -103,7 +103,6 @@ export default function Agents() {
           isToday={isToday}
           selectedDate={selectedDate}
           range={range}
-          onRangeChange={onRangeChange}
         />
       </div>
 
