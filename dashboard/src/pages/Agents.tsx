@@ -7,6 +7,8 @@ import AgentRow from "../components/AgentCardCompact";
 import ActivityTimeline from "../components/ActivityTimeline";
 import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
+import DormantState from "../components/DormantState";
+import { isDormant } from "../lib/homepageState";
 
 export default function Agents() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -44,8 +46,16 @@ export default function Agents() {
       })
     : undefined;
 
+  if (isDormant(stats) === true) {
+    return (
+      <div className="page-enter">
+        <DormantState />
+      </div>
+    );
+  }
+
   return (
-    <div className="page-enter flex flex-col" style={{ gap: "clamp(20px, 3vw, 32px)" }}>
+    <div className="page-enter flex flex-col" style={{ gap: "var(--cl-section-gap)" }}>
       {/* Fleet Pulse */}
       {stats && (
         <FleetPulse
@@ -70,12 +80,6 @@ export default function Agents() {
 
       {/* Agent Rows */}
       <section>
-        <div className="mb-3">
-          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-            AGENTS
-          </span>
-        </div>
-
         {/* Loading */}
         {loading && !agents && (
           <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>

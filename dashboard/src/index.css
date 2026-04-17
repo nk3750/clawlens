@@ -76,6 +76,24 @@
     --text-hero: clamp(36px, calc(36px + (56 - 36) * ((100vw - 450px) / (1250 - 450))), 56px);
     --text-heading: clamp(22px, calc(22px + (32 - 22) * ((100vw - 450px) / (1250 - 450))), 32px);
     --text-subhead: clamp(14px, calc(14px + (18 - 14) * ((100vw - 450px) / (1250 - 450))), 18px);
+
+    /* ── Homepage density grid (homepage-v3-layout-spec §3) ── */
+    --cl-section-gap: 20px;
+    --cl-row-height: 32px;
+    --cl-row-height-compact: 28px;
+    --cl-row-height-hero: 56px;
+    --cl-card-padding: 10px 12px;
+    --cl-card-padding-hero: 14px 16px;
+
+    /* ── Radius scale ── */
+    --cl-radius-sm: 6px;
+    --cl-radius-md: 8px;
+    --cl-radius-lg: 10px;
+
+    /* ── Z-scale ── */
+    --cl-z-nav: 50;
+    --cl-z-tooltip: 80;
+    --cl-z-modal: 100;
   }
 
   *,
@@ -111,6 +129,35 @@
 /* ══════════════════════════════════════════════
    COMPONENT STYLES
    ══════════════════════════════════════════════ */
+
+/* ── Page main container (homepage-v3-layout-spec §1) ── */
+.cl-page-main {
+  max-width: 1360px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 20px clamp(16px, 2.5vw, 32px) 48px;
+}
+
+@media (min-width: 1600px) {
+  .cl-page-main {
+    max-width: 1460px;
+  }
+}
+
+@media (max-width: 640px) {
+  .cl-page-main {
+    padding-top: 12px;
+    padding-bottom: 32px;
+  }
+}
+
+/* ── Narrow / wide visibility utilities (homepage-v3-layout-spec §8) ── */
+.cl-narrow-only { display: none; }
+.cl-wide-only { display: initial; }
+@media (max-width: 720px) {
+  .cl-narrow-only { display: initial; }
+  .cl-wide-only { display: none; }
+}
 
 /* ── Glass nav ── */
 .cl-glass-nav {

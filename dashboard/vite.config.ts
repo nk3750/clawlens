@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import {
@@ -7,6 +10,11 @@ import {
   generateMockSessions,
   generateRiskTrend,
 } from "./mock-data";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(here, "package.json"), "utf-8")) as {
+  version?: string;
+};
 
 /** Vite plugin that mocks the ClawLens API during local development. */
 function mockApiPlugin(): Plugin {
@@ -219,6 +227,9 @@ function mockApiPlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), mockApiPlugin()],
   base: "/plugins/clawlens/",
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version ?? "0.0.0"),
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
