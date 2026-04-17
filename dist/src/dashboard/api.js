@@ -2,7 +2,7 @@ import { llmHealthTracker } from "../audit/llm-health";
 import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import { parseExecCommand } from "../risk/exec-parser";
-import { deriveScheduleLabel } from "./cadence";
+import { deriveScheduleLabel, extractCronRunStarts } from "./cadence";
 import { computeBreakdown, describeAction, getCategory, parseSessionContext, riskPosture, } from "./categories";
 /** Fallback agent ID when audit entries have no agentId. */
 export const DEFAULT_AGENT_ID = "default";
@@ -671,40 +671,13 @@ export function getAgents(entries, date) {
             return parts.length >= 3 && parts[2] === "cron";
         });
         const mode = hasCronSession ? "scheduled" : "interactive";
-        // Derive schedule cadence from the 20 most-recent *run starts*.
-        // A single cron run produces many tool-call entries within a few seconds;
-        // we need one timestamp per run, not per entry, or the median reports the
-        // tool-call interval instead of the schedule interval.
-        //
-        // Run starts: group cron entries by session key, then within each group a
-        // new run begins at entry 0 and any entry separated from its predecessor
-        // by >= 30s (short enough to catch minute-level cadence, long enough to
-        // stay above within-run tool-call gaps).
-        const CRON_RUN_GAP_MS = 30_000;
-        const cronByKey = new Map();
-        for (const e of agentEntries) {
-            if (!e.sessionKey)
-                continue;
-            const parts = e.sessionKey.split(":");
-            if (parts.length < 3 || parts[2] !== "cron")
-                continue;
-            const list = cronByKey.get(e.sessionKey);
-            if (list)
-                list.push(e);
-            else
-                cronByKey.set(e.sessionKey, [e]);
-        }
-        const cronStarts = [];
-        for (const list of cronByKey.values()) {
-            const sorted = [...list].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-            cronStarts.push(sorted[0].timestamp);
-            for (let i = 1; i < sorted.length; i++) {
-                const gapMs = new Date(sorted[i].timestamp).getTime() - new Date(sorted[i - 1].timestamp).getTime();
-                if (gapMs >= CRON_RUN_GAP_MS)
-                    cronStarts.push(sorted[i].timestamp);
-            }
-        }
-        cronStarts.sort((a, b) => b.localeCompare(a));
+        // Derive schedule cadence from the 20 most-recent *run starts*. A single
+        // cron run produces many tool-call entries separated by the agent's rhythm
+        // (seconds on fast agents, minutes on slow); consecutive runs are separated
+        // by the schedule interval. `extractCronRunStarts` uses an adaptive
+        // per-session threshold so fast/slow agents and frequent/sparse crons all
+        // resolve to the correct run boundaries without a user-specific constant.
+        const cronStarts = extractCronRunStarts(agentEntries).sort((a, b) => b.localeCompare(a));
         const schedule = deriveScheduleLabel(mode, cronStarts.slice(0, 20)) ?? undefined;
         const currentContext = currentSessionKey ? parseSessionContext(currentSessionKey) : undefined;
         const breakdownEntries = currentSessionKey
