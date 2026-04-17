@@ -5,6 +5,9 @@ import {
   isDateSelectable,
   parseRetentionDays,
   quickDateOptions,
+  type QuickRangeSpan,
+  quickRangeSpans,
+  type RangeOption,
   shiftDay,
   todayLocalISO,
 } from "./utils";
@@ -13,6 +16,9 @@ interface Props {
   /** YYYY-MM-DD when viewing a past day; null when viewing today. */
   selectedDate: string | null;
   onChange: (date: string | null) => void;
+  /** Optional — when present, the popover renders "Last 7 days" / "Last 30 days"
+   *  shortcuts that set range + date together. Omit in contexts without a range. */
+  onRangeChange?: (range: RangeOption) => void;
   /** Optional retention (e.g. "30d") from /api/config. Defaults to 30d. */
   retention?: string | null;
 }
@@ -23,7 +29,7 @@ interface Props {
  * overlay catches click-outside, Escape closes, focus traps inside the
  * popover content while open.
  */
-export default function DateChip({ selectedDate, onChange, retention }: Props) {
+export default function DateChip({ selectedDate, onChange, onRangeChange, retention }: Props) {
   const today = todayLocalISO();
   const viewing = selectedDate ?? today;
   const isToday = viewing === today;
@@ -45,6 +51,17 @@ export default function DateChip({ selectedDate, onChange, retention }: Props) {
       close();
     },
     [today, retentionDays, onChange, close],
+  );
+
+  const selectSpan = useCallback(
+    (span: QuickRangeSpan) => {
+      const targetIso = span.dateOffset === 0 ? today : shiftDay(today, span.dateOffset);
+      if (!isDateSelectable(targetIso, today, retentionDays)) return;
+      onChange(targetIso === today ? null : targetIso);
+      if (span.range && onRangeChange) onRangeChange(span.range);
+      close();
+    },
+    [today, retentionDays, onChange, onRangeChange, close],
   );
 
   // Escape closes; arrow nav inside the chip when popover is closed lets the
@@ -177,6 +194,7 @@ export default function DateChip({ selectedDate, onChange, retention }: Props) {
             viewing={viewing}
             retentionDays={retentionDays}
             onSelect={select}
+            onSelectSpan={onRangeChange ? selectSpan : undefined}
             onClose={close}
           />,
           document.body,
@@ -192,6 +210,8 @@ interface PopoverProps {
   viewing: string;
   retentionDays: number;
   onSelect: (iso: string) => void;
+  /** When present, the popover renders the multi-day range-span shortcuts. */
+  onSelectSpan?: (span: QuickRangeSpan) => void;
   onClose: () => void;
 }
 
@@ -202,9 +222,11 @@ function DatePickerPopover({
   viewing,
   retentionDays,
   onSelect,
+  onSelectSpan,
   onClose,
 }: PopoverProps) {
   const quick = quickDateOptions(today, retentionDays);
+  const spans = quickRangeSpans();
   const monthGrid = buildMonthGrid(viewing);
 
   function trapFocus(e: React.KeyboardEvent<HTMLDivElement>) {
@@ -260,6 +282,44 @@ function DatePickerPopover({
           animation: "cascade-in 0.18s var(--cl-spring) both",
         }}
       >
+        {/* Range-span shortcuts (Last 7 days / Last 30 days) */}
+        {onSelectSpan && (
+          <div
+            className="flex flex-wrap"
+            style={{ gap: 6, marginBottom: 8 }}
+            aria-label="Range shortcuts"
+          >
+            {spans.map((span) => {
+              const targetIso =
+                span.dateOffset === 0 ? today : shiftDay(today, span.dateOffset);
+              const enabled = isDateSelectable(targetIso, today, retentionDays);
+              return (
+                <button
+                  key={span.label}
+                  type="button"
+                  disabled={!enabled}
+                  onClick={() => onSelectSpan(span)}
+                  className="btn-press font-sans"
+                  style={{
+                    fontSize: 11,
+                    padding: "4px 10px",
+                    borderRadius: "var(--cl-radius-sm, 6px)",
+                    border: "1px solid var(--cl-border-subtle)",
+                    background: "var(--cl-accent-7)",
+                    color: enabled ? "var(--cl-accent)" : "var(--cl-text-muted)",
+                    opacity: enabled ? 1 : 0.4,
+                    cursor: enabled ? "pointer" : "not-allowed",
+                    fontWeight: 600,
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {span.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Quick-pick strip */}
         <div
           className="flex flex-wrap"

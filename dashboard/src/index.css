@@ -502,7 +502,13 @@ select:focus {
   }
 }
 
-/* <720 — collapse pill group to a dropdown-style strip; tighten spacing */
+/* Range pill / dropdown swap at 720px. Both variants stay mounted; CSS
+   controls visibility so there's no JS breakpoint listener or hydration flash. */
+.cl-fh-range-group { display: inline-flex; align-items: center; }
+.cl-fh-range-pills { display: inline-flex; }
+.cl-fh-range-select-wrap { display: none; }
+
+/* <720 — collapse the pill group to a native dropdown; column-stack the header */
 @media (max-width: 719px) {
   .cl-fleet-header {
     flex-direction: column;
@@ -516,9 +522,8 @@ select:focus {
     justify-content: flex-start;
     flex-basis: auto;
   }
-  .cl-fh-range-pills {
-    flex-wrap: wrap;
-  }
+  .cl-fh-range-pills { display: none; }
+  .cl-fh-range-select-wrap { display: inline-flex; align-items: center; }
   .cl-fh-actions {
     justify-content: center;
     width: 100%;

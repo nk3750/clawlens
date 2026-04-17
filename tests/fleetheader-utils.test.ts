@@ -16,6 +16,7 @@ import {
   postureLabel,
   postureTooltip,
   quickDateOptions,
+  quickRangeSpans,
   RANGE_OPTIONS,
   shiftDay,
   shouldShowBlockedChip,
@@ -182,6 +183,28 @@ describe("quickDateOptions", () => {
 });
 
 // ── derivePendingCount ───────────────────────────────────────
+
+describe("quickRangeSpans", () => {
+  it("emits Last 7 days with range='7d' and no date shift", () => {
+    const spans = quickRangeSpans();
+    expect(spans[0]).toEqual({ label: "Last 7 days", range: "7d", dateOffset: 0 });
+  });
+
+  it("emits Last 30 days without a range change, shifting date back 30 days", () => {
+    const spans = quickRangeSpans();
+    expect(spans[1]).toEqual({ label: "Last 30 days", range: null, dateOffset: -30 });
+  });
+
+  it("returns a stable shape callers can trust", () => {
+    const spans = quickRangeSpans();
+    expect(spans).toHaveLength(2);
+    for (const s of spans) {
+      expect(typeof s.label).toBe("string");
+      expect(typeof s.dateOffset).toBe("number");
+      expect(s.range === null || typeof s.range === "string").toBe(true);
+    }
+  });
+});
 
 describe("derivePendingCount", () => {
   it("counts effectiveDecision === 'pending'", () => {

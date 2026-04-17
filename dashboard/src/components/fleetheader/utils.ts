@@ -110,6 +110,30 @@ export function quickDateOptions(today: string, retentionDays: number): QuickDat
   return out;
 }
 
+// ── Quick range spans (for the date popover) ─────────────────
+
+export interface QuickRangeSpan {
+  label: string;
+  /** Range pill to engage. `null` leaves the current range untouched. */
+  range: RangeOption | null;
+  /** Days to shift from today. 0 = today, negative = past. */
+  dateOffset: number;
+}
+
+/**
+ * Multi-day quick picks shown below the weekday row in the date popover.
+ * Spec §2 of `homepage-v3-stats-strip-spec` calls for "Last 7 days" and
+ * "Last 30 days" as range+date shortcuts. §3 only enumerates pills up to 7d,
+ * so "Last 30 days" has no matching range — we jump the viewing date 30
+ * days back and leave the range untouched.
+ */
+export function quickRangeSpans(): QuickRangeSpan[] {
+  return [
+    { label: "Last 7 days", range: "7d", dateOffset: 0 },
+    { label: "Last 30 days", range: null, dateOffset: -30 },
+  ];
+}
+
 // ── Pending count derivation ─────────────────────────────────
 
 export interface InterventionLike {

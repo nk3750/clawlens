@@ -60,6 +60,7 @@ export default function FleetHeader({
         <DateChip
           selectedDate={selectedDate}
           onChange={onDateChange}
+          onRangeChange={onRangeChange}
           retention={retention ?? null}
         />
         <RangePillGroup value={range} onChange={onRangeChange} />
