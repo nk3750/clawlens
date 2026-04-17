@@ -1,34 +1,24 @@
-import { useSSEStatus } from "../hooks/useSSEStatus";
-import {
-  formatAuditAge,
-  formatGatewayUptime,
-  formatSSEStatusLabel,
-  formatVersionLabel,
-  sseStatusColorVar,
-} from "../lib/footerStatus";
+import { useApi } from "../hooks/useApi";
+import type { StatsResponse } from "../lib/types";
+import { formatAuditAge, formatGatewayUptime, formatVersionLabel } from "../lib/footerStatus";
+import HealthIndicator from "./fleetheader/HealthIndicator";
 
 const HELP_URL = "https://github.com/openclaw/openclaw#readme";
 
 interface Props {
-  /**
-   * Phase-A defaults to undefined — the stats endpoint doesn't expose a last-
-   * entry timestamp yet (comes with homepage-v3-stats-strip-spec). When wired
-   * up, the footer refreshes the age every 30s via the parent's re-render.
-   */
-  lastEntryIso?: string | null;
   /** Phase-A: no backend source yet. Placeholder until nav-chrome spec lands. */
   gatewayUptimeMs?: number | null;
 }
 
-export default function PageFooter({ lastEntryIso, gatewayUptimeMs }: Props) {
-  const status = useSSEStatus();
-  // Read build-time version injected by vite.config.ts (defines __APP_VERSION__).
-  const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
+export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
+  // Self-fetch /api/stats so the footer is decoupled from the page tree.
+  // /api/stats is small and the gateway returns it in <10ms — the cost is
+  // dominated by per-page payloads, not this poll.
+  const { data: stats } = useApi<StatsResponse>("api/stats");
 
-  const statusLabel = formatSSEStatusLabel(status);
-  const statusColor = sseStatusColorVar(status);
+  const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
   const versionLabel = formatVersionLabel(version);
-  const auditLabel = formatAuditAge(lastEntryIso, Date.now());
+  const auditLabel = formatAuditAge(stats?.lastEntryTimestamp ?? null, Date.now());
   const uptimeLabel = formatGatewayUptime(gatewayUptimeMs);
 
   const reload = () => {
@@ -56,19 +46,11 @@ export default function PageFooter({ lastEntryIso, gatewayUptimeMs }: Props) {
       <div className="flex items-center" style={{ gap: 10, flexWrap: "wrap" }}>
         <span>{versionLabel}</span>
         <Separator />
-        <span className="flex items-center" style={{ gap: 6 }}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: statusColor,
-              boxShadow: `0 0 6px ${statusColor}`,
-            }}
-          />
-          <span style={{ color: "var(--cl-text-secondary)" }}>{statusLabel}</span>
-        </span>
+        <HealthIndicator
+          variant="footer"
+          lastEntryIso={stats?.lastEntryTimestamp ?? null}
+          llmStatus={stats?.llmHealth?.status ?? null}
+        />
         <Separator />
         <span>{auditLabel}</span>
         <span className="cl-wide-only">

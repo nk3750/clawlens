@@ -1,32 +1,3 @@
-import type { SSEStatus } from "./sseStatus";
-
-/** Human-readable label for the SSE liveness chip in the footer. */
-export function formatSSEStatusLabel(status: SSEStatus): string {
-  switch (status) {
-    case "live":
-      return "SSE live";
-    case "reconnecting":
-      return "SSE reconnecting";
-    case "offline":
-      return "SSE offline";
-  }
-}
-
-/**
- * CSS variable name for the colour the SSE chip should use. Kept as a var
- * reference (not a resolved hex) so the palette in index.css stays canonical.
- */
-export function sseStatusColorVar(status: SSEStatus): string {
-  switch (status) {
-    case "live":
-      return "var(--cl-risk-low)";
-    case "reconnecting":
-      return "var(--cl-risk-medium)";
-    case "offline":
-      return "var(--cl-risk-high)";
-  }
-}
-
 /** "ClawLens v0.2.0" — or "ClawLens" when the build forgot to inject a version. */
 export function formatVersionLabel(version: string | undefined | null): string {
   const trimmed = typeof version === "string" ? version.trim() : "";

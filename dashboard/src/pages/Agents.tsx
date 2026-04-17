@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
 import type { AgentInfo, Guardrail, InterventionEntry, StatsResponse } from "../lib/types";
-import FleetPulse from "../components/FleetPulse";
+import FleetHeader from "../components/FleetHeader";
 import NeedsAttention from "../components/NeedsAttention";
 import AgentRow from "../components/AgentCardCompact";
 import ActivityTimeline from "../components/ActivityTimeline";
@@ -9,9 +9,23 @@ import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
 import DormantState from "../components/DormantState";
 import { isDormant } from "../lib/homepageState";
+import {
+  derivePendingCount,
+  isRangeOption,
+  type RangeOption,
+} from "../components/fleetheader/utils";
+import { getPref, PREF_KEYS, setPref } from "../lib/prefs";
+
+const DEFAULT_RANGE: RangeOption = "12h";
+
+function readInitialRange(): RangeOption {
+  const stored = getPref<string | null>(PREF_KEYS.FLEET_RANGE, null);
+  return isRangeOption(stored) ? stored : DEFAULT_RANGE;
+}
 
 export default function Agents() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [range, setRangeState] = useState<RangeOption>(readInitialRange);
   const [showIdle, setShowIdle] = useState(false);
   const isToday = selectedDate === null;
   const dateParam = selectedDate ? `?date=${selectedDate}` : "";
@@ -26,6 +40,12 @@ export default function Agents() {
   const { data: guardrailsData } = useApi<{ guardrails: Guardrail[] }>("api/guardrails");
 
   const guardrails = guardrailsData?.guardrails ?? [];
+  const pendingCount = useMemo(() => derivePendingCount(interventions ?? []), [interventions]);
+
+  const onRangeChange = useCallback((next: RangeOption) => {
+    setRangeState(next);
+    setPref(PREF_KEYS.FLEET_RANGE, next);
+  }, []);
 
   // Sort: needsAttention first, then by todayToolCalls desc
   const sortedAgents = useMemo(() => {
@@ -56,30 +76,42 @@ export default function Agents() {
 
   return (
     <div className="page-enter flex flex-col" style={{ gap: "var(--cl-section-gap)" }}>
-      {/* Fleet Pulse */}
+      {/* Fleet Header — replaces FleetPulse */}
       {stats && (
-        <FleetPulse
+        <FleetHeader
           stats={stats}
           totalAgents={agents?.length ?? 0}
           guardrailCount={guardrails.length}
+          pendingCount={pendingCount}
           selectedDate={selectedDate}
           onDateChange={setSelectedDate}
+          range={range}
+          onRangeChange={onRangeChange}
         />
       )}
 
       {/* Needs Attention */}
       {interventions && agents && (
-        <NeedsAttention interventions={interventions} agents={agents} />
+        <div data-cl-attention-anchor data-cl-inbox-pending-anchor data-cl-inbox-blocked-anchor>
+          <NeedsAttention interventions={interventions} agents={agents} />
+        </div>
       )}
 
-      {/* Activity Timeline */}
-      <ActivityTimeline isToday={isToday} selectedDate={selectedDate} />
+      {/* Activity Timeline — range is now driven by FleetHeader */}
+      <div data-cl-fleet-chart-anchor>
+        <ActivityTimeline
+          isToday={isToday}
+          selectedDate={selectedDate}
+          range={range}
+          onRangeChange={onRangeChange}
+        />
+      </div>
 
       {/* Live Feed (today only) */}
       {isToday && <LiveFeed />}
 
       {/* Agent Rows */}
-      <section>
+      <section data-cl-agents-anchor id="agents">
         {/* Loading */}
         {loading && !agents && (
           <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>

@@ -163,6 +163,140 @@ describe("computeEnhancedStats with date param", () => {
   });
 });
 
+// ── weekAverage ───────────────────────────────────────────
+
+describe("computeEnhancedStats — weekAverage", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // 2026-04-08 (Wed) at 14:00 local
+    vi.setSystemTime(new Date(2026, 3, 8, 14, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("averages decisions across the 7 days before today, excluding today", () => {
+    // 7 prior days = Apr 1..7. Sum of decisions across those days / 7.
+    const entries = [
+      // Apr 1: 2 decisions
+      entry({ timestamp: new Date(2026, 3, 1, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 1, 10, 0).toISOString(), decision: "allow" }),
+      // Apr 2: 1 decision
+      entry({ timestamp: new Date(2026, 3, 2, 9, 0).toISOString(), decision: "allow" }),
+      // Apr 3..6: 0 decisions
+      // Apr 7: 4 decisions
+      entry({ timestamp: new Date(2026, 3, 7, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 7, 10, 0).toISOString(), decision: "block" }),
+      entry({ timestamp: new Date(2026, 3, 7, 11, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 7, 12, 0).toISOString(), decision: "allow" }),
+      // Today (Apr 8) — must be excluded
+      entry({ timestamp: new Date(2026, 3, 8, 13, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 8, 13, 30).toISOString(), decision: "allow" }),
+    ];
+
+    const stats = computeEnhancedStats(entries);
+    // (2 + 1 + 0 + 0 + 0 + 0 + 4) / 7 = 7/7 = 1
+    expect(stats.weekAverage).toBe(1);
+  });
+
+  it("excludes the viewing date when called with a past date", () => {
+    const entries = [
+      // Days before Apr 5 — Mar 29..Apr 4. Total 14 decisions across the window.
+      entry({ timestamp: new Date(2026, 3, 4, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 4, 10, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 3, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 2, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 1, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 2, 31, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 2, 30, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 2, 29, 9, 0).toISOString(), decision: "allow" }),
+      // Apr 5 (the viewing date) — excluded from the average
+      entry({ timestamp: new Date(2026, 3, 5, 9, 0).toISOString(), decision: "allow" }),
+      entry({ timestamp: new Date(2026, 3, 5, 10, 0).toISOString(), decision: "allow" }),
+    ];
+
+    const stats = computeEnhancedStats(entries, "2026-04-05");
+    // Mar 29..Apr 4 = 8 decisions / 7 ≈ 1.14 → rounds to 1.
+    expect(stats.weekAverage).toBe(1);
+  });
+
+  it("returns 0 when no historic data exists", () => {
+    const stats = computeEnhancedStats([]);
+    expect(stats.weekAverage).toBe(0);
+  });
+
+  it("returns 0 when only today has data", () => {
+    const entries = [
+      entry({ timestamp: new Date(2026, 3, 8, 9, 0).toISOString(), decision: "allow" }),
+    ];
+    const stats = computeEnhancedStats(entries);
+    expect(stats.weekAverage).toBe(0);
+  });
+
+  it("ignores non-decision entries when averaging", () => {
+    const entries = [
+      // Apr 1: only result entries — no decisions to count
+      entry({ timestamp: new Date(2026, 3, 1, 9, 0).toISOString(), executionResult: "success" }),
+      entry({ timestamp: new Date(2026, 3, 1, 10, 0).toISOString(), executionResult: "failure" }),
+      // Apr 2: 1 decision
+      entry({ timestamp: new Date(2026, 3, 2, 9, 0).toISOString(), decision: "allow" }),
+    ];
+    const stats = computeEnhancedStats(entries);
+    expect(stats.weekAverage).toBe(0); // 1/7 = 0.14 → rounds to 0
+  });
+});
+
+// ── lastEntryTimestamp ────────────────────────────────────
+
+describe("computeEnhancedStats — lastEntryTimestamp", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 8, 14, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is undefined when the audit log is empty", () => {
+    const stats = computeEnhancedStats([]);
+    expect(stats.lastEntryTimestamp).toBeUndefined();
+  });
+
+  it("returns the maximum timestamp across all entries", () => {
+    const entries = [
+      entry({ timestamp: "2026-04-01T10:00:00Z", decision: "allow" }),
+      entry({ timestamp: "2026-04-08T13:55:00Z", decision: "allow" }),
+      entry({ timestamp: "2026-04-08T13:50:00Z", decision: "allow" }),
+      entry({ timestamp: "2026-04-05T08:00:00Z", decision: "allow" }),
+    ];
+    const stats = computeEnhancedStats(entries);
+    expect(stats.lastEntryTimestamp).toBe("2026-04-08T13:55:00Z");
+  });
+
+  it("includes non-decision entries (results, evals)", () => {
+    // The newest entry is a result (no decision) — must still be reflected.
+    const entries = [
+      entry({ timestamp: "2026-04-08T10:00:00Z", decision: "allow" }),
+      entry({ timestamp: "2026-04-08T13:59:30Z", executionResult: "success" }),
+      entry({
+        timestamp: "2026-04-08T13:59:45Z",
+        refToolCallId: "tc1",
+        llmEvaluation: {
+          adjustedScore: 30,
+          reasoning: "ok",
+          tags: [],
+          confidence: "high",
+          patterns: [],
+        },
+      }),
+    ];
+    const stats = computeEnhancedStats(entries);
+    expect(stats.lastEntryTimestamp).toBe("2026-04-08T13:59:45Z");
+  });
+});
+
 // ── getAgents with date ──────────────────────────────────
 
 describe("getAgents with date param", () => {

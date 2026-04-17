@@ -554,10 +554,29 @@ export function computeEnhancedStats(entries, date) {
     }
     // Yesterday's total: count decision entries from the day before the viewing date
     const viewingDate = isPastDay ? date : localToday();
-    const yesterdayMs = localMidnightMs(viewingDate) - 86_400_000;
+    const viewingMidnight = localMidnightMs(viewingDate);
+    const yesterdayMs = viewingMidnight - 86_400_000;
     const yd = new Date(yesterdayMs);
     const yesterdayStr = `${yd.getFullYear()}-${String(yd.getMonth() + 1).padStart(2, "0")}-${String(yd.getDate()).padStart(2, "0")}`;
     const yesterdayTotal = getDayEntries(entries, yesterdayStr).filter(isDecisionEntry).length;
+    // Week average: mean of decision counts for each of the 7 calendar days
+    // immediately before the viewing date. The viewing date itself is excluded
+    // because it's a partial day. We round to keep the surface integer-clean.
+    let weekSum = 0;
+    for (let i = 1; i <= 7; i++) {
+        const dayStart = new Date(viewingMidnight - i * 86_400_000);
+        const dayStr = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, "0")}-${String(dayStart.getDate()).padStart(2, "0")}`;
+        weekSum += getDayEntries(entries, dayStr).filter(isDecisionEntry).length;
+    }
+    const weekAverage = Math.round(weekSum / 7);
+    // Most-recent audit entry across the *entire* log, not just decisions: result
+    // and LLM-eval entries also indicate the gateway is alive and writing.
+    let lastEntryTimestamp;
+    for (const e of entries) {
+        if (lastEntryTimestamp === undefined || e.timestamp > lastEntryTimestamp) {
+            lastEntryTimestamp = e.timestamp;
+        }
+    }
     return {
         total,
         allowed,
@@ -573,6 +592,8 @@ export function computeEnhancedStats(entries, date) {
         riskPosture: posture,
         historicDailyMax: computeHistoricDailyMax(entries),
         yesterdayTotal,
+        weekAverage,
+        lastEntryTimestamp,
         llmHealth: llmHealthTracker.snapshot(),
     };
 }
@@ -896,10 +917,13 @@ const AUTO_BUCKET = {
     "24h": 30,
 };
 function parseRangeMs(range) {
-    const match = range.match(/^(\d+)h$/);
-    if (!match)
-        return undefined;
-    return Number(match[1]) * 3_600_000;
+    const hourMatch = range.match(/^(\d+)h$/);
+    if (hourMatch)
+        return Number(hourMatch[1]) * 3_600_000;
+    const dayMatch = range.match(/^(\d+)d$/);
+    if (dayMatch)
+        return Number(dayMatch[1]) * 86_400_000;
+    return undefined;
 }
 export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
     const effectiveBucket = bucketMinutes ?? AUTO_BUCKET[range ?? ""] ?? 15;

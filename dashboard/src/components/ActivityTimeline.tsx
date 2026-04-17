@@ -12,10 +12,14 @@ import type {
 import { riskTierFromScore, riskColorRaw } from "../lib/utils";
 import GradientAvatar from "./GradientAvatar";
 import LiveIndicator from "./LiveIndicator";
+import type { RangeOption } from "./fleetheader/utils";
 
 interface Props {
   isToday: boolean;
   selectedDate: string | null;
+  /** Owned by Agents.tsx so the FleetHeader pill group can drive both. */
+  range: RangeOption;
+  onRangeChange: (next: RangeOption) => void;
 }
 
 const CATEGORY_COLORS: Record<ActivityCategory, string> = {
@@ -35,9 +39,6 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   changes: "changes",
   data: "data",
 };
-
-const RANGE_OPTIONS = ["24h", "12h", "6h", "3h", "1h"] as const;
-type RangeOption = (typeof RANGE_OPTIONS)[number];
 
 const ROW_HEIGHT = 40;
 const LABEL_WIDTH = 130;
@@ -69,9 +70,8 @@ function fmtDuration(startIso: string, endIso: string): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-export default function ActivityTimeline({ isToday, selectedDate }: Props) {
+export default function ActivityTimeline({ isToday, selectedDate, range }: Props) {
   const navigate = useNavigate();
-  const [range, setRange] = useState<RangeOption>("12h");
 
   const apiPath = useMemo(() => {
     const params = new URLSearchParams({ range });
@@ -226,7 +226,6 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
           <span className="font-display text-sm font-medium" style={{ color: "var(--cl-text-secondary)" }}>
             Fleet Activity
           </span>
-          <RangeSelector range={range} onRangeChange={setRange} />
         </div>
         <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>
           {isToday ? "No activity yet" : "No activity on this day"}
@@ -260,8 +259,13 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
 
   const timeToX = (ms: number) => LABEL_WIDTH + ((ms - startMs) / spanMs) * swimlaneWidth;
 
-  // Hour ticks
-  const tickInterval = range === "1h" || range === "3h" ? 1_800_000 : 3_600_000;
+  // Hour ticks (or 12h ticks for 7-day view, so we don't get 168 labels).
+  const tickInterval =
+    range === "7d"
+      ? 12 * 3_600_000
+      : range === "1h" || range === "3h"
+        ? 1_800_000
+        : 3_600_000;
   const hourTicks: { ms: number; label: string }[] = [];
   const firstTick = Math.ceil(startMs / tickInterval) * tickInterval;
   for (let t = firstTick; t <= endMs; t += tickInterval) {
@@ -305,7 +309,6 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
             <span className="inline-block rounded-full" style={{ width: 8, height: 8, backgroundColor: "var(--cl-risk-high)" }} />
             <span className="font-mono text-[10px]" style={{ color: "var(--cl-text-secondary)" }}>high</span>
           </span>
-          <RangeSelector range={range} onRangeChange={setRange} />
         </span>
       </div>
 
@@ -537,40 +540,6 @@ export default function ActivityTimeline({ isToday, selectedDate }: Props) {
       {hoveredSession && (
         <SessionTooltip session={hoveredSession} pos={hoveredPos} wrapperRef={wrapperRef} />
       )}
-    </div>
-  );
-}
-
-function RangeSelector({
-  range,
-  onRangeChange,
-}: {
-  range: RangeOption;
-  onRangeChange: (r: RangeOption) => void;
-}) {
-  return (
-    <div className="flex items-center" style={{ gap: 1 }}>
-      {RANGE_OPTIONS.map((r) => (
-        <button
-          key={r}
-          type="button"
-          onClick={() => onRangeChange(r)}
-          className="font-mono"
-          style={{
-            fontSize: 10,
-            padding: "2px 6px",
-            borderRadius: 4,
-            border: "none",
-            cursor: "pointer",
-            background: r === range ? "var(--cl-accent)" : "transparent",
-            color: r === range ? "var(--cl-bg)" : "var(--cl-text-muted)",
-            fontWeight: r === range ? 700 : 400,
-            transition: "all 0.15s ease",
-          }}
-        >
-          {r}
-        </button>
-      ))}
     </div>
   );
 }

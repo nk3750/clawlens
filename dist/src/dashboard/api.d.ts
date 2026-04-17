@@ -26,6 +26,10 @@ export interface EnhancedStatsResponse extends StatsResponse {
     riskPosture: RiskPosture;
     historicDailyMax: number;
     yesterdayTotal: number;
+    /** Mean decision count across the 7 calendar days before the viewing date. */
+    weekAverage: number;
+    /** Max timestamp across all audit entries (decision or result). undefined when log is empty. */
+    lastEntryTimestamp?: string;
     llmHealth: LlmHealthSnapshot;
 }
 export interface InterventionEntry {

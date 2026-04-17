@@ -2,34 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   formatAuditAge,
   formatGatewayUptime,
-  formatSSEStatusLabel,
   formatVersionLabel,
-  sseStatusColorVar,
 } from "../dashboard/src/lib/footerStatus";
-
-describe("formatSSEStatusLabel", () => {
-  it("labels live status", () => {
-    expect(formatSSEStatusLabel("live")).toBe("SSE live");
-  });
-  it("labels reconnecting status", () => {
-    expect(formatSSEStatusLabel("reconnecting")).toBe("SSE reconnecting");
-  });
-  it("labels offline status", () => {
-    expect(formatSSEStatusLabel("offline")).toBe("SSE offline");
-  });
-});
-
-describe("sseStatusColorVar", () => {
-  it("maps live to the low-risk green token", () => {
-    expect(sseStatusColorVar("live")).toBe("var(--cl-risk-low)");
-  });
-  it("maps reconnecting to the medium-risk amber token", () => {
-    expect(sseStatusColorVar("reconnecting")).toBe("var(--cl-risk-medium)");
-  });
-  it("maps offline to the high-risk red token", () => {
-    expect(sseStatusColorVar("offline")).toBe("var(--cl-risk-high)");
-  });
-});
 
 describe("formatVersionLabel", () => {
   it("prefixes 'v' on a present version", () => {

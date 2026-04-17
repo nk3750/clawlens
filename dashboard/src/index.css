@@ -445,7 +445,92 @@ select:focus {
   text-align: center;
 }
 
-/* ── Reduced motion ── */
+/* ══════════════════════════════════════════════
+   FLEET HEADER (homepage-v3-stats-strip-spec §11)
+   ══════════════════════════════════════════════ */
+
+.cl-fleet-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: var(--cl-card-padding-hero, 14px 16px);
+  min-height: var(--cl-row-height-hero, 56px);
+  background: var(--cl-surface);
+  border: 1px solid var(--cl-border-subtle);
+  border-radius: var(--cl-radius-md, 8px);
+  box-shadow: var(--cl-shadow-card);
+}
+
+.cl-fh-left,
+.cl-fh-center,
+.cl-fh-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cl-fh-center {
+  flex: 1 1 220px;
+  justify-content: center;
+}
+
+.cl-fh-right {
+  justify-content: flex-end;
+}
+
+/* ≥1200px — single row, all clusters inline. Default flex/wrap above. */
+
+/* 960..1199 — right cluster wraps to its own line under the left+center pair */
+@media (max-width: 1199px) {
+  .cl-fleet-header {
+    align-items: flex-start;
+  }
+  .cl-fh-right {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* 720..959 — center stat sits below left, right cluster spans full width */
+@media (max-width: 959px) {
+  .cl-fh-center {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* <720 — collapse pill group to a dropdown-style strip; tighten spacing */
+@media (max-width: 719px) {
+  .cl-fleet-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .cl-fh-left,
+  .cl-fh-center,
+  .cl-fh-right {
+    width: 100%;
+    justify-content: flex-start;
+    flex-basis: auto;
+  }
+  .cl-fh-range-pills {
+    flex-wrap: wrap;
+  }
+  .cl-fh-actions {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+/* Past-day chip tint — slightly desaturated relative to TODAY */
+.cl-date-past {
+  border-color: var(--cl-border-default) !important;
+}
+
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

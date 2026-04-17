@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, resolveSplitKeyForEntry, } from "./api";
+import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, localDateOf, localToday, resolveSplitKeyForEntry, } from "./api";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -199,6 +199,29 @@ export function registerDashboardRoutes(api, deps) {
                 // or prev-hash links across dropped duplicates look broken.
                 const entries = deps.auditLogger.readEntriesRaw();
                 sendJson(res, checkHealth(entries));
+                return true;
+            }
+            if (subPath === "api/audit/export") {
+                const requested = url.searchParams.get("date");
+                const date = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : localToday();
+                if (requested && !/^\d{4}-\d{2}-\d{2}$/.test(requested)) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Invalid date format. Use YYYY-MM-DD." }));
+                    return true;
+                }
+                res.writeHead(200, {
+                    "Content-Type": "application/x-ndjson; charset=utf-8",
+                    "Content-Disposition": `attachment; filename="clawlens-audit-${date}.jsonl"`,
+                    "Cache-Control": "no-cache",
+                });
+                // Stream entry-by-entry rather than buffering the whole day in memory:
+                // a busy day can be tens of MB of JSONL.
+                for (const e of deps.auditLogger.readEntries()) {
+                    if (localDateOf(e.timestamp) === date) {
+                        res.write(`${JSON.stringify(e)}\n`);
+                    }
+                }
+                res.end();
                 return true;
             }
             if (subPath === "api/agents") {
