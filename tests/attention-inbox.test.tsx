@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -224,6 +224,88 @@ describe("AttentionInbox — optimistic ack via button", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(refetch).toHaveBeenCalled();
+  });
+});
+
+describe("AttentionInbox — row enter/leave animations (§3)", () => {
+  // Use REAL timers in this block — vi.runAllTimersAsync doesn't reliably flush
+  // the React render triggered inside our setTimeout callback in this setup.
+  // The file-level beforeEach only fakes Date, which is harmless for these tests.
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+  });
+
+  it("wraps collapsible rows in a .cl-inbox-row-enter div on mount", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{ ...emptyResp(), blocked: [makeBlocked("tc_1")] }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const wrapper = container.querySelector(".cl-inbox-row-enter");
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.querySelector("[data-cl-attention-row='blocked']")).not.toBeNull();
+    // T1 hero uses .attention-pulse — never wrapped with enter/leave.
+    expect(container.querySelector("[data-cl-attention-row='pending']")).toBeNull();
+  });
+
+  it("applies .cl-inbox-row-leave after a successful ack, then removes the row 200ms later", async () => {
+    const user = userEvent.setup();
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true } as Response);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{ ...emptyResp(), blocked: [makeBlocked("tc_1")] }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Ack/i }));
+
+    // Phase 1: row still in DOM, wrapper now has the leave class.
+    expect(container.querySelector(".cl-inbox-row-leave")).not.toBeNull();
+    expect(container.querySelector("[data-cl-attention-row='blocked']")).not.toBeNull();
+
+    // Phase 2: wait past the 200ms cutover — row drops from render.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    expect(container.querySelector("[data-cl-attention-row='blocked']")).toBeNull();
+  });
+
+  it("revert on fetch failure cancels the pending timer and clears both animation classes", async () => {
+    const user = userEvent.setup();
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{ ...emptyResp(), blocked: [makeBlocked("tc_1")] }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Ack/i }));
+
+    // AckButtons.send threw on !res.ok → called revert() → both sets cleared
+    // and the timer was cancelled before firing.
+    expect(container.querySelector(".cl-inbox-row-leave")).toBeNull();
+    expect(container.querySelector(".cl-inbox-row-enter")).not.toBeNull();
+    expect(container.querySelector("[data-cl-attention-row='blocked']")).not.toBeNull();
+
+    // Wait past when the cancelled timer would have fired — row must remain.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(container.querySelector("[data-cl-attention-row='blocked']")).not.toBeNull();
   });
 });
 

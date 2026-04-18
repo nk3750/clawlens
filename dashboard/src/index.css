@@ -280,6 +280,25 @@
   100% { background-color: transparent; }
 }
 
+/* ── Inbox row entry — attention-inbox §10 / followups §3 ── */
+.cl-inbox-row-enter {
+  animation: inbox-row-enter 250ms var(--cl-spring) both;
+}
+@keyframes inbox-row-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Inbox row leave — optimistic ack removal ── */
+.cl-inbox-row-leave {
+  animation: inbox-row-leave 200ms var(--cl-ease) forwards;
+  pointer-events: none;
+}
+@keyframes inbox-row-leave {
+  from { opacity: 1; max-height: 80px; }
+  to   { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+}
+
 /* ── Numeric flash for stats total when SSE-driven refresh moves the number >2% ── */
 .cl-total-flash {
   animation: total-flash 500ms var(--cl-ease);

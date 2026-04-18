@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useKeyboardShortcut } from "../hooks/useKeyboardShortcut";
 import type { AttentionAgent, AttentionItem, AttentionResponse } from "../lib/types";
@@ -33,9 +33,21 @@ export default function AttentionInbox({ data, refetch }: Props) {
   const [expanded, setExpanded] = useState(false);
   /** Keys locally removed (optimistic) so the row disappears before the refetch completes. */
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
+  /** Keys animating out — still in DOM, but with `.cl-inbox-row-leave` applied. */
+  const [leavingKeys, setLeavingKeys] = useState<Set<string>>(new Set());
+  /** Pending Phase-2 timers, keyed by row key, so revert() can cancel them. */
+  const leaveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [guardrailDraft, setGuardrailDraft] = useState<AttentionItem | null>(null);
   const navigate = useNavigate();
   const containerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const timers = leaveTimersRef.current;
+    return () => {
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
 
   const nonHero = useMemo<NonHeroItem[]>(() => {
     if (!data) return [];
@@ -64,13 +76,47 @@ export default function AttentionInbox({ data, refetch }: Props) {
   const topmost = visibleNonHero[0];
 
   const onOptimisticRemove = useCallback((key: string) => {
-    setOptimisticRemoved((prev) => {
+    // Phase 1: mark the row as leaving so the wrapper gets `.cl-inbox-row-leave`.
+    setLeavingKeys((prev) => {
       if (prev.has(key)) return prev;
       const next = new Set(prev);
       next.add(key);
       return next;
     });
+    // Phase 2: after the animation, drop the row from render. A successful ack
+    // refetch removes the item from the payload anyway; this covers the gap
+    // between the POST resolving and the SSE-driven refetch landing.
+    const timer = setTimeout(() => {
+      setOptimisticRemoved((prev) => {
+        if (prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+      setLeavingKeys((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      leaveTimersRef.current.delete(key);
+    }, 200);
+    leaveTimersRef.current.set(key, timer);
+
+    // Revert (fetch failure): cancel the pending timer and clear both sets so
+    // the row snaps back into the enter state without lingering classes.
     return () => {
+      const pending = leaveTimersRef.current.get(key);
+      if (pending) {
+        clearTimeout(pending);
+        leaveTimersRef.current.delete(key);
+      }
+      setLeavingKeys((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
       setOptimisticRemoved((prev) => {
         if (!prev.has(key)) return prev;
         const next = new Set(prev);
@@ -201,11 +247,14 @@ export default function AttentionInbox({ data, refetch }: Props) {
             const isTopmost = topmost && nonHeroKey(v) === nonHeroKey(topmost);
             const key = nonHeroKey(v);
             const removeFn = () => onOptimisticRemove(key);
+            const wrapperClass = leavingKeys.has(key)
+              ? "cl-inbox-row-leave"
+              : "cl-inbox-row-enter";
 
+            let row: ReactNode;
             if (v.kind === "agent") {
-              return (
+              row = (
                 <AgentAttentionRow
-                  key={key}
                   item={v.item}
                   isLast={isLast}
                   onOptimisticRemove={removeFn}
@@ -214,11 +263,9 @@ export default function AttentionInbox({ data, refetch }: Props) {
                   isTopmost={isTopmost}
                 />
               );
-            }
-            if (v.kind === "highrisk") {
-              return (
+            } else if (v.kind === "highrisk") {
+              row = (
                 <HighRiskRow
-                  key={key}
                   item={v.item}
                   isLast={isLast}
                   onOptimisticRemove={removeFn}
@@ -228,17 +275,22 @@ export default function AttentionInbox({ data, refetch }: Props) {
                   isTopmost={isTopmost}
                 />
               );
+            } else {
+              row = (
+                <BlockedRow
+                  item={v.item}
+                  isLast={isLast}
+                  onOptimisticRemove={removeFn}
+                  onPersisted={onPersisted}
+                  showShortcutHint
+                  isTopmost={isTopmost}
+                />
+              );
             }
             return (
-              <BlockedRow
-                key={key}
-                item={v.item}
-                isLast={isLast}
-                onOptimisticRemove={removeFn}
-                onPersisted={onPersisted}
-                showShortcutHint
-                isTopmost={isTopmost}
-              />
+              <div key={key} className={wrapperClass}>
+                {row}
+              </div>
             );
           })}
           {hiddenCount > 0 && (
