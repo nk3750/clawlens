@@ -317,14 +317,15 @@ describe("getActivityTimeline", () => {
 
   // ── New: range filtering ────────────────────────────────
 
-  it("filters entries by range for past day", () => {
+  it("filters entries to the last N hours of a pinned past day", () => {
     const entries = [
-      entry({ timestamp: new Date(2026, 3, 11, 1, 0, 0).toISOString(), agentId: "a1" }),
-      entry({ timestamp: new Date(2026, 3, 11, 2, 0, 0).toISOString(), agentId: "a1" }),
-      entry({ timestamp: new Date(2026, 3, 11, 5, 0, 0).toISOString(), agentId: "a1" }),
-      entry({ timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 1, 0, 0).toISOString(), agentId: "a1" }), // 01:00 — outside
+      entry({ timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), agentId: "a1" }), // 10:00 — outside
+      entry({ timestamp: new Date(2026, 3, 11, 20, 0, 0).toISOString(), agentId: "a1" }), // 20:00 — outside (before 21:00)
+      entry({ timestamp: new Date(2026, 3, 11, 21, 30, 0).toISOString(), agentId: "a1" }), // 21:30 — inside
+      entry({ timestamp: new Date(2026, 3, 11, 23, 0, 0).toISOString(), agentId: "a1" }), // 23:00 — inside
     ];
-    // 3h range on a past day = first 3h (00:00 to 03:00 local)
+    // 3h range on a pinned day = last 3h (21:00-24:00 local)
     const result = getActivityTimeline(entries, undefined, "2026-04-11", "3h");
 
     expect(result.totalActions).toBe(2);
@@ -384,8 +385,10 @@ describe("getActivityTimeline", () => {
   });
 
   it("returns empty when range filters out all entries", () => {
-    const entries = [entry({ timestamp: "2026-04-11T10:00:00Z", agentId: "a1" })];
-    // 1h range on past day = first hour (00:00-01:00), entry at 10:00 is outside
+    const entries = [
+      entry({ timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), agentId: "a1" }),
+    ];
+    // 1h range on past day = last hour (23:00-24:00 local), entry at 10:00 local is outside
     const result = getActivityTimeline(entries, undefined, "2026-04-11", "1h");
 
     expect(result.totalActions).toBe(0);
@@ -400,5 +403,72 @@ describe("getActivityTimeline", () => {
 
     expect(result.totalActions).toBe(1);
     expect(result.bucketMinutes).toBe(15);
+  });
+
+  // ── Rolling-window range pills (#8): range must span midnight ───────
+
+  it("24h range on today spans midnight and includes yesterday's entries", () => {
+    vi.useFakeTimers();
+    try {
+      // Pin time to 07:30 local — window = [yesterday 07:30, today 07:30]
+      vi.setSystemTime(new Date(2026, 3, 11, 7, 30, 0));
+      const entries = [
+        entry({ timestamp: new Date(2026, 3, 10, 17, 0, 0).toISOString(), agentId: "a1" }), // yesterday 17:00 (~14.5h ago)
+        entry({ timestamp: new Date(2026, 3, 10, 22, 0, 0).toISOString(), agentId: "a1" }), // yesterday 22:00 (~9.5h ago)
+        entry({ timestamp: new Date(2026, 3, 11, 6, 0, 0).toISOString(), agentId: "a1" }), // today 06:00 (~1.5h ago)
+        entry({ timestamp: new Date(2026, 3, 11, 7, 0, 0).toISOString(), agentId: "a1" }), // today 07:00 (~30m ago)
+      ];
+      const result = getActivityTimeline(entries, undefined, undefined, "24h");
+
+      expect(result.totalActions).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("12h range on today excludes entries older than 12h across midnight", () => {
+    vi.useFakeTimers();
+    try {
+      // Pin time to 07:30 local — window = [yesterday 19:30, today 07:30]
+      vi.setSystemTime(new Date(2026, 3, 11, 7, 30, 0));
+      const entries = [
+        entry({ timestamp: new Date(2026, 3, 10, 18, 0, 0).toISOString(), agentId: "a1" }), // yesterday 18:00 (~13.5h ago → OUT)
+        entry({ timestamp: new Date(2026, 3, 10, 20, 0, 0).toISOString(), agentId: "a1" }), // yesterday 20:00 (~11.5h ago → IN)
+        entry({ timestamp: new Date(2026, 3, 11, 5, 0, 0).toISOString(), agentId: "a1" }), // today 05:00 → IN
+        entry({ timestamp: new Date(2026, 3, 11, 7, 0, 0).toISOString(), agentId: "a1" }), // today 07:00 → IN
+      ];
+      const result = getActivityTimeline(entries, undefined, undefined, "12h");
+
+      expect(result.totalActions).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("24h range on pinned past date equals full-day result (sanity: 24h pill is a no-op for a pinned day)", () => {
+    const entries = [
+      entry({ timestamp: new Date(2026, 3, 11, 2, 0, 0).toISOString(), agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), agentId: "a1" }),
+      entry({ timestamp: new Date(2026, 3, 11, 20, 0, 0).toISOString(), agentId: "a1" }),
+    ];
+    const fullDay = getActivityTimeline(entries, undefined, "2026-04-11");
+    const with24h = getActivityTimeline(entries, undefined, "2026-04-11", "24h");
+
+    expect(with24h.totalActions).toBe(fullDay.totalActions);
+    expect(with24h.totalActions).toBe(3);
+  });
+
+  it("6h range on pinned past date returns the last 6 hours of that day", () => {
+    const entries = [
+      entry({ timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), agentId: "a1" }), // 10:00 — outside
+      entry({ timestamp: new Date(2026, 3, 11, 17, 30, 0).toISOString(), agentId: "a1" }), // 17:30 — outside (before 18:00)
+      entry({ timestamp: new Date(2026, 3, 11, 18, 0, 0).toISOString(), agentId: "a1" }), // 18:00 — inside
+      entry({ timestamp: new Date(2026, 3, 11, 22, 0, 0).toISOString(), agentId: "a1" }), // 22:00 — inside
+      entry({ timestamp: new Date(2026, 3, 11, 23, 59, 0).toISOString(), agentId: "a1" }), // 23:59 — inside
+    ];
+    // 6h range on pinned day = last 6h (18:00-24:00 local)
+    const result = getActivityTimeline(entries, undefined, "2026-04-11", "6h");
+
+    expect(result.totalActions).toBe(3);
   });
 });

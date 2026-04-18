@@ -1269,6 +1269,25 @@ function parseRangeMs(range) {
         return Number(dayMatch[1]) * 86_400_000;
     return undefined;
 }
+/** Resolve the time window for a Fleet Activity range pill.
+ *
+ *  - No rangeMs: returns undefined — caller falls back to the calendar-day
+ *    pre-filter (today or the pinned date).
+ *  - Today + range: rolling window ending at now, starting at now - rangeMs.
+ *    Can span midnight into yesterday (this is the point of the fix for #8).
+ *  - Pinned date + range: window ending at end-of-day (midnight + 24h),
+ *    starting at end-of-day - rangeMs. So 24h = full day (no-op), 6h =
+ *    the last 6 hours of that day.
+ *
+ *  Callers must NOT also pre-filter by calendar day when a window is
+ *  returned — that's what caused rolling windows to be clamped to today.
+ */
+function resolveRangeWindow(dateStr, rangeMs) {
+    if (rangeMs === undefined)
+        return undefined;
+    const end = dateStr ? localMidnightMs(dateStr) + 86_400_000 : Date.now();
+    return { start: end - rangeMs, end };
+}
 export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
     const effectiveBucket = bucketMinutes ?? AUTO_BUCKET[range ?? ""] ?? 15;
     const emptyResponse = {
@@ -1279,29 +1298,21 @@ export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
         totalActions: 0,
         bucketMinutes: effectiveBucket,
     };
-    const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
-    let decisions = dayEntries.filter(isDecisionEntry);
-    // Apply range filtering
-    if (range) {
-        const rangeMs = parseRangeMs(range);
-        if (rangeMs) {
-            const isToday = !dateStr;
-            let rangeStart;
-            let rangeEnd;
-            if (isToday) {
-                rangeEnd = Date.now();
-                rangeStart = rangeEnd - rangeMs;
-            }
-            else {
-                rangeStart = localMidnightMs(dateStr);
-                rangeEnd = rangeStart + rangeMs;
-            }
-            decisions = decisions.filter((e) => {
-                const ts = new Date(e.timestamp).getTime();
-                return ts >= rangeStart && ts <= rangeEnd;
-            });
-        }
-    }
+    // When a range is set, filter by the rolling/anchored window against ALL
+    // entries so the window can span midnight (bug #8). When no range, fall
+    // back to the calendar-day pre-filter. An unparseable range ("invalid")
+    // gets rangeMs=undefined, which intentionally falls through to pre-filter.
+    const rangeMs = range ? parseRangeMs(range) : undefined;
+    const window = resolveRangeWindow(dateStr, rangeMs);
+    const baseEntries = window
+        ? entries.filter((e) => {
+            const ts = new Date(e.timestamp).getTime();
+            return ts >= window.start && ts <= window.end;
+        })
+        : dateStr
+            ? getDayEntries(entries, dateStr)
+            : getTodayEntries(entries);
+    const decisions = baseEntries.filter(isDecisionEntry);
     if (decisions.length === 0) {
         return emptyResponse;
     }
@@ -1439,29 +1450,18 @@ export function getSessionTimeline(entries, dateStr, range) {
         endTime: "",
         totalActions: 0,
     };
-    const dayEntries = dateStr ? getDayEntries(entries, dateStr) : getTodayEntries(entries);
-    let decisions = dayEntries.filter(isDecisionEntry);
-    // Apply range filtering
-    let rangeStart;
-    let rangeEnd;
-    if (range) {
-        const rangeMs = parseRangeMs(range);
-        if (rangeMs) {
-            const isToday = !dateStr;
-            if (isToday) {
-                rangeEnd = Date.now();
-                rangeStart = rangeEnd - rangeMs;
-            }
-            else {
-                rangeStart = localMidnightMs(dateStr);
-                rangeEnd = rangeStart + rangeMs;
-            }
-            decisions = decisions.filter((e) => {
-                const ts = new Date(e.timestamp).getTime();
-                return ts >= rangeStart && ts <= rangeEnd;
-            });
-        }
-    }
+    // Same window semantics as getActivityTimeline (see there for rationale).
+    const rangeMs = range ? parseRangeMs(range) : undefined;
+    const window = resolveRangeWindow(dateStr, rangeMs);
+    const baseEntries = window
+        ? entries.filter((e) => {
+            const ts = new Date(e.timestamp).getTime();
+            return ts >= window.start && ts <= window.end;
+        })
+        : dateStr
+            ? getDayEntries(entries, dateStr)
+            : getTodayEntries(entries);
+    const decisions = baseEntries.filter(isDecisionEntry);
     if (decisions.length === 0)
         return emptyResponse;
     // Build session index from ALL entries so #N numbering is consistent
@@ -1488,9 +1488,10 @@ export function getSessionTimeline(entries, dateStr, range) {
             sessionEntries.set(sKey, [e]);
         }
     }
-    // Determine view window for overlap filtering
-    const viewStart = rangeStart ?? Math.min(...decisions.map((e) => new Date(e.timestamp).getTime()));
-    const viewEnd = rangeEnd ?? (dateStr ? localMidnightMs(dateStr) + 86_400_000 : now);
+    // Determine view window for overlap filtering. When a window was resolved,
+    // use it directly; otherwise anchor to decision span / end-of-day / now.
+    const viewStart = window?.start ?? Math.min(...decisions.map((e) => new Date(e.timestamp).getTime()));
+    const viewEnd = window?.end ?? (dateStr ? localMidnightMs(dateStr) + 86_400_000 : now);
     const agentTotals = new Map();
     const sessions = [];
     for (const [sKey, sEntries] of sessionEntries) {

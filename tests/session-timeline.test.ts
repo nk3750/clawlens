@@ -385,27 +385,28 @@ describe("getSessionTimeline", () => {
     expect(result.sessions).toHaveLength(1);
   });
 
-  it("filters by range on past day", () => {
+  it("filters to the last N hours of a pinned past day", () => {
     const entries = [
       entry({
         sessionKey: "s1",
         agentId: "bot-1",
         toolName: "read",
         decision: "allow",
-        timestamp: new Date(2026, 3, 11, 1, 0, 0).toISOString(), // 1am
+        timestamp: new Date(2026, 3, 11, 1, 0, 0).toISOString(), // 1am — outside last 3h
       }),
       entry({
         sessionKey: "s2",
         agentId: "bot-1",
         toolName: "read",
         decision: "allow",
-        timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), // 10am
+        timestamp: new Date(2026, 3, 11, 22, 0, 0).toISOString(), // 22:00 — inside last 3h
       }),
     ];
 
-    // 3h range = midnight to 3am local
+    // 3h range on pinned day = 21:00-24:00 local
     const result = getSessionTimeline(entries, "2026-04-11", "3h");
     expect(result.totalActions).toBe(1);
+    expect(result.sessions[0].sessionKey).toBe("s2");
   });
 
   it("excludes sessions entirely outside the view window", () => {
@@ -415,20 +416,177 @@ describe("getSessionTimeline", () => {
         agentId: "bot-1",
         toolName: "read",
         decision: "allow",
-        timestamp: new Date(2026, 3, 11, 0, 30, 0).toISOString(), // 12:30am
+        timestamp: new Date(2026, 3, 11, 23, 0, 0).toISOString(), // 23:00 — inside last 3h
       }),
       entry({
         sessionKey: "s2",
         agentId: "bot-1",
         toolName: "read",
         decision: "allow",
-        timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), // 10am — outside 3h range
+        timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), // 10am — outside last 3h
       }),
     ];
 
     const result = getSessionTimeline(entries, "2026-04-11", "3h");
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0].sessionKey).toBe("s1");
+  });
+
+  // ── Rolling-window range pills (#8): range must span midnight ───────
+
+  it("24h range on today spans midnight and includes yesterday's sessions", () => {
+    // Override beforeEach's time: pin to 07:30 local so 24h window = [yesterday 07:30, today 07:30]
+    vi.setSystemTime(new Date(2026, 3, 12, 7, 30, 0));
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 17, 0, 0).toISOString(), // yesterday 17:00
+      }),
+      entry({
+        sessionKey: "s2",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 22, 0, 0).toISOString(), // yesterday 22:00
+      }),
+      entry({
+        sessionKey: "s3",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 12, 6, 0, 0).toISOString(), // today 06:00
+      }),
+      entry({
+        sessionKey: "s4",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 12, 7, 0, 0).toISOString(), // today 07:00
+      }),
+    ];
+    const result = getSessionTimeline(entries, undefined, "24h");
+
+    expect(result.totalActions).toBe(4);
+    expect(result.sessions).toHaveLength(4);
+  });
+
+  it("12h range on today excludes sessions older than 12h across midnight", () => {
+    // Pin to 07:30 local — 12h window = [yesterday 19:30, today 07:30]
+    vi.setSystemTime(new Date(2026, 3, 12, 7, 30, 0));
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 18, 0, 0).toISOString(), // yesterday 18:00 — OUT
+      }),
+      entry({
+        sessionKey: "s2",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 20, 0, 0).toISOString(), // yesterday 20:00 — IN
+      }),
+      entry({
+        sessionKey: "s3",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 12, 5, 0, 0).toISOString(), // today 05:00 — IN
+      }),
+      entry({
+        sessionKey: "s4",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 12, 7, 0, 0).toISOString(), // today 07:00 — IN
+      }),
+    ];
+    const result = getSessionTimeline(entries, undefined, "12h");
+
+    expect(result.totalActions).toBe(3);
+    const keys = result.sessions.map((s) => s.sessionKey).sort();
+    expect(keys).toEqual(["s2", "s3", "s4"]);
+  });
+
+  it("24h range on pinned past date equals full-day result (no-op for a pinned day)", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 2, 0, 0).toISOString(),
+      }),
+      entry({
+        sessionKey: "s2",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 14, 0, 0).toISOString(),
+      }),
+      entry({
+        sessionKey: "s3",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 22, 0, 0).toISOString(),
+      }),
+    ];
+    const fullDay = getSessionTimeline(entries, "2026-04-11");
+    const with24h = getSessionTimeline(entries, "2026-04-11", "24h");
+
+    expect(with24h.totalActions).toBe(fullDay.totalActions);
+    expect(with24h.totalActions).toBe(3);
+  });
+
+  it("6h range on pinned past date returns only the last 6 hours of that day", () => {
+    const entries = [
+      entry({
+        sessionKey: "s1",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 10, 0, 0).toISOString(), // 10:00 — outside
+      }),
+      entry({
+        sessionKey: "s2",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 17, 30, 0).toISOString(), // 17:30 — outside
+      }),
+      entry({
+        sessionKey: "s3",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 18, 30, 0).toISOString(), // 18:30 — inside
+      }),
+      entry({
+        sessionKey: "s4",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 22, 0, 0).toISOString(), // 22:00 — inside
+      }),
+      entry({
+        sessionKey: "s5",
+        agentId: "bot-1",
+        toolName: "read",
+        decision: "allow",
+        timestamp: new Date(2026, 3, 11, 23, 59, 0).toISOString(), // 23:59 — inside
+      }),
+    ];
+    const result = getSessionTimeline(entries, "2026-04-11", "6h");
+
+    expect(result.totalActions).toBe(3);
+    const keys = result.sessions.map((s) => s.sessionKey).sort();
+    expect(keys).toEqual(["s3", "s4", "s5"]);
   });
 
   it("uses LLM-adjusted scores when available", () => {
