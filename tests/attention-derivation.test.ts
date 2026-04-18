@@ -322,7 +322,35 @@ describe("deriveAgentAttention — ack filtering", () => {
     vi.useRealTimers();
   });
 
-  it("hides agents whose latest trigger is covered by a dismiss ack", () => {
+  it("hides agents whose latest trigger is covered by an ack", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 9 * 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_1",
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 3 * 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_2",
+      }),
+    ];
+    const triggerAt = entries[1].timestamp;
+    const store = tmpStore();
+    store.append({
+      id: AttentionStore.generateId(),
+      scope: { kind: "agent", agentId: "alpha", upToIso: triggerAt },
+      ackedAt: new Date(NOW_MS).toISOString(),
+      action: "ack",
+    });
+    expect(deriveAgentAttention(entries, undefined, store, NOW_MS)).toHaveLength(0);
+  });
+
+  it("also hides agents with legacy action='dismiss' records (backward compat — #6)", () => {
+    // The on-disk schema still accepts "dismiss" for rows written before the
+    // verb was collapsed; any existing ack record must hide regardless of verb.
     const entries: AuditEntry[] = [
       entry({
         timestamp: new Date(NOW_MS - 9 * 60_000).toISOString(),
@@ -346,35 +374,6 @@ describe("deriveAgentAttention — ack filtering", () => {
       action: "dismiss",
     });
     expect(deriveAgentAttention(entries, undefined, store, NOW_MS)).toHaveLength(0);
-  });
-
-  it("keeps acked agents but sets ackedAt so the UI can mute them", () => {
-    const entries: AuditEntry[] = [
-      entry({
-        timestamp: new Date(NOW_MS - 9 * 60_000).toISOString(),
-        decision: "block",
-        agentId: "alpha",
-        toolCallId: "tc_1",
-      }),
-      entry({
-        timestamp: new Date(NOW_MS - 3 * 60_000).toISOString(),
-        decision: "block",
-        agentId: "alpha",
-        toolCallId: "tc_2",
-      }),
-    ];
-    const triggerAt = entries[1].timestamp;
-    const store = tmpStore();
-    const ackedAt = new Date(NOW_MS).toISOString();
-    store.append({
-      id: AttentionStore.generateId(),
-      scope: { kind: "agent", agentId: "alpha", upToIso: triggerAt },
-      ackedAt,
-      action: "ack",
-    });
-    const result = deriveAgentAttention(entries, undefined, store, NOW_MS);
-    expect(result).toHaveLength(1);
-    expect(result[0].ackedAt).toBe(ackedAt);
   });
 
   it("re-raises an agent when a newer trigger arrives after the ack", () => {
@@ -501,14 +500,16 @@ describe("getAttention — T1 / T2a / T3 assembly", () => {
     expect(resp.highRisk).toHaveLength(0);
   });
 
-  it("hides dismissed entries and keeps acked ones with ackedAt", () => {
+  it("hides both acked and legacy-dismissed entries (single-verb semantics — #6)", () => {
+    // Both on-disk actions hide the row: new writes use "ack", existing
+    // "dismiss" records stay functional without migration.
     const store = tmpStore();
     const entries: AuditEntry[] = [
       entry({
         timestamp: new Date(NOW_MS - 60 * 60_000).toISOString(),
         decision: "block",
         agentId: "alpha",
-        toolCallId: "tc_dismissed",
+        toolCallId: "tc_legacy_dismiss",
       }),
       entry({
         timestamp: new Date(NOW_MS - 30 * 60_000).toISOString(),
@@ -516,11 +517,17 @@ describe("getAttention — T1 / T2a / T3 assembly", () => {
         agentId: "alpha",
         toolCallId: "tc_acked",
       }),
+      entry({
+        timestamp: new Date(NOW_MS - 10 * 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_untouched",
+      }),
     ];
     const ackedAt = new Date(NOW_MS).toISOString();
     store.append({
       id: AttentionStore.generateId(),
-      scope: { kind: "entry", toolCallId: "tc_dismissed" },
+      scope: { kind: "entry", toolCallId: "tc_legacy_dismiss" },
       ackedAt,
       action: "dismiss",
     });
@@ -532,8 +539,7 @@ describe("getAttention — T1 / T2a / T3 assembly", () => {
     });
     const resp = getAttention(entries, undefined, store, NOW_MS);
     expect(resp.blocked).toHaveLength(1);
-    expect(resp.blocked[0].toolCallId).toBe("tc_acked");
-    expect(resp.blocked[0].ackedAt).toBe(ackedAt);
+    expect(resp.blocked[0].toolCallId).toBe("tc_untouched");
   });
 
   it("sorts pending by timeoutMs ascending (most urgent first)", () => {

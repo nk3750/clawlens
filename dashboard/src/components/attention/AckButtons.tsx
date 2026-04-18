@@ -21,16 +21,16 @@ export default function AckButtons({
   onPersisted,
   showShortcutHint,
 }: Props) {
-  const [busy, setBusy] = useState<"ack" | "dismiss" | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const send = async (action: "ack" | "dismiss") => {
+  const send = async () => {
     if (busy) return;
-    setBusy(action);
+    setBusy(true);
     setError(null);
     const revert = onOptimisticRemove();
     try {
-      const res = await fetch(`${BASE}/api/attention/${action}`, {
+      const res = await fetch(`${BASE}/api/attention/ack`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope }),
@@ -41,7 +41,7 @@ export default function AckButtons({
       revert();
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -52,17 +52,17 @@ export default function AckButtons({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          send("ack");
+          send();
         }}
-        disabled={busy !== null}
-        title="Mark as reviewed (a)"
+        disabled={busy}
+        title="Ack (a)"
         className="px-2 py-1 rounded-md text-[11px] font-sans transition-colors"
         style={{
           backgroundColor: "transparent",
           color: "var(--cl-text-secondary)",
           border: "1px solid var(--cl-border-default)",
-          cursor: busy !== null ? "not-allowed" : "pointer",
-          opacity: busy === "ack" ? 0.5 : 1,
+          cursor: busy ? "not-allowed" : "pointer",
+          opacity: busy ? 0.5 : 1,
         }}
       >
         <span aria-hidden="true">✓</span> Ack
@@ -75,37 +75,6 @@ export default function AckButtons({
             }}
           >
             a
-          </kbd>
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          send("dismiss");
-        }}
-        disabled={busy !== null}
-        title="Dismiss (d)"
-        className="px-2 py-1 rounded-md text-[11px] font-sans transition-colors"
-        style={{
-          backgroundColor: "transparent",
-          color: "var(--cl-text-muted)",
-          border: "1px solid transparent",
-          cursor: busy !== null ? "not-allowed" : "pointer",
-          opacity: busy === "dismiss" ? 0.5 : 1,
-        }}
-      >
-        <span aria-hidden="true">✕</span> Dismiss
-        {showShortcutHint && (
-          <kbd
-            className="ml-1 font-mono text-[9px] px-1 rounded"
-            style={{
-              color: "var(--cl-text-muted)",
-              border: "1px solid var(--cl-border-subtle)",
-            }}
-          >
-            d
           </kbd>
         )}
       </button>

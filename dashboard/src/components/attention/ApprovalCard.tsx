@@ -26,7 +26,6 @@ export default function ApprovalCard({ item, pulsing }: Props) {
         borderRadius: 12,
         borderLeft: `4px solid ${riskColorRaw("high")}`,
         padding: "16px 20px",
-        opacity: item.ackedAt ? 0.6 : 1,
       }}
     >
       <div className="flex items-start justify-between gap-3">

@@ -69,8 +69,6 @@ export interface AttentionItem {
     timeoutMs?: number;
     /** T3 only — explains why this is surfaced without a matching guardrail. */
     guardrailHint?: string;
-    /** When set, this item has been acked (but not dismissed). */
-    ackedAt?: string;
 }
 export interface AttentionAgent {
     agentId: string;
@@ -82,8 +80,6 @@ export interface AttentionAgent {
     triggerCount: number;
     peakTier: RiskTierLabel;
     lastSessionKey?: string;
-    /** When set, this agent has been acked (but not dismissed). */
-    ackedAt?: string;
 }
 export interface AttentionResponse {
     pending: AttentionItem[];
@@ -229,16 +225,17 @@ declare function tierRank(t: RiskTierLabel): number;
  *   3. sustained_elevation   — session avg risk > 50 and 10+ actions
  *
  * Results are filtered against the AttentionStore: any agent whose `triggerAt`
- * is covered by an existing ack (scope=agent, upToIso >= triggerAt) is hidden
- * *unless* the ack was an `ack` (not `dismiss`), in which case we keep the row
- * but flag it with `ackedAt` so the UI can render it at reduced weight.
+ * is covered by an existing ack (scope=agent, upToIso >= triggerAt) is hidden.
+ * The on-disk `action` field ("ack" | "dismiss") is ignored on the read path —
+ * any record removes the row. Legacy "dismiss" records keep working without
+ * migration; new writes always use "ack". See #6.
  */
 export declare function deriveAgentAttention(entries: AuditEntry[], guardrailStore?: GuardrailStore, attentionStore?: AttentionStore, now?: number): AttentionAgent[];
 /**
  * Single consolidated attention response. Replaces `/api/interventions` on the
- * homepage. Items that the user has already dismissed are hidden entirely;
- * items that are only acked are kept in the response with `ackedAt` set so the
- * UI can render them with reduced weight.
+ * homepage. Items the user has already acknowledged (legacy "dismiss" records
+ * included) are hidden entirely — there is no longer a reviewed-but-visible
+ * state.
  */
 export declare function getAttention(entries: AuditEntry[], guardrailStore?: GuardrailStore, attentionStore?: AttentionStore, now?: number): AttentionResponse;
 export { tierRank as _tierRankForTests };

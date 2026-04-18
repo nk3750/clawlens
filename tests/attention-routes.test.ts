@@ -194,7 +194,7 @@ describe("GET /api/attention", () => {
   });
 });
 
-describe("POST /api/attention/ack + /dismiss", () => {
+describe("POST /api/attention/ack", () => {
   let api: OpenClawPluginApi;
   let getHandler: () => HttpRouteHandler;
   let cleanupStore: () => void;
@@ -217,7 +217,7 @@ describe("POST /api/attention/ack + /dismiss", () => {
     cleanupStore();
   });
 
-  it("accepts a valid entry-scoped ack and persists it to the store", async () => {
+  it("accepts a valid entry-scoped ack and persists it with action='ack'", async () => {
     const { res, out } = makeRes();
     await getHandler()(
       makeReq("/plugins/clawlens/api/attention/ack", {
@@ -237,11 +237,11 @@ describe("POST /api/attention/ack + /dismiss", () => {
     expect(persisted?.note).toBe("looked at this");
   });
 
-  it("accepts a valid agent-scoped dismiss", async () => {
+  it("accepts a valid agent-scoped ack", async () => {
     const upToIso = "2026-04-17T12:00:00.000Z";
     const { res, out } = makeRes();
     await getHandler()(
-      makeReq("/plugins/clawlens/api/attention/dismiss", {
+      makeReq("/plugins/clawlens/api/attention/ack", {
         method: "POST",
         body: { scope: { kind: "agent", agentId: "alpha", upToIso } },
       }),
@@ -249,7 +249,19 @@ describe("POST /api/attention/ack + /dismiss", () => {
     );
     expect(out.status).toBe(200);
     const persisted = store.isAckedAgent("alpha", upToIso);
-    expect(persisted?.action).toBe("dismiss");
+    expect(persisted?.action).toBe("ack");
+  });
+
+  it("returns 404 for POST /api/attention/dismiss (verb removed — see #6)", async () => {
+    const { res, out } = makeRes();
+    await getHandler()(
+      makeReq("/plugins/clawlens/api/attention/dismiss", {
+        method: "POST",
+        body: { scope: { kind: "entry", toolCallId: "tc_42" } },
+      }),
+      res,
+    );
+    expect(out.status).toBe(404);
   });
 
   it("returns 400 when the scope is missing", async () => {
@@ -280,7 +292,7 @@ describe("POST /api/attention/ack + /dismiss", () => {
   it("returns 400 when the agent scope has an unparseable upToIso", async () => {
     const { res, out } = makeRes();
     await getHandler()(
-      makeReq("/plugins/clawlens/api/attention/dismiss", {
+      makeReq("/plugins/clawlens/api/attention/ack", {
         method: "POST",
         body: { scope: { kind: "agent", agentId: "alpha", upToIso: "not-a-date" } },
       }),

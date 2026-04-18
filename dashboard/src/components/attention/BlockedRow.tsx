@@ -35,7 +35,6 @@ export default function BlockedRow({
         borderLeft: `3px solid ${borderColor}`,
         backgroundColor: bgColor,
         borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
-        opacity: item.ackedAt ? 0.55 : 1,
       }}
     >
       <span aria-hidden="true" className="text-sm shrink-0">

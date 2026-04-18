@@ -88,8 +88,8 @@ export default function AttentionInbox() {
     );
   }, [data, optimisticRemoved]);
 
-  // First-non-acked non-hero item is "topmost" for keyboard shortcut targeting.
-  const topmost = visibleNonHero.find((v) => !v.item.ackedAt) ?? visibleNonHero[0];
+  // First visible non-hero item is "topmost" for keyboard shortcut targeting.
+  const topmost = visibleNonHero[0];
 
   const onOptimisticRemove = useCallback((key: string) => {
     setOptimisticRemoved((prev) => {
@@ -157,35 +157,6 @@ export default function AttentionInbox() {
   );
 
   useKeyboardShortcut(
-    "d",
-    () => {
-      if (!topmost) return;
-      const key = nonHeroKey(topmost);
-      const revert = onOptimisticRemove(key);
-      const scope =
-        topmost.kind === "agent"
-          ? {
-              kind: "agent" as const,
-              agentId: topmost.item.agentId,
-              upToIso: topmost.item.triggerAt,
-            }
-          : { kind: "entry" as const, toolCallId: topmost.item.toolCallId };
-      fetch("/plugins/clawlens/api/attention/dismiss", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope }),
-      })
-        .then((r) => {
-          if (!r.ok) throw new Error();
-          refetch();
-        })
-        .catch(revert);
-    },
-    "[data-attention-inbox]",
-    !!topmost,
-  );
-
-  useKeyboardShortcut(
     "v",
     () => {
       if (!topmost) return;
@@ -242,11 +213,7 @@ export default function AttentionInbox() {
       </div>
 
       {visiblePending.map((p, i) => (
-        <ApprovalCard
-          key={`t1-${p.toolCallId}`}
-          item={p}
-          pulsing={i === 0 && !p.ackedAt}
-        />
+        <ApprovalCard key={`t1-${p.toolCallId}`} item={p} pulsing={i === 0} />
       ))}
 
       {visibleList.length > 0 && (

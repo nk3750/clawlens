@@ -243,8 +243,7 @@ export function registerDashboardRoutes(api, deps) {
                 sendJson(res, getAttention(entries, deps.guardrailStore, deps.attentionStore));
                 return true;
             }
-            if ((subPath === "api/attention/ack" || subPath === "api/attention/dismiss") &&
-                req.method === "POST") {
+            if (subPath === "api/attention/ack" && req.method === "POST") {
                 if (!deps.attentionStore) {
                     res.writeHead(501, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ error: "Attention store not configured" }));
@@ -256,13 +255,15 @@ export function registerDashboardRoutes(api, deps) {
                     res.end(JSON.stringify({ error: "Invalid scope" }));
                     return true;
                 }
-                const action = subPath === "api/attention/ack" ? "ack" : "dismiss";
+                // Single-verb semantics (#6): always writes action="ack". The schema
+                // still accepts "dismiss" for backward compat on read, but the write
+                // path never produces one.
                 const record = {
                     id: AttentionStore.generateId(),
                     scope: body.scope,
                     ackedAt: new Date().toISOString(),
                     ackedBy: typeof body.ackedBy === "string" ? body.ackedBy : undefined,
-                    action,
+                    action: "ack",
                     note: typeof body.note === "string" ? body.note : undefined,
                 };
                 deps.attentionStore.append(record);

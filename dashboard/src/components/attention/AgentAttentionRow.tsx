@@ -32,7 +32,6 @@ export default function AgentAttentionRow({
         borderLeft: `3px solid ${borderColor}`,
         backgroundColor: "rgba(251, 191, 36, 0.05)",
         borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
-        opacity: item.ackedAt ? 0.55 : 1,
       }}
     >
       <span aria-hidden="true" className="text-sm shrink-0">

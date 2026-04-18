@@ -82,7 +82,6 @@ export interface AttentionItem {
   timeoutMs?: number;
   /** T3 only — why this is surfaced (e.g. "no matching guardrail"). */
   guardrailHint?: string;
-  ackedAt?: string;
 }
 
 export interface AttentionAgent {
@@ -94,7 +93,6 @@ export interface AttentionAgent {
   triggerCount: number;
   peakTier: RiskTier;
   lastSessionKey?: string;
-  ackedAt?: string;
 }
 
 export interface AttentionResponse {

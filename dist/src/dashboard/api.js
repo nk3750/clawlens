@@ -369,9 +369,10 @@ function describeAttentionReason(reason, count, avgRisk) {
  *   3. sustained_elevation   — session avg risk > 50 and 10+ actions
  *
  * Results are filtered against the AttentionStore: any agent whose `triggerAt`
- * is covered by an existing ack (scope=agent, upToIso >= triggerAt) is hidden
- * *unless* the ack was an `ack` (not `dismiss`), in which case we keep the row
- * but flag it with `ackedAt` so the UI can render it at reduced weight.
+ * is covered by an existing ack (scope=agent, upToIso >= triggerAt) is hidden.
+ * The on-disk `action` field ("ack" | "dismiss") is ignored on the read path —
+ * any record removes the row. Legacy "dismiss" records keep working without
+ * migration; new writes always use "ack". See #6.
  */
 export function deriveAgentAttention(entries, guardrailStore, attentionStore, now = Date.now()) {
     const cutoffIso = new Date(now - AGENT_ATTN_WINDOW_MS).toISOString();
@@ -524,17 +525,10 @@ export function deriveAgentAttention(entries, guardrailStore, attentionStore, no
             continue;
         candidates.sort((a, b) => b.triggerAt.localeCompare(a.triggerAt));
         const chosen = candidates[0];
-        // Ack filter: if dismissed and upToIso covers triggerAt, drop the row.
-        // If acked (not dismissed), keep it but mark as acked.
-        let ackedAt;
-        if (attentionStore) {
-            const ack = attentionStore.isAckedAgent(agentId, chosen.triggerAt);
-            if (ack) {
-                if (ack.action === "dismiss")
-                    continue;
-                ackedAt = ack.ackedAt;
-            }
-        }
+        // Ack filter: any existing ack record covering triggerAt hides the row.
+        // The record's action field is ignored (see #6 — single-verb semantics).
+        if (attentionStore?.isAckedAgent(agentId, chosen.triggerAt))
+            continue;
         const lastSessionKey = chosen.sessionKey ?? sorted.filter((e) => e.sessionKey).slice(-1)[0]?.sessionKey ?? undefined;
         out.push({
             agentId,
@@ -545,27 +539,25 @@ export function deriveAgentAttention(entries, guardrailStore, attentionStore, no
             triggerCount: chosen.count,
             peakTier: tierFromScore(chosen.peak),
             lastSessionKey,
-            ackedAt,
         });
     }
     out.sort((a, b) => b.triggerAt.localeCompare(a.triggerAt));
     return out;
 }
-function ackKeyForEntry(store, toolCallId) {
+/** True when an ack record exists for this toolCallId — regardless of the
+ *  record's `action` field. See #6: Ack and Dismiss were collapsed into a
+ *  single "hide" verb; the on-disk schema keeps "dismiss" for backward
+ *  compatibility with existing attention.jsonl rows, but both read the same. */
+function isEntryAcked(store, toolCallId) {
     if (!store || !toolCallId)
-        return { dismissed: false };
-    const ack = store.isAckedEntry(toolCallId);
-    if (!ack)
-        return { dismissed: false };
-    if (ack.action === "dismiss")
-        return { dismissed: true };
-    return { ackedAt: ack.ackedAt, dismissed: false };
+        return false;
+    return store.isAckedEntry(toolCallId) !== null;
 }
 /**
  * Single consolidated attention response. Replaces `/api/interventions` on the
- * homepage. Items that the user has already dismissed are hidden entirely;
- * items that are only acked are kept in the response with `ackedAt` set so the
- * UI can render them with reduced weight.
+ * homepage. Items the user has already acknowledged (legacy "dismiss" records
+ * included) are hidden entirely — there is no longer a reviewed-but-visible
+ * state.
  */
 export function getAttention(entries, guardrailStore, attentionStore, now = Date.now()) {
     const evalIdx = buildEvalIndex(entries);
@@ -611,26 +603,22 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
             !e.userResponse &&
             !e.executionResult &&
             !resolvedToolCallIds.has(e.toolCallId)) {
-            const ack = ackKeyForEntry(attentionStore, e.toolCallId);
-            if (ack.dismissed)
+            if (isEntryAcked(attentionStore, e.toolCallId))
                 continue;
             const elapsedMs = now - new Date(e.timestamp).getTime();
             pending.push({
                 ...common,
                 kind: "pending",
                 timeoutMs: Math.max(0, APPROVAL_TIMEOUT_MS - elapsedMs),
-                ackedAt: ack.ackedAt,
             });
             continue;
         }
         if ((eff === "block" || eff === "timeout") && e.timestamp >= blockedCutoffIso) {
-            const ack = ackKeyForEntry(attentionStore, e.toolCallId);
-            if (ack.dismissed)
+            if (isEntryAcked(attentionStore, e.toolCallId))
                 continue;
             blocked.push({
                 ...common,
                 kind: eff === "timeout" ? "timeout" : "blocked",
-                ackedAt: ack.ackedAt,
             });
             continue;
         }
@@ -641,14 +629,12 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
                 if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
                     continue;
             }
-            const ack = ackKeyForEntry(attentionStore, e.toolCallId);
-            if (ack.dismissed)
+            if (isEntryAcked(attentionStore, e.toolCallId))
                 continue;
             highRisk.push({
                 ...common,
                 kind: "high_risk",
                 guardrailHint: "no matching guardrail",
-                ackedAt: ack.ackedAt,
             });
         }
     }

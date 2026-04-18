@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe("BlockedRow", () => {
-  it("renders agent name, description, view link, and ack/dismiss buttons", () => {
+  it("renders agent name, description, view link, and a single Ack button (no Dismiss)", () => {
     wrap(
       <BlockedRow
         item={blockedItem()}
@@ -72,20 +72,7 @@ describe("BlockedRow", () => {
     const links = screen.getAllByRole("link", { name: /View session/i });
     expect(links.length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Ack/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Dismiss/i })).toBeInTheDocument();
-  });
-
-  it("fades the row when ackedAt is present", () => {
-    const { container } = wrap(
-      <BlockedRow
-        item={blockedItem({ ackedAt: NOW_ISO })}
-        isLast
-        onOptimisticRemove={() => () => {}}
-        onPersisted={vi.fn()}
-      />,
-    );
-    const row = container.querySelector("[data-cl-attention-row='blocked']") as HTMLElement;
-    expect(row.style.opacity).toBe("0.55");
+    expect(screen.queryByRole("button", { name: /Dismiss/i })).toBeNull();
   });
 
   it("distinguishes kind=timeout from kind=blocked via the 'Timed out' verb", () => {
@@ -250,10 +237,10 @@ describe("AckButtons — optimistic flow", () => {
         onPersisted={onPers}
       />,
     );
-    await user.click(screen.getByRole("button", { name: /Dismiss/i }));
+    await user.click(screen.getByRole("button", { name: /Ack/i }));
     expect(onOpt).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith(
-      "/plugins/clawlens/api/attention/dismiss",
+      "/plugins/clawlens/api/attention/ack",
       expect.any(Object),
     );
     expect(revert).toHaveBeenCalledTimes(1);
