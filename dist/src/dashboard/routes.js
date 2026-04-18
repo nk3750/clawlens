@@ -3,9 +3,8 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { checkHealth, computeEnhancedStats, DEFAULT_AGENT_ID, getActivityTimeline, getAgentDetail, getAgents, getAttention, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, localDateOf, localToday, resolveSplitKeyForEntry, } from "./api";
+import { buildEvalIndex, checkHealth, computeEnhancedStats, getActivityTimeline, getAgentDetail, getAgents, getAttention, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
-import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
 const MIME_TYPES = {
@@ -394,25 +393,21 @@ export function registerDashboardRoutes(api, deps) {
                     Connection: "keep-alive",
                 });
                 const listener = (entry) => {
-                    const enriched = {
-                        ...entry,
-                        category: getCategory(entry.toolName),
-                    };
-                    // Resolve split session key so SSE consumers link to the correct sub-session
+                    // Single readEntries scan per emit — feeds both buildEvalIndex (for
+                    // LLM-adjusted risk fields) and resolveSplitKeyForEntry (for split
+                    // session #N suffixes). Same scan the inline path used to do for the
+                    // splitter, so this isn't new work.
+                    const allEntries = deps.auditLogger.readEntries();
+                    const mapped = mapEntry(entry, buildEvalIndex(allEntries), deps.guardrailStore);
+                    // mapEntry doesn't know about session splitting (it's used by both
+                    // bucketed list endpoints and SSE); apply the split-key override
+                    // here so live consumers link to the correct sub-session.
                     if (entry.sessionKey) {
-                        const allEntries = deps.auditLogger.readEntries();
                         const splitKey = resolveSplitKeyForEntry(allEntries, entry);
                         if (splitKey)
-                            enriched.sessionKey = splitKey;
+                            mapped.sessionKey = splitKey;
                     }
-                    if (deps.guardrailStore && entry.decision) {
-                        const key = extractIdentityKey(entry.toolName, entry.params);
-                        const matched = deps.guardrailStore.peek(entry.agentId || DEFAULT_AGENT_ID, entry.toolName, key);
-                        if (matched) {
-                            enriched.guardrailMatch = { id: matched.id, action: matched.action };
-                        }
-                    }
-                    res.write(`data: ${JSON.stringify(enriched)}\n\n`);
+                    res.write(`data: ${JSON.stringify(mapped)}\n\n`);
                 };
                 deps.auditLogger.on("entry", listener);
                 req.on("close", () => {

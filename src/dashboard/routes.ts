@@ -9,9 +9,9 @@ import { type GuardrailAction, isValidGuardrailAction } from "../guardrails/type
 import type { PendingApprovalStore } from "../hooks/pending-approval-store";
 import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
 import {
+  buildEvalIndex,
   checkHealth,
   computeEnhancedStats,
-  DEFAULT_AGENT_ID,
   type EntryFilters,
   getActivityTimeline,
   getAgentDetail,
@@ -24,11 +24,11 @@ import {
   getSessionTimeline,
   localDateOf,
   localToday,
+  mapEntry,
   resolveSplitKeyForEntry,
 } from "./api";
 import { type AckScope, AttentionStore, isValidAckScope } from "./attention-state";
 import type { ActivityCategory } from "./categories";
-import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
 
@@ -481,28 +481,20 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         });
 
         const listener = (entry: AuditEntry) => {
-          const enriched: Record<string, unknown> = {
-            ...entry,
-            category: getCategory(entry.toolName),
-          };
-          // Resolve split session key so SSE consumers link to the correct sub-session
+          // Single readEntries scan per emit — feeds both buildEvalIndex (for
+          // LLM-adjusted risk fields) and resolveSplitKeyForEntry (for split
+          // session #N suffixes). Same scan the inline path used to do for the
+          // splitter, so this isn't new work.
+          const allEntries = deps.auditLogger.readEntries();
+          const mapped = mapEntry(entry, buildEvalIndex(allEntries), deps.guardrailStore);
+          // mapEntry doesn't know about session splitting (it's used by both
+          // bucketed list endpoints and SSE); apply the split-key override
+          // here so live consumers link to the correct sub-session.
           if (entry.sessionKey) {
-            const allEntries = deps.auditLogger.readEntries();
             const splitKey = resolveSplitKeyForEntry(allEntries, entry);
-            if (splitKey) enriched.sessionKey = splitKey;
+            if (splitKey) mapped.sessionKey = splitKey;
           }
-          if (deps.guardrailStore && entry.decision) {
-            const key = extractIdentityKey(entry.toolName, entry.params);
-            const matched = deps.guardrailStore.peek(
-              entry.agentId || DEFAULT_AGENT_ID,
-              entry.toolName,
-              key,
-            );
-            if (matched) {
-              enriched.guardrailMatch = { id: matched.id, action: matched.action };
-            }
-          }
-          res.write(`data: ${JSON.stringify(enriched)}\n\n`);
+          res.write(`data: ${JSON.stringify(mapped)}\n\n`);
         };
         deps.auditLogger.on("entry", listener);
 

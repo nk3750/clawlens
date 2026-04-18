@@ -151,6 +151,8 @@ export class AuditLogger extends EventEmitter {
             riskTier: data.riskTier,
             riskTags: data.riskTags,
             llmEvaluation: data.llmEvaluation,
+            agentId: data.agentId,
+            sessionKey: data.sessionKey,
         });
     }
     /** Log a guardrail match event. */
@@ -186,6 +188,8 @@ export class AuditLogger extends EventEmitter {
             },
             decision: data.approved ? "allow" : "block",
             userResponse: data.approved ? "approved" : "denied",
+            agentId: data.agentId,
+            sessionKey: data.sessionKey,
         });
     }
     /** Flush the write stream. */

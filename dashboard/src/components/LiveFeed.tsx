@@ -18,6 +18,10 @@ export default function LiveFeed() {
   useSSE<EntryResponse>(
     "api/stream",
     useCallback((entry: EntryResponse) => {
+      // Skip result-only emits (after_tool_call, eval, approval-resolution).
+      // Only decision rows belong in the action feed; everything else is a
+      // post-fact annotation on a row already shown.
+      if (!entry.decision) return;
       setSseEntries((prev) => {
         const next = [entry, ...prev].slice(0, MAX_ITEMS);
         return next;

@@ -64,7 +64,7 @@ function getEffectiveScore(entry, evalIdx) {
     }
     return entry.riskScore;
 }
-function mapEntry(entry, evalIndex, guardrailStore) {
+export function mapEntry(entry, evalIndex, guardrailStore) {
     // If there's an LLM eval for this tool call, use its adjusted score/tier/tags
     const evalEntry = entry.toolCallId ? evalIndex?.get(entry.toolCallId) : undefined;
     const llmEval = evalEntry?.llmEvaluation ?? entry.llmEvaluation;
@@ -104,7 +104,7 @@ function mapEntry(entry, evalIndex, guardrailStore) {
     };
 }
 /** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
-function buildEvalIndex(entries) {
+export function buildEvalIndex(entries) {
     const index = new Map();
     for (const e of entries) {
         if (e.refToolCallId && e.llmEvaluation) {

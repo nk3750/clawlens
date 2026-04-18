@@ -5,36 +5,10 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * useApi and useSSE are the AttentionInbox's two side-effecting deps. We
- * mock them so tests can feed deterministic AttentionResponse fixtures
- * without booting an EventSource (jsdom ships none) or the API layer.
- */
-vi.mock("../dashboard/src/hooks/useApi", () => ({
-  useApi: vi.fn(),
-}));
-vi.mock("../dashboard/src/hooks/useSSE", () => ({
-  useSSE: vi.fn(),
-}));
-
 import AttentionInbox from "../dashboard/src/components/AttentionInbox";
-import { useApi } from "../dashboard/src/hooks/useApi";
 import type { AttentionResponse } from "../dashboard/src/lib/types";
 
-const mockedUseApi = vi.mocked(useApi);
-
 const NOW_ISO = "2026-04-17T12:00:00.000Z";
-
-function driveUseApi(data: AttentionResponse | null, refetch = vi.fn()) {
-  mockedUseApi.mockReturnValue({
-    data,
-    loading: false,
-    error: null,
-    refetch,
-    // biome-ignore lint/suspicious/noExplicitAny: mock shape
-  } as any);
-  return refetch;
-}
 
 function emptyResp(): AttentionResponse {
   return {
@@ -61,12 +35,18 @@ function makeBlocked(tcid: string, agentId = "alpha") {
   };
 }
 
-function renderInbox() {
-  return render(
+/**
+ * Render with explicit props. AttentionInbox no longer fetches its own data —
+ * `Agents.tsx` owns the useLiveApi<AttentionResponse> call and passes
+ * { data, refetch } down. Tests mirror that shape.
+ */
+function renderInbox(data: AttentionResponse | null, refetch = vi.fn()) {
+  render(
     <MemoryRouter>
-      <AttentionInbox />
+      <AttentionInbox data={data} refetch={refetch} />
     </MemoryRouter>,
   );
+  return refetch;
 }
 
 beforeEach(() => {
@@ -83,99 +63,126 @@ afterEach(() => {
 
 describe("AttentionInbox — empty + null states", () => {
   it("renders nothing while data is null", () => {
-    driveUseApi(null);
-    const { container } = renderInbox();
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox data={null} refetch={vi.fn()} />
+      </MemoryRouter>,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
   it("renders nothing when no items exist", () => {
-    driveUseApi(emptyResp());
-    const { container } = renderInbox();
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox data={emptyResp()} refetch={vi.fn()} />
+      </MemoryRouter>,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 });
 
 describe("AttentionInbox — rendering rows", () => {
   it("pluralizes the header ('items need attention')", () => {
-    driveUseApi({
+    renderInbox({
       ...emptyResp(),
       blocked: [makeBlocked("tc_1"), makeBlocked("tc_2")],
     });
-    renderInbox();
     expect(screen.getByText(/2 items need attention/i)).toBeInTheDocument();
   });
 
   it("singularizes the header with one item", () => {
-    driveUseApi({
+    renderInbox({
       ...emptyResp(),
       blocked: [makeBlocked("tc_1")],
     });
-    renderInbox();
     expect(screen.getByText(/1 item needs attention/i)).toBeInTheDocument();
   });
 
   it("caps the non-hero list at 3 rows with a 'Show N more' button", () => {
-    driveUseApi({
-      ...emptyResp(),
-      blocked: [
-        makeBlocked("tc_1"),
-        makeBlocked("tc_2"),
-        makeBlocked("tc_3"),
-        makeBlocked("tc_4"),
-        makeBlocked("tc_5"),
-      ],
-    });
-    const { container } = renderInbox();
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            blocked: [
+              makeBlocked("tc_1"),
+              makeBlocked("tc_2"),
+              makeBlocked("tc_3"),
+              makeBlocked("tc_4"),
+              makeBlocked("tc_5"),
+            ],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
     const rows = container.querySelectorAll("[data-cl-attention-row='blocked']");
     expect(rows).toHaveLength(3);
     expect(screen.getByRole("button", { name: /Show 2 more/i })).toBeInTheDocument();
   });
 
   it("expands all non-hero rows after clicking 'Show N more'", async () => {
-    driveUseApi({
-      ...emptyResp(),
-      blocked: [makeBlocked("tc_1"), makeBlocked("tc_2"), makeBlocked("tc_3"), makeBlocked("tc_4")],
-    });
-    const user = userEvent.setup();
-    const { container } = renderInbox();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            blocked: [
+              makeBlocked("tc_1"),
+              makeBlocked("tc_2"),
+              makeBlocked("tc_3"),
+              makeBlocked("tc_4"),
+            ],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
     await user.click(screen.getByRole("button", { name: /Show 1 more/i }));
     const rows = container.querySelectorAll("[data-cl-attention-row='blocked']");
     expect(rows).toHaveLength(4);
   });
 
   it("applies the pulse class to the first pending approval only (cap at one)", () => {
-    driveUseApi({
-      ...emptyResp(),
-      pending: [
-        {
-          kind: "pending",
-          toolCallId: "tc_p1",
-          timestamp: NOW_ISO,
-          agentId: "alpha",
-          agentName: "alpha",
-          toolName: "exec",
-          description: "Waiting approval 1",
-          riskScore: 72,
-          riskTier: "high",
-          sessionKey: "alpha:main",
-          timeoutMs: 240_000,
-        },
-        {
-          kind: "pending",
-          toolCallId: "tc_p2",
-          timestamp: NOW_ISO,
-          agentId: "beta",
-          agentName: "beta",
-          toolName: "exec",
-          description: "Waiting approval 2",
-          riskScore: 70,
-          riskTier: "high",
-          sessionKey: "beta:main",
-          timeoutMs: 240_000,
-        },
-      ],
-    });
-    const { container } = renderInbox();
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            pending: [
+              {
+                kind: "pending",
+                toolCallId: "tc_p1",
+                timestamp: NOW_ISO,
+                agentId: "alpha",
+                agentName: "alpha",
+                toolName: "exec",
+                description: "Waiting approval 1",
+                riskScore: 72,
+                riskTier: "high",
+                sessionKey: "alpha:main",
+                timeoutMs: 240_000,
+              },
+              {
+                kind: "pending",
+                toolCallId: "tc_p2",
+                timestamp: NOW_ISO,
+                agentId: "beta",
+                agentName: "beta",
+                toolName: "exec",
+                description: "Waiting approval 2",
+                riskScore: 70,
+                riskTier: "high",
+                sessionKey: "beta:main",
+                timeoutMs: 240_000,
+              },
+            ],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
     const pulsing = container.querySelectorAll(".attention-pulse");
     // Only one of the two pending cards should pulse.
     expect(pulsing).toHaveLength(1);
@@ -183,12 +190,9 @@ describe("AttentionInbox — rendering rows", () => {
 });
 
 describe("AttentionInbox — optimistic ack via button", () => {
-  it("removes the row from the DOM as soon as Ack is clicked", async () => {
-    const user = userEvent.setup();
-    const refetch = driveUseApi({
-      ...emptyResp(),
-      blocked: [makeBlocked("tc_1"), makeBlocked("tc_2")],
-    });
+  it("removes the row and calls the refetch prop after a successful POST", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const refetch = vi.fn();
     const mockFetch = vi.fn().mockImplementation(
       () =>
         new Promise<Response>((resolve) => {
@@ -198,13 +202,22 @@ describe("AttentionInbox — optimistic ack via button", () => {
     );
     vi.stubGlobal("fetch", mockFetch);
 
-    const { container } = renderInbox();
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            blocked: [makeBlocked("tc_1"), makeBlocked("tc_2")],
+          }}
+          refetch={refetch}
+        />
+      </MemoryRouter>,
+    );
     expect(container.querySelectorAll("[data-cl-attention-row='blocked']")).toHaveLength(2);
 
     const firstAckButton = screen.getAllByRole("button", { name: /Ack/i })[0];
     await user.click(firstAckButton);
 
-    // After the microtask resolves, refetch is called.
     await Promise.resolve();
     expect(mockFetch).toHaveBeenCalledWith(
       "/plugins/clawlens/api/attention/ack",
@@ -216,12 +229,11 @@ describe("AttentionInbox — optimistic ack via button", () => {
 
 describe("AttentionInbox — 'v' keyboard shortcut", () => {
   it("does NOT navigate when focus is outside the inbox", async () => {
-    driveUseApi({
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderInbox({
       ...emptyResp(),
       blocked: [makeBlocked("tc_nav")],
     });
-    const user = userEvent.setup();
-    renderInbox();
     // Blur any auto-focused element.
     (document.activeElement as HTMLElement | null)?.blur();
     await user.keyboard("v");

@@ -212,6 +212,9 @@ export declare function localToday(): string;
 export declare function localDateOf(isoTimestamp: string): string;
 /** Compute the effective user-facing decision for an entry. */
 export declare function getEffectiveDecision(entry: AuditEntry): string;
+export declare function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>, guardrailStore?: GuardrailStore): EntryResponse;
+/** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
+export declare function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry>;
 /** Max single-day action count across all history. Returns 100 as fallback for fresh installs. */
 export declare function computeHistoricDailyMax(entries: AuditEntry[]): number;
 /** Blocked + approval_required entries for a day, most recent first. Optionally includes high-risk allowed entries (Tier 3). */

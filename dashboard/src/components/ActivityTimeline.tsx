@@ -109,6 +109,10 @@ export default function ActivityTimeline({ isToday, selectedDate, range }: Props
     isToday ? "api/stream" : "",
     useCallback(
       (entry: EntryResponse) => {
+        // Skip result-only emits — only decision rows advance the swimlane.
+        // Without this, after_tool_call entries (no decision) would create
+        // ghost session entries with stale risk and category.
+        if (!entry.decision) return;
         if (!isToday) return;
         const agentId = entry.agentId || DEFAULT_AGENT_ID;
         const sessionKey = entry.sessionKey ?? "unknown";

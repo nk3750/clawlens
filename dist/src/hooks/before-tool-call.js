@@ -59,6 +59,8 @@ export function createBeforeToolCallHandler(deps) {
                                 approved,
                                 decision,
                                 storeAction,
+                                agentId: ctx?.agentId,
+                                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                             });
                         };
                         if (deps.pendingApprovalStore && toolCallId) {
@@ -131,6 +133,8 @@ export function createBeforeToolCallHandler(deps) {
                         riskScore: cached.adjustedScore,
                         riskTier: getTierFromScore(cached.adjustedScore),
                         riskTags: cached.tags,
+                        agentId: ctx?.agentId,
+                        sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                     });
                 }
                 else {
@@ -157,6 +161,8 @@ export function createBeforeToolCallHandler(deps) {
                                 riskScore: risk.score,
                                 riskTier: getTierFromScore(risk.score),
                                 riskTags: risk.tags,
+                                agentId: ctx?.agentId,
+                                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                             });
                         }
                         else {
@@ -167,6 +173,8 @@ export function createBeforeToolCallHandler(deps) {
                                 riskScore: evaluation.adjustedScore,
                                 riskTier: getTierFromScore(evaluation.adjustedScore),
                                 riskTags: evaluation.tags,
+                                agentId: ctx?.agentId,
+                                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                             });
                             // Cache high-confidence low-risk evaluations for future use
                             evalCache?.maybeCache(toolName, params, evaluation, config.risk.llmEvalThreshold);
@@ -202,6 +210,8 @@ export function createBeforeToolCallHandler(deps) {
                                 riskScore: risk.score,
                                 riskTier: getTierFromScore(risk.score),
                                 riskTags: risk.tags,
+                                agentId: ctx?.agentId,
+                                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                             });
                         }
                         catch {

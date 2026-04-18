@@ -78,6 +78,8 @@ export declare class AuditLogger extends EventEmitter {
         toolCallId?: string;
         executionResult: "success" | "failure";
         durationMs?: number;
+        agentId?: string;
+        sessionKey?: string;
     }): void;
     /**
      * Append an LLM evaluation entry that references the original tool call.
@@ -91,6 +93,8 @@ export declare class AuditLogger extends EventEmitter {
         riskScore: number;
         riskTier: NonNullable<AuditEntry["riskTier"]>;
         riskTags: string[];
+        agentId?: string;
+        sessionKey?: string;
     }): void;
     /** Log a guardrail match event. */
     logGuardrailMatch(data: {
@@ -113,6 +117,8 @@ export declare class AuditLogger extends EventEmitter {
         approved: boolean;
         decision: string;
         storeAction?: "removed" | "unchanged";
+        agentId?: string;
+        sessionKey?: string;
     }): void;
     /** Flush the write stream. */
     flush(): Promise<void>;

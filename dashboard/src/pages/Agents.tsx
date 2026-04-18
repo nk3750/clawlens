@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { useApi } from "../hooks/useApi";
+import { useLiveApi } from "../hooks/useLiveApi";
 import type { AgentInfo, AttentionResponse, Guardrail, StatsResponse } from "../lib/types";
 import FleetHeader from "../components/FleetHeader";
 import AttentionInbox from "../components/AttentionInbox";
@@ -30,10 +30,22 @@ export default function Agents() {
   const agentsPath = useMemo(() => `api/agents${dateParam}`, [dateParam]);
   const attentionPath = useMemo(() => `api/attention${dateParam}`, [dateParam]);
 
-  const { data: stats } = useApi<StatsResponse>(statsPath);
-  const { data: agents, loading, error, refetch } = useApi<AgentInfo[]>(agentsPath);
-  const { data: attention } = useApi<AttentionResponse>(attentionPath);
-  const { data: guardrailsData } = useApi<{ guardrails: Guardrail[] }>("api/guardrails");
+  const { data: stats } = useLiveApi<StatsResponse>(statsPath);
+  const { data: agents, loading, error, refetch } = useLiveApi<AgentInfo[]>(agentsPath);
+  // Attention only changes on pending/blocked/timeout/high-risk entries; gate
+  // the SSE-driven refetch so we don't hammer the API on every low-risk allow.
+  // High-risk threshold (65) matches the cutoff used in api.ts → getAttention.
+  const { data: attention, refetch: refetchAttention } = useLiveApi<AttentionResponse>(
+    attentionPath,
+    {
+      filter: (e) => {
+        const eff = e.effectiveDecision;
+        const score = e.riskScore ?? 0;
+        return eff === "pending" || eff === "block" || eff === "timeout" || score >= 65;
+      },
+    },
+  );
+  const { data: guardrailsData } = useLiveApi<{ guardrails: Guardrail[] }>("api/guardrails");
 
   const guardrails = guardrailsData?.guardrails ?? [];
   const pendingCount = attention?.pending.length ?? 0;
@@ -97,7 +109,7 @@ export default function Agents() {
 
       {/* Attention Inbox (homepage-v3-attention-inbox-spec) */}
       <div data-cl-inbox-pending-anchor data-cl-inbox-blocked-anchor>
-        <AttentionInbox />
+        <AttentionInbox data={attention} refetch={refetchAttention} />
       </div>
 
       {/* Activity Timeline — range is now driven by FleetHeader */}

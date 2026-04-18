@@ -299,7 +299,7 @@ function getEffectiveScore(
   return entry.riskScore;
 }
 
-function mapEntry(
+export function mapEntry(
   entry: AuditEntry,
   evalIndex?: Map<string, AuditEntry>,
   guardrailStore?: GuardrailStore,
@@ -347,7 +347,7 @@ function mapEntry(
 }
 
 /** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
-function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {
+export function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {
   const index = new Map<string, AuditEntry>();
   for (const e of entries) {
     if (e.refToolCallId && e.llmEvaluation) {

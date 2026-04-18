@@ -1,24 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useApi } from "../hooks/useApi";
 import { useKeyboardShortcut } from "../hooks/useKeyboardShortcut";
-import { useSSE } from "../hooks/useSSE";
-import { debounce } from "../lib/debounce";
-import type {
-  AttentionAgent,
-  AttentionItem,
-  AttentionResponse,
-  EntryResponse,
-} from "../lib/types";
+import type { AttentionAgent, AttentionItem, AttentionResponse } from "../lib/types";
 import { riskColorRaw } from "../lib/utils";
 import AgentAttentionRow from "./attention/AgentAttentionRow";
 import ApprovalCard from "./attention/ApprovalCard";
 import BlockedRow from "./attention/BlockedRow";
 import HighRiskRow from "./attention/HighRiskRow";
 
-const HIGH_RISK_THRESHOLD = 65;
 const INITIAL_VISIBLE_NON_HERO = 3;
-const SSE_REFETCH_DEBOUNCE_MS = 500;
 
 type NonHeroItem =
   | { kind: "blocked"; item: AttentionItem }
@@ -31,39 +21,19 @@ function nonHeroKey(v: NonHeroItem): string {
   return `${v.kind}:${v.item.toolCallId}`;
 }
 
-export default function AttentionInbox() {
-  const { data, refetch } = useApi<AttentionResponse>("api/attention");
+interface Props {
+  /** Owned by `Agents.tsx` — sourced from useLiveApi<AttentionResponse>. */
+  data: AttentionResponse | null;
+  /** Owned by `Agents.tsx` — refetch the attention payload after a successful ack. */
+  refetch: () => void;
+}
+
+export default function AttentionInbox({ data, refetch }: Props) {
   const [expanded, setExpanded] = useState(false);
   /** Keys locally removed (optimistic) so the row disappears before the refetch completes. */
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const containerRef = useRef<HTMLElement | null>(null);
-
-  // Wrap refetch in a debouncer so a burst of SSE events hitting our filter
-  // doesn't hammer the API — 500ms per spec §11.
-  const debouncedRefetch = useMemo(() => debounce(refetch, SSE_REFETCH_DEBOUNCE_MS), [refetch]);
-
-  useSSE<EntryResponse>("api/stream", (entry) => {
-    const eff = entry.effectiveDecision;
-    const score = entry.riskScore ?? 0;
-    if (
-      eff === "pending" ||
-      eff === "block" ||
-      eff === "timeout" ||
-      score >= HIGH_RISK_THRESHOLD
-    ) {
-      debouncedRefetch();
-    }
-  });
-
-  // Tab-return refetch: the user may have resolved an approval elsewhere.
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === "visible") refetch();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [refetch]);
 
   const nonHero = useMemo<NonHeroItem[]>(() => {
     if (!data) return [];
