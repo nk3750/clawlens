@@ -71,6 +71,11 @@ export interface AttentionItem {
     guardrailHint?: string;
     /** T3 only — identity key derived from tool + params, pre-filled into GuardrailModal. */
     identityKey?: string;
+    /** T1 only — present when a user-defined guardrail matches the pending entry's tool + identity key. */
+    guardrailMatch?: {
+        id: string;
+        identityKey: string;
+    };
 }
 export interface AttentionAgent {
     agentId: string;

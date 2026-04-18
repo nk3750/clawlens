@@ -618,10 +618,19 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
             if (isEntryAcked(attentionStore, e.toolCallId))
                 continue;
             const elapsedMs = now - new Date(e.timestamp).getTime();
+            let guardrailMatch;
+            if (guardrailStore) {
+                const key = extractIdentityKey(e.toolName, e.params);
+                const matched = guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key);
+                if (matched) {
+                    guardrailMatch = { id: matched.id, identityKey: key };
+                }
+            }
             pending.push({
                 ...common,
                 kind: "pending",
                 timeoutMs: Math.max(0, APPROVAL_TIMEOUT_MS - elapsedMs),
+                guardrailMatch,
             });
             continue;
         }

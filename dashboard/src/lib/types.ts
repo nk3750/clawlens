@@ -84,6 +84,8 @@ export interface AttentionItem {
   guardrailHint?: string;
   /** T3 only — identity key (tool + normalized params) used to pre-fill the guardrail modal. */
   identityKey?: string;
+  /** T1 only — set when a user-defined guardrail matches; renders the "matched guardrail: …" cause line. */
+  guardrailMatch?: { id: string; identityKey: string };
 }
 
 export interface AttentionAgent {

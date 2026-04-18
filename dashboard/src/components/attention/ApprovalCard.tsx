@@ -59,6 +59,17 @@ export default function ApprovalCard({ item, pulsing }: Props) {
           >
             {item.description}
           </p>
+          {item.guardrailMatch && (
+            <p
+              className="font-mono text-[11px]"
+              style={{ color: "var(--cl-text-muted)" }}
+            >
+              matched guardrail:{" "}
+              <span style={{ color: "var(--cl-text-secondary)" }}>
+                {item.guardrailMatch.identityKey}
+              </span>
+            </p>
+          )}
           {item.kind === "pending" && (
             <p
               className="font-mono text-[11px]"
