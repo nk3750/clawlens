@@ -1,5 +1,8 @@
 import type { ActivityCategory, RiskTier, RiskPosture } from "./types";
 
+/** Fallback id for entries whose agentId is not set — must match backend's DEFAULT_AGENT_ID. */
+export const DEFAULT_AGENT_ID = "default";
+
 export function relTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const s = Math.floor(diff / 1000);

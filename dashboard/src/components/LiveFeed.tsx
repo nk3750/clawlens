@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
 import type { EntryResponse, ActivityCategory } from "../lib/types";
-import { CATEGORY_META, riskColorRaw, riskTierFromScore, relTime } from "../lib/utils";
+import { CATEGORY_META, DEFAULT_AGENT_ID, riskColorRaw, riskTierFromScore, relTime } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
 import GradientAvatar from "./GradientAvatar";
 
@@ -90,7 +90,7 @@ export default function LiveFeed() {
         {entries.map((entry, i) => {
           const id = entry.toolCallId ?? entry.timestamp;
           const isNew = newIds.has(id);
-          const agentId = entry.agentId || "unknown";
+          const agentId = entry.agentId || DEFAULT_AGENT_ID;
           const category = (entry.category ?? "exploring") as ActivityCategory;
           const meta = CATEGORY_META[category];
           const tier = riskTierFromScore(entry.riskScore ?? 0);

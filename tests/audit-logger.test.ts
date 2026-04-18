@@ -198,4 +198,135 @@ describe("AuditLogger", () => {
     expect(entries[0].executionResult).toBe("success");
     expect(entries[0].durationMs).toBe(150);
   });
+
+  // ── agentId / sessionKey propagation (spec: audit-agent-id-propagation) ──
+
+  it("logResult records agentId and sessionKey when provided", async () => {
+    logger.logResult({
+      timestamp: "2026-04-18T10:00:00Z",
+      toolName: "exec",
+      toolCallId: "tc_ag_1",
+      executionResult: "success",
+      durationMs: 42,
+      agentId: "main",
+      sessionKey: "session-abc",
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].agentId).toBe("main");
+    expect(entries[0].sessionKey).toBe("session-abc");
+  });
+
+  it("logResult still writes a valid entry when agentId and sessionKey are omitted (back-compat)", async () => {
+    logger.logResult({
+      timestamp: "2026-04-18T10:00:00Z",
+      toolName: "exec",
+      toolCallId: "tc_ag_2",
+      executionResult: "failure",
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].executionResult).toBe("failure");
+    expect(entries[0].agentId).toBeUndefined();
+    expect(entries[0].sessionKey).toBeUndefined();
+    expect(AuditLogger.verifyChain(entries).valid).toBe(true);
+  });
+
+  it("appendEvaluation records agentId and sessionKey when provided", async () => {
+    logger.appendEvaluation({
+      refToolCallId: "tc_eval_1",
+      toolName: "web_fetch",
+      llmEvaluation: {
+        adjustedScore: 42,
+        reasoning: "Routine",
+        tags: ["network"],
+        confidence: "high",
+        patterns: [],
+      },
+      riskScore: 42,
+      riskTier: "medium",
+      riskTags: ["network"],
+      agentId: "worker-7",
+      sessionKey: "session-xyz",
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].agentId).toBe("worker-7");
+    expect(entries[0].sessionKey).toBe("session-xyz");
+    expect(entries[0].refToolCallId).toBe("tc_eval_1");
+  });
+
+  it("appendEvaluation still writes a valid entry when agentId and sessionKey are omitted (back-compat)", async () => {
+    logger.appendEvaluation({
+      refToolCallId: "tc_eval_2",
+      toolName: "web_fetch",
+      llmEvaluation: {
+        adjustedScore: 42,
+        reasoning: "Routine",
+        tags: ["network"],
+        confidence: "high",
+        patterns: [],
+      },
+      riskScore: 42,
+      riskTier: "medium",
+      riskTags: ["network"],
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].agentId).toBeUndefined();
+    expect(entries[0].sessionKey).toBeUndefined();
+    expect(entries[0].refToolCallId).toBe("tc_eval_2");
+    expect(AuditLogger.verifyChain(entries).valid).toBe(true);
+  });
+
+  it("logGuardrailResolution records agentId and sessionKey when provided", async () => {
+    logger.logGuardrailResolution({
+      guardrailId: "gr_1",
+      toolCallId: "tc_gr_1",
+      toolName: "exec",
+      approved: true,
+      decision: "allow-once",
+      agentId: "main",
+      sessionKey: "session-abc",
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].agentId).toBe("main");
+    expect(entries[0].sessionKey).toBe("session-abc");
+    expect(entries[0].userResponse).toBe("approved");
+  });
+
+  it("logGuardrailResolution still writes a valid entry when agentId and sessionKey are omitted (back-compat)", async () => {
+    logger.logGuardrailResolution({
+      guardrailId: "gr_2",
+      toolCallId: "tc_gr_2",
+      toolName: "exec",
+      approved: false,
+      decision: "deny",
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].agentId).toBeUndefined();
+    expect(entries[0].sessionKey).toBeUndefined();
+    expect(entries[0].userResponse).toBe("denied");
+    expect(AuditLogger.verifyChain(entries).valid).toBe(true);
+  });
 });

@@ -198,6 +198,8 @@ export class AuditLogger extends EventEmitter {
     toolCallId?: string;
     executionResult: "success" | "failure";
     durationMs?: number;
+    agentId?: string;
+    sessionKey?: string;
   }): void {
     this.append({
       ...data,
@@ -217,6 +219,8 @@ export class AuditLogger extends EventEmitter {
     riskScore: number;
     riskTier: NonNullable<AuditEntry["riskTier"]>;
     riskTags: string[];
+    agentId?: string;
+    sessionKey?: string;
   }): void {
     this.append({
       timestamp: new Date().toISOString(),
@@ -228,6 +232,8 @@ export class AuditLogger extends EventEmitter {
       riskTier: data.riskTier,
       riskTags: data.riskTags,
       llmEvaluation: data.llmEvaluation,
+      agentId: data.agentId,
+      sessionKey: data.sessionKey,
     });
   }
 
@@ -270,6 +276,8 @@ export class AuditLogger extends EventEmitter {
     approved: boolean;
     decision: string;
     storeAction?: "removed" | "unchanged";
+    agentId?: string;
+    sessionKey?: string;
   }): void {
     this.append({
       timestamp: new Date().toISOString(),
@@ -282,6 +290,8 @@ export class AuditLogger extends EventEmitter {
       },
       decision: data.approved ? "allow" : "block",
       userResponse: data.approved ? "approved" : "denied",
+      agentId: data.agentId,
+      sessionKey: data.sessionKey,
     });
   }
 

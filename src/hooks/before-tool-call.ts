@@ -109,6 +109,8 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 approved,
                 decision,
                 storeAction,
+                agentId: ctx?.agentId as string | undefined,
+                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
               });
             };
 
@@ -192,6 +194,8 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
               | "high"
               | "critical",
             riskTags: cached.tags,
+            agentId: ctx?.agentId as string | undefined,
+            sessionKey: sessionKey !== "default" ? sessionKey : undefined,
           });
         } else {
           const recentActions = sessionContext.getRecent(sessionKey, 5);
@@ -227,6 +231,8 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 riskScore: risk.score,
                 riskTier: getTierFromScore(risk.score),
                 riskTags: risk.tags,
+                agentId: ctx?.agentId as string | undefined,
+                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
               });
             } else {
               auditLogger.appendEvaluation({
@@ -236,6 +242,8 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 riskScore: evaluation.adjustedScore,
                 riskTier: getTierFromScore(evaluation.adjustedScore),
                 riskTags: evaluation.tags,
+                agentId: ctx?.agentId as string | undefined,
+                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
               });
 
               // Cache high-confidence low-risk evaluations for future use
@@ -274,6 +282,8 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
                 riskScore: risk.score,
                 riskTier: getTierFromScore(risk.score),
                 riskTags: risk.tags,
+                agentId: ctx?.agentId as string | undefined,
+                sessionKey: sessionKey !== "default" ? sessionKey : undefined,
               });
             } catch {
               // Last resort — don't let audit write failure crash the process

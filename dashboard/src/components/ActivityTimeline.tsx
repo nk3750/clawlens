@@ -9,7 +9,7 @@ import type {
   ActivityCategory,
   EntryResponse,
 } from "../lib/types";
-import { riskTierFromScore, riskColorRaw } from "../lib/utils";
+import { DEFAULT_AGENT_ID, riskTierFromScore, riskColorRaw } from "../lib/utils";
 import GradientAvatar from "./GradientAvatar";
 import LiveIndicator from "./LiveIndicator";
 import type { RangeOption } from "./fleetheader/utils";
@@ -110,7 +110,7 @@ export default function ActivityTimeline({ isToday, selectedDate, range }: Props
     useCallback(
       (entry: EntryResponse) => {
         if (!isToday) return;
-        const agentId = entry.agentId || "unknown";
+        const agentId = entry.agentId || DEFAULT_AGENT_ID;
         const sessionKey = entry.sessionKey ?? "unknown";
         const category = (entry.category ?? "exploring") as ActivityCategory;
         const risk = entry.riskScore ?? 0;

@@ -203,6 +203,8 @@ describe("createBeforeToolCallHandler", () => {
         refToolCallId: "tc-001",
         llmEvaluation: evaluation,
         riskScore: 42,
+        agentId: "test-agent",
+        sessionKey: "test-session",
       }),
     );
   });
@@ -226,6 +228,8 @@ describe("createBeforeToolCallHandler", () => {
           reasoning: "LLM evaluation unavailable",
           confidence: "none",
         }),
+        agentId: "test-agent",
+        sessionKey: "test-session",
       }),
     );
   });
@@ -260,6 +264,8 @@ describe("createBeforeToolCallHandler", () => {
         llmEvaluation: expect.objectContaining({
           reasoning: expect.stringContaining("(cached)"),
         }),
+        agentId: "test-agent",
+        sessionKey: "test-session",
       }),
     );
   });
@@ -286,6 +292,8 @@ describe("createBeforeToolCallHandler", () => {
         llmEvaluation: expect.objectContaining({
           reasoning: expect.stringContaining("Gateway context expired"),
         }),
+        agentId: "test-agent",
+        sessionKey: "test-session",
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Gateway context expired"));
@@ -428,6 +436,8 @@ describe("require_approval wrap — PendingApprovalStore integration", () => {
         toolCallId: "tc-wrap-002",
         approved: true,
         decision: "allow-once",
+        agentId: "test-agent",
+        sessionKey: "test-session",
       }),
     );
   });
