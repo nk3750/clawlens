@@ -564,6 +564,138 @@ describe("getAttention — T1 / T2a / T3 assembly", () => {
   });
 });
 
+describe("getAttention — split session key resolution (#10)", () => {
+  // SESSION_GAP_MS = 30 min → a gap >30 min splits a session into #2, #3, ...
+  // Each test below arranges two runs sharing a raw sessionKey; the attention
+  // item's emitted sessionKey must carry the #N suffix of the run containing
+  // the flagged entry. Pre-fix the raw key is emitted instead — that's the bug.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("remaps a pending approval's sessionKey to the #N sub-session it belongs to", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 60 * 60_000).toISOString(), // 1h ago — run 1
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_run1",
+        sessionKey: "alpha:main",
+        riskScore: 10,
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(), // 1m ago — run 2 (59m gap)
+        decision: "approval_required",
+        agentId: "alpha",
+        toolCallId: "tc_run2_pending",
+        sessionKey: "alpha:main",
+      }),
+    ];
+    const resp = getAttention(entries, undefined, undefined, NOW_MS);
+    expect(resp.pending).toHaveLength(1);
+    expect(resp.pending[0].toolCallId).toBe("tc_run2_pending");
+    expect(resp.pending[0].sessionKey).toBe("alpha:main#2");
+  });
+
+  it("remaps a blocked entry's sessionKey to the #N sub-session it belongs to", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 120 * 60_000).toISOString(), // 2h ago — run 1
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_run1",
+        sessionKey: "alpha:main",
+        riskScore: 10,
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 60 * 60_000).toISOString(), // 1h ago — run 2 (60m gap)
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_run2_blocked",
+        sessionKey: "alpha:main",
+        riskScore: 80,
+      }),
+    ];
+    const resp = getAttention(entries, undefined, undefined, NOW_MS);
+    expect(resp.blocked).toHaveLength(1);
+    expect(resp.blocked[0].toolCallId).toBe("tc_run2_blocked");
+    expect(resp.blocked[0].sessionKey).toBe("alpha:main#2");
+  });
+
+  it("remaps a high-risk allow's sessionKey to the #N sub-session it belongs to", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 60 * 60_000).toISOString(), // 1h ago — run 1
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_run1",
+        sessionKey: "alpha:main",
+        riskScore: 10,
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 5 * 60_000).toISOString(), // 5m ago — run 2 (55m gap)
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_run2_highrisk",
+        sessionKey: "alpha:main",
+        riskScore: 75,
+      }),
+    ];
+    const resp = getAttention(entries, undefined, undefined, NOW_MS);
+    expect(resp.highRisk).toHaveLength(1);
+    expect(resp.highRisk[0].toolCallId).toBe("tc_run2_highrisk");
+    expect(resp.highRisk[0].sessionKey).toBe("alpha:main#2");
+  });
+});
+
+describe("deriveAgentAttention — split session key resolution (#10)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns lastSessionKey with the #N suffix for the latest run", () => {
+    // Run 1 at T-2h (a single block) + run 2 at T-5m/T-3m (a 2-block cluster in
+    // a ≤10-min window). 115-min gap between runs → groupBySessions splits run
+    // 2 into "alpha:main#2". block_cluster fires on run 2; lastSessionKey must
+    // carry the #2 suffix so the agent-row "view session" link lands on run 2.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 120 * 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_run1",
+        sessionKey: "alpha:main",
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 5 * 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_run2a",
+        sessionKey: "alpha:main",
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 3 * 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_run2b",
+        sessionKey: "alpha:main",
+      }),
+    ];
+    const result = deriveAgentAttention(entries, undefined, undefined, NOW_MS);
+    expect(result).toHaveLength(1);
+    expect(result[0].reason).toBe("block_cluster");
+    expect(result[0].lastSessionKey).toBe("alpha:main#2");
+  });
+});
+
 describe("getAttention — LLM-absent risk fallback (spec addendum)", () => {
   beforeEach(() => {
     vi.useFakeTimers();

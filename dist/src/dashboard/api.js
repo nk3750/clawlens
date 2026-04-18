@@ -529,7 +529,15 @@ export function deriveAgentAttention(entries, guardrailStore, attentionStore, no
         // The record's action field is ignored (see #6 — single-verb semantics).
         if (attentionStore?.isAckedAgent(agentId, chosen.triggerAt))
             continue;
-        const lastSessionKey = chosen.sessionKey ?? sorted.filter((e) => e.sessionKey).slice(-1)[0]?.sessionKey ?? undefined;
+        // Resolve split sub-session key for the last-seen entry so the row's
+        // "view session" link targets the specific run, not the combined base
+        // session. Single-entry lookup — no need for the bulk index here. See #10.
+        const lastEntry = chosen.sessionKey
+            ? sorted.filter((e) => e.sessionKey === chosen.sessionKey).slice(-1)[0]
+            : sorted.filter((e) => e.sessionKey).slice(-1)[0];
+        const lastSessionKey = lastEntry
+            ? (resolveSplitKeyForEntry(entries, lastEntry) ?? lastEntry.sessionKey)
+            : undefined;
         out.push({
             agentId,
             agentName: agentId,
@@ -577,6 +585,10 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
             resolvedToolCallIds.add(e.toolCallId);
         }
     }
+    // Resolve split sub-sessions (#N) so Review / View-session links from the
+    // attention inbox land on the specific run that contains the flagged entry,
+    // not the combined multi-day base session. See #10.
+    const splitSessionIndex = buildSplitSessionIndex(entries);
     for (const e of entries) {
         if (!isDecisionEntry(e))
             continue;
@@ -593,7 +605,7 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
             description: describeAction(e),
             riskScore: score,
             riskTier: tierFromScore(score),
-            sessionKey: e.sessionKey,
+            sessionKey: splitSessionIndex.get(e.toolCallId ?? e.timestamp) ?? e.sessionKey,
         };
         // Pending approval: decision=approval_required AND no resolution logged yet.
         // `getEffectiveDecision` coerces unresolved approval_required entries to
