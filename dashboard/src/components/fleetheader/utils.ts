@@ -134,22 +134,6 @@ export function quickRangeSpans(): QuickRangeSpan[] {
   ];
 }
 
-// ── Pending count derivation ─────────────────────────────────
-
-export interface InterventionLike {
-  effectiveDecision: string;
-}
-
-/**
- * Temporary: derive pending approvals from the interventions endpoint.
- * Phase B-2 (attention-inbox spec) replaces this with AttentionResponse.pending.
- * Keep this in one place so the swap is a one-line edit.
- */
-export function derivePendingCount(interventions: InterventionLike[] | null | undefined): number {
-  if (!interventions) return 0;
-  return interventions.filter((i) => i.effectiveDecision === "pending").length;
-}
-
 // ── Chip visibility ──────────────────────────────────────────
 
 export function shouldShowBlockedChip(count: number | null | undefined): boolean {

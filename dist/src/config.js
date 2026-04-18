@@ -4,6 +4,7 @@ const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawlens");
 export const DEFAULT_CONFIG = {
     auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
     guardrailsPath: path.join(DEFAULT_DIR, "guardrails.json"),
+    attentionStatePath: path.join(DEFAULT_DIR, "attention.jsonl"),
     retention: "30d",
     digest: {
         schedule: "daily",
@@ -29,6 +30,7 @@ export function resolveConfig(pluginConfig, resolvePath) {
     return {
         auditLogPath: resolve(pluginConfig.auditLogPath || DEFAULT_CONFIG.auditLogPath),
         guardrailsPath: resolve(pluginConfig.guardrailsPath || DEFAULT_CONFIG.guardrailsPath),
+        attentionStatePath: resolve(pluginConfig.attentionStatePath || DEFAULT_CONFIG.attentionStatePath),
         retention: pluginConfig.retention || DEFAULT_CONFIG.retention,
         digest: {
             schedule: pluginConfig.digest?.schedule ||

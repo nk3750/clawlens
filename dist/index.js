@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { exportToCSV, exportToJSON } from "./src/audit/exporter";
 import { AuditLogger } from "./src/audit/logger";
 import { resolveConfig } from "./src/config";
+import { AttentionStore } from "./src/dashboard/attention-state";
 import { registerDashboardRoutes } from "./src/dashboard/routes";
 import { GuardrailStore } from "./src/guardrails/store";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
@@ -15,6 +16,7 @@ import { SessionContext } from "./src/risk/session-context";
 // Components + handler created once. Hooks registered per unique api object
 // (gateway dispatches tool calls through different api contexts).
 let _handlerDeps;
+let _attentionStore;
 let _serviceRegistered = false;
 // biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
 const _hookedApis = new WeakSet();
@@ -49,6 +51,7 @@ const plugin = {
             const evalCache = new EvalCache();
             const guardrailStore = new GuardrailStore(config.guardrailsPath);
             guardrailStore.load();
+            _attentionStore = new AttentionStore(config.attentionStatePath);
             // Alert send function — uses gateway method if available
             let alertSend;
             try {
@@ -178,6 +181,7 @@ const plugin = {
                 agent: typedRuntime?.agent,
                 openClawConfig: api.config,
                 guardrailStore: grStore,
+                attentionStore: _attentionStore,
             });
             _serviceRegistered = true;
         }

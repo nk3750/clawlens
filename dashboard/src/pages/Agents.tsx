@@ -1,19 +1,15 @@
 import { useState, useMemo, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
-import type { AgentInfo, Guardrail, InterventionEntry, StatsResponse } from "../lib/types";
+import type { AgentInfo, AttentionResponse, Guardrail, StatsResponse } from "../lib/types";
 import FleetHeader from "../components/FleetHeader";
-import NeedsAttention from "../components/NeedsAttention";
+import AttentionInbox from "../components/AttentionInbox";
 import AgentRow from "../components/AgentCardCompact";
 import ActivityTimeline from "../components/ActivityTimeline";
 import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
 import DormantState from "../components/DormantState";
 import { isDormant } from "../lib/homepageState";
-import {
-  derivePendingCount,
-  isRangeOption,
-  type RangeOption,
-} from "../components/fleetheader/utils";
+import { isRangeOption, type RangeOption } from "../components/fleetheader/utils";
 import { getPref, PREF_KEYS, setPref } from "../lib/prefs";
 
 const DEFAULT_RANGE: RangeOption = "12h";
@@ -32,29 +28,38 @@ export default function Agents() {
 
   const statsPath = useMemo(() => `api/stats${dateParam}`, [dateParam]);
   const agentsPath = useMemo(() => `api/agents${dateParam}`, [dateParam]);
-  const interventionsPath = useMemo(() => `api/interventions${dateParam}`, [dateParam]);
+  const attentionPath = useMemo(() => `api/attention${dateParam}`, [dateParam]);
 
   const { data: stats } = useApi<StatsResponse>(statsPath);
   const { data: agents, loading, error, refetch } = useApi<AgentInfo[]>(agentsPath);
-  const { data: interventions } = useApi<InterventionEntry[]>(interventionsPath);
+  const { data: attention } = useApi<AttentionResponse>(attentionPath);
   const { data: guardrailsData } = useApi<{ guardrails: Guardrail[] }>("api/guardrails");
 
   const guardrails = guardrailsData?.guardrails ?? [];
-  const pendingCount = useMemo(() => derivePendingCount(interventions ?? []), [interventions]);
+  const pendingCount = attention?.pending.length ?? 0;
+
+  // Cross-reference attention-flagged agents so AgentCardCompact can show a
+  // sidelight without re-deriving from its own AgentInfo snapshot.
+  const attentionAgentIds = useMemo(
+    () => new Set(attention?.agentAttention.map((a) => a.agentId) ?? []),
+    [attention],
+  );
 
   const onRangeChange = useCallback((next: RangeOption) => {
     setRangeState(next);
     setPref(PREF_KEYS.FLEET_RANGE, next);
   }, []);
 
-  // Sort: needsAttention first, then by todayToolCalls desc
+  // Sort: attention-flagged agents first, then by todayToolCalls desc.
   const sortedAgents = useMemo(() => {
     if (!agents) return [];
     return [...agents].sort((a, b) => {
-      if (a.needsAttention !== b.needsAttention) return a.needsAttention ? -1 : 1;
+      const aFlag = attentionAgentIds.has(a.id);
+      const bFlag = attentionAgentIds.has(b.id);
+      if (aFlag !== bFlag) return aFlag ? -1 : 1;
       return b.todayToolCalls - a.todayToolCalls;
     });
-  }, [agents]);
+  }, [agents, attentionAgentIds]);
 
   const activeAgents = useMemo(() => sortedAgents.filter((a) => a.todayToolCalls > 0), [sortedAgents]);
   const idleAgents = useMemo(() => sortedAgents.filter((a) => a.todayToolCalls === 0), [sortedAgents]);
@@ -90,12 +95,10 @@ export default function Agents() {
         />
       )}
 
-      {/* Needs Attention */}
-      {interventions && agents && (
-        <div data-cl-attention-anchor data-cl-inbox-pending-anchor data-cl-inbox-blocked-anchor>
-          <NeedsAttention interventions={interventions} agents={agents} />
-        </div>
-      )}
+      {/* Attention Inbox (homepage-v3-attention-inbox-spec) */}
+      <div data-cl-inbox-pending-anchor data-cl-inbox-blocked-anchor>
+        <AttentionInbox />
+      </div>
 
       {/* Activity Timeline — range is now driven by FleetHeader */}
       <div data-cl-fleet-chart-anchor>
@@ -154,7 +157,11 @@ export default function Agents() {
             }}
           >
             {activeAgents.map((agent) => (
-              <AgentRow key={agent.id} agent={agent} />
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                needsAttention={attentionAgentIds.has(agent.id)}
+              />
             ))}
           </div>
         )}
@@ -207,7 +214,11 @@ export default function Agents() {
                 }}
               >
                 {idleAgents.map((agent) => (
-                  <AgentRow key={agent.id} agent={agent} />
+                  <AgentRow
+                key={agent.id}
+                agent={agent}
+                needsAttention={attentionAgentIds.has(agent.id)}
+              />
                 ))}
               </div>
             )}

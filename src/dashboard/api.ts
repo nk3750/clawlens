@@ -4,6 +4,7 @@ import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import type { GuardrailStore } from "../guardrails/store";
 import { parseExecCommand } from "../risk/exec-parser";
+import type { AttentionStore } from "./attention-state";
 import { deriveScheduleLabel, extractCronRunStarts } from "./cadence";
 import {
   type ActivityCategory,
@@ -61,6 +62,55 @@ export interface InterventionEntry {
   decision: string;
   effectiveDecision: string;
   sessionKey?: string;
+}
+
+// ── Attention Inbox (homepage-v3-attention-inbox-spec) ────────────
+
+export type RiskTierLabel = "low" | "medium" | "high" | "critical";
+
+export type AckScope =
+  | { kind: "entry"; toolCallId: string }
+  | { kind: "agent"; agentId: string; upToIso: string };
+
+export interface AttentionItem {
+  kind: "pending" | "blocked" | "timeout" | "high_risk";
+  toolCallId: string;
+  timestamp: string;
+  agentId: string;
+  agentName: string;
+  toolName: string;
+  description: string;
+  riskScore: number;
+  riskTier: RiskTierLabel;
+  sessionKey?: string;
+  /** T1 only — milliseconds remaining until approval times out. */
+  timeoutMs?: number;
+  /** T3 only — explains why this is surfaced without a matching guardrail. */
+  guardrailHint?: string;
+  /** When set, this item has been acked (but not dismissed). */
+  ackedAt?: string;
+}
+
+export interface AttentionAgent {
+  agentId: string;
+  agentName: string;
+  /** ISO of the most recent entry that contributed to the trigger. Use as `upToIso` for agent acks. */
+  triggerAt: string;
+  reason: "block_cluster" | "high_risk_cluster" | "sustained_elevation";
+  description: string;
+  triggerCount: number;
+  peakTier: RiskTierLabel;
+  lastSessionKey?: string;
+  /** When set, this agent has been acked (but not dismissed). */
+  ackedAt?: string;
+}
+
+export interface AttentionResponse {
+  pending: AttentionItem[];
+  blocked: AttentionItem[];
+  agentAttention: AttentionAgent[];
+  highRisk: AttentionItem[];
+  generatedAt: string;
 }
 
 export interface EntryResponse {
@@ -539,6 +589,380 @@ export function getInterventions(
 
   return [...blockAndApproval, ...highRisk];
 }
+
+// ── Attention Inbox ────────────────────────────────────
+
+const APPROVAL_TIMEOUT_MS = 300_000; // 5 minutes — mirrors the card copy in NeedsAttention
+const HIGH_RISK_THRESHOLD = 65;
+const HIGH_RISK_WINDOW_MS = 30 * 60_000; // 30 min — T3 freshness
+const T2A_BLOCKED_WINDOW_MS = 24 * 3600_000; // 24h — T2a freshness
+const AGENT_ATTN_WINDOW_MS = 24 * 3600_000; // rolling 24h window for agent derivation
+const BLOCK_CLUSTER_WINDOW_MS = 10 * 60_000;
+const BLOCK_CLUSTER_MIN = 2;
+const HIGH_RISK_CLUSTER_WINDOW_MS = 20 * 60_000;
+const HIGH_RISK_CLUSTER_MIN = 3;
+const SUSTAINED_ELEVATION_AVG = 50; // session average risk threshold
+const SUSTAINED_ELEVATION_MIN_ACTIONS = 10;
+
+function tierFromScore(score: number): RiskTierLabel {
+  if (score > 75) return "critical";
+  if (score > 50) return "high";
+  if (score > 25) return "medium";
+  return "low";
+}
+
+function tierRank(t: RiskTierLabel): number {
+  return t === "critical" ? 4 : t === "high" ? 3 : t === "medium" ? 2 : 1;
+}
+
+/** Compute human copy for an AttentionAgent based on its trigger reason. */
+function describeAttentionReason(
+  reason: AttentionAgent["reason"],
+  count: number,
+  avgRisk: number,
+): string {
+  switch (reason) {
+    case "block_cluster":
+      return `${count} blocked actions in the last 10 min`;
+    case "high_risk_cluster":
+      return `${count} high-risk actions without matching guardrails`;
+    case "sustained_elevation":
+      return `Session average risk: ${avgRisk}`;
+  }
+}
+
+/**
+ * Derive "needs attention" agents from recent audit entries. Three rules, each
+ * inside a rolling 24h window:
+ *   1. block_cluster         — 2+ blocks within 10 min
+ *   2. high_risk_cluster     — 3+ unguarded high-risk actions within 20 min
+ *   3. sustained_elevation   — session avg risk > 50 and 10+ actions
+ *
+ * Results are filtered against the AttentionStore: any agent whose `triggerAt`
+ * is covered by an existing ack (scope=agent, upToIso >= triggerAt) is hidden
+ * *unless* the ack was an `ack` (not `dismiss`), in which case we keep the row
+ * but flag it with `ackedAt` so the UI can render it at reduced weight.
+ */
+export function deriveAgentAttention(
+  entries: AuditEntry[],
+  guardrailStore?: GuardrailStore,
+  attentionStore?: AttentionStore,
+  now: number = Date.now(),
+): AttentionAgent[] {
+  const cutoffIso = new Date(now - AGENT_ATTN_WINDOW_MS).toISOString();
+  const scoped = entries.filter((e) => e.timestamp >= cutoffIso);
+  const evalIdx = buildEvalIndex(entries);
+
+  // Group scoped decisions by agent.
+  const byAgent = new Map<string, AuditEntry[]>();
+  for (const e of scoped) {
+    if (!isDecisionEntry(e)) continue;
+    const id = e.agentId || DEFAULT_AGENT_ID;
+    const bucket = byAgent.get(id);
+    if (bucket) bucket.push(e);
+    else byAgent.set(id, [e]);
+  }
+
+  const out: AttentionAgent[] = [];
+  for (const [agentId, agentEntries] of byAgent) {
+    const sorted = [...agentEntries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    // Rule 1: block cluster — any 10-min window containing BLOCK_CLUSTER_MIN blocks.
+    const blocks = sorted.filter((e) => {
+      const eff = getEffectiveDecision(e);
+      return eff === "block" || eff === "denied";
+    });
+    let blockCluster: { triggerAt: string; count: number; peak: number } | undefined;
+    for (let i = 0; i < blocks.length; i++) {
+      const windowStart = new Date(blocks[i].timestamp).getTime();
+      let count = 1;
+      let peak = getEffectiveScore(blocks[i], evalIdx) ?? 0;
+      for (let j = i + 1; j < blocks.length; j++) {
+        const t = new Date(blocks[j].timestamp).getTime();
+        if (t - windowStart > BLOCK_CLUSTER_WINDOW_MS) break;
+        count++;
+        const s = getEffectiveScore(blocks[j], evalIdx) ?? 0;
+        if (s > peak) peak = s;
+        if (count >= BLOCK_CLUSTER_MIN) {
+          // Use the *latest* entry as triggerAt so a follow-up block surfaces the row again.
+          blockCluster = { triggerAt: blocks[j].timestamp, count, peak };
+        }
+      }
+    }
+
+    // Rule 2: unguarded high-risk cluster — any 20-min window containing
+    // HIGH_RISK_CLUSTER_MIN allowed entries with score >= HIGH_RISK_THRESHOLD
+    // and no matching guardrail.
+    const highRisks = sorted.filter((e) => {
+      if (e.decision !== "allow") return false;
+      const score = getEffectiveScore(e, evalIdx);
+      if (score === undefined || score < HIGH_RISK_THRESHOLD) return false;
+      if (guardrailStore) {
+        const key = extractIdentityKey(e.toolName, e.params);
+        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) return false;
+      }
+      return true;
+    });
+    let highRiskCluster: { triggerAt: string; count: number; peak: number } | undefined;
+    for (let i = 0; i < highRisks.length; i++) {
+      const windowStart = new Date(highRisks[i].timestamp).getTime();
+      let count = 1;
+      let peak = getEffectiveScore(highRisks[i], evalIdx) ?? 0;
+      for (let j = i + 1; j < highRisks.length; j++) {
+        const t = new Date(highRisks[j].timestamp).getTime();
+        if (t - windowStart > HIGH_RISK_CLUSTER_WINDOW_MS) break;
+        count++;
+        const s = getEffectiveScore(highRisks[j], evalIdx) ?? 0;
+        if (s > peak) peak = s;
+        if (count >= HIGH_RISK_CLUSTER_MIN) {
+          highRiskCluster = { triggerAt: highRisks[j].timestamp, count, peak };
+        }
+      }
+    }
+
+    // Rule 3: sustained elevation — an *active* session in the window has
+    // at least SUSTAINED_ELEVATION_MIN_ACTIONS entries and an average
+    // effective score above SUSTAINED_ELEVATION_AVG.
+    let sustained:
+      | { triggerAt: string; count: number; avg: number; peak: number; sessionKey?: string }
+      | undefined;
+    const sessionMap = new Map<string, AuditEntry[]>();
+    for (const e of agentEntries) {
+      if (!e.sessionKey) continue;
+      if (!isDecisionEntry(e)) continue;
+      const bucket = sessionMap.get(e.sessionKey);
+      if (bucket) bucket.push(e);
+      else sessionMap.set(e.sessionKey, [e]);
+    }
+    for (const [sessionKey, sEntries] of sessionMap) {
+      if (sEntries.length < SUSTAINED_ELEVATION_MIN_ACTIONS) continue;
+      let sum = 0;
+      let cnt = 0;
+      let peak = 0;
+      for (const e of sEntries) {
+        const s = getEffectiveScore(e, evalIdx);
+        if (s === undefined) continue;
+        sum += s;
+        cnt++;
+        if (s > peak) peak = s;
+      }
+      if (cnt === 0) continue;
+      const avg = Math.round(sum / cnt);
+      if (avg <= SUSTAINED_ELEVATION_AVG) continue;
+      const latest = sEntries.reduce(
+        (acc, e) => (e.timestamp > acc ? e.timestamp : acc),
+        sEntries[0].timestamp,
+      );
+      // Keep the session with the newest trigger if multiple cross the bar.
+      if (!sustained || latest > sustained.triggerAt) {
+        sustained = { triggerAt: latest, count: sEntries.length, avg, peak, sessionKey };
+      }
+    }
+
+    // Pick the firing rule with the newest trigger. A single row per agent.
+    const candidates: Array<{
+      reason: AttentionAgent["reason"];
+      triggerAt: string;
+      count: number;
+      peak: number;
+      avg?: number;
+      sessionKey?: string;
+    }> = [];
+    if (blockCluster) {
+      candidates.push({
+        reason: "block_cluster",
+        triggerAt: blockCluster.triggerAt,
+        count: blockCluster.count,
+        peak: blockCluster.peak,
+      });
+    }
+    if (highRiskCluster) {
+      candidates.push({
+        reason: "high_risk_cluster",
+        triggerAt: highRiskCluster.triggerAt,
+        count: highRiskCluster.count,
+        peak: highRiskCluster.peak,
+      });
+    }
+    if (sustained) {
+      candidates.push({
+        reason: "sustained_elevation",
+        triggerAt: sustained.triggerAt,
+        count: sustained.count,
+        peak: sustained.peak,
+        avg: sustained.avg,
+        sessionKey: sustained.sessionKey,
+      });
+    }
+    if (candidates.length === 0) continue;
+
+    candidates.sort((a, b) => b.triggerAt.localeCompare(a.triggerAt));
+    const chosen = candidates[0];
+
+    // Ack filter: if dismissed and upToIso covers triggerAt, drop the row.
+    // If acked (not dismissed), keep it but mark as acked.
+    let ackedAt: string | undefined;
+    if (attentionStore) {
+      const ack = attentionStore.isAckedAgent(agentId, chosen.triggerAt);
+      if (ack) {
+        if (ack.action === "dismiss") continue;
+        ackedAt = ack.ackedAt;
+      }
+    }
+
+    const lastSessionKey =
+      chosen.sessionKey ?? sorted.filter((e) => e.sessionKey).slice(-1)[0]?.sessionKey ?? undefined;
+
+    out.push({
+      agentId,
+      agentName: agentId,
+      triggerAt: chosen.triggerAt,
+      reason: chosen.reason,
+      description: describeAttentionReason(chosen.reason, chosen.count, chosen.avg ?? 0),
+      triggerCount: chosen.count,
+      peakTier: tierFromScore(chosen.peak),
+      lastSessionKey,
+      ackedAt,
+    });
+  }
+
+  out.sort((a, b) => b.triggerAt.localeCompare(a.triggerAt));
+  return out;
+}
+
+function ackKeyForEntry(
+  store: AttentionStore | undefined,
+  toolCallId: string | undefined,
+): { ackedAt?: string; dismissed: boolean } {
+  if (!store || !toolCallId) return { dismissed: false };
+  const ack = store.isAckedEntry(toolCallId);
+  if (!ack) return { dismissed: false };
+  if (ack.action === "dismiss") return { dismissed: true };
+  return { ackedAt: ack.ackedAt, dismissed: false };
+}
+
+/**
+ * Single consolidated attention response. Replaces `/api/interventions` on the
+ * homepage. Items that the user has already dismissed are hidden entirely;
+ * items that are only acked are kept in the response with `ackedAt` set so the
+ * UI can render them with reduced weight.
+ */
+export function getAttention(
+  entries: AuditEntry[],
+  guardrailStore?: GuardrailStore,
+  attentionStore?: AttentionStore,
+  now: number = Date.now(),
+): AttentionResponse {
+  const evalIdx = buildEvalIndex(entries);
+  const nowIso = new Date(now).toISOString();
+
+  const pending: AttentionItem[] = [];
+  const blocked: AttentionItem[] = [];
+  const highRisk: AttentionItem[] = [];
+
+  const blockedCutoffIso = new Date(now - T2A_BLOCKED_WINDOW_MS).toISOString();
+  const highRiskCutoffIso = new Date(now - HIGH_RISK_WINDOW_MS).toISOString();
+
+  // Build a set of resolved toolCallIds so we can filter pending approvals
+  // to only those that haven't received a resolution log yet. Approval
+  // resolutions arrive as a *new* audit entry with the same toolCallId and
+  // a `userResponse` set — NOT by mutating the original.
+  const resolvedToolCallIds = new Set<string>();
+  for (const e of entries) {
+    if (e.toolCallId && (e.userResponse || e.executionResult)) {
+      resolvedToolCallIds.add(e.toolCallId);
+    }
+  }
+
+  for (const e of entries) {
+    if (!isDecisionEntry(e)) continue;
+    if (!e.toolCallId) continue; // attention items need a stable ack key
+
+    const eff = getEffectiveDecision(e);
+    const score = getEffectiveScore(e, evalIdx) ?? e.riskScore ?? 0;
+    const common = {
+      toolCallId: e.toolCallId,
+      timestamp: e.timestamp,
+      agentId: e.agentId ?? DEFAULT_AGENT_ID,
+      agentName: e.agentId ?? DEFAULT_AGENT_ID,
+      toolName: e.toolName,
+      description: describeAction(e),
+      riskScore: score,
+      riskTier: tierFromScore(score),
+      sessionKey: e.sessionKey,
+    };
+
+    // Pending approval: decision=approval_required AND no resolution logged yet.
+    // `getEffectiveDecision` coerces unresolved approval_required entries to
+    // "allow" under observe-mode semantics, so we can't key off that — detect
+    // directly from the raw fields instead.
+    if (
+      e.decision === "approval_required" &&
+      !e.userResponse &&
+      !e.executionResult &&
+      !resolvedToolCallIds.has(e.toolCallId)
+    ) {
+      const ack = ackKeyForEntry(attentionStore, e.toolCallId);
+      if (ack.dismissed) continue;
+      const elapsedMs = now - new Date(e.timestamp).getTime();
+      pending.push({
+        ...common,
+        kind: "pending",
+        timeoutMs: Math.max(0, APPROVAL_TIMEOUT_MS - elapsedMs),
+        ackedAt: ack.ackedAt,
+      });
+      continue;
+    }
+
+    if ((eff === "block" || eff === "timeout") && e.timestamp >= blockedCutoffIso) {
+      const ack = ackKeyForEntry(attentionStore, e.toolCallId);
+      if (ack.dismissed) continue;
+      blocked.push({
+        ...common,
+        kind: eff === "timeout" ? "timeout" : "blocked",
+        ackedAt: ack.ackedAt,
+      });
+      continue;
+    }
+
+    if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
+      // Skip entries with a matching active guardrail — already governed.
+      if (guardrailStore) {
+        const key = extractIdentityKey(e.toolName, e.params);
+        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) continue;
+      }
+      const ack = ackKeyForEntry(attentionStore, e.toolCallId);
+      if (ack.dismissed) continue;
+      highRisk.push({
+        ...common,
+        kind: "high_risk",
+        guardrailHint: "no matching guardrail",
+        ackedAt: ack.ackedAt,
+      });
+    }
+  }
+
+  // T1: time-remaining ascending (most urgent first).
+  pending.sort((a, b) => (a.timeoutMs ?? 0) - (b.timeoutMs ?? 0));
+  // T2a / T3: newest first.
+  blocked.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  highRisk.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  const agentAttention = deriveAgentAttention(entries, guardrailStore, attentionStore, now);
+
+  // Cap list sizes — avoid shipping 200 rows if the log is hot. The UI expands
+  // the collapsed group up to 20 items; beyond that the inbox is not the right
+  // surface.
+  return {
+    pending: pending.slice(0, 20),
+    blocked: blocked.slice(0, 20),
+    agentAttention: agentAttention.slice(0, 20),
+    highRisk: highRisk.slice(0, 20),
+    generatedAt: nowIso,
+  };
+}
+
+export { tierRank as _tierRankForTests };
 
 // ── Existing functions (unchanged signatures) ───────────
 

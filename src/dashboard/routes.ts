@@ -15,6 +15,7 @@ import {
   getActivityTimeline,
   getAgentDetail,
   getAgents,
+  getAttention,
   getInterventions,
   getRecentEntries,
   getSessionDetail,
@@ -24,6 +25,7 @@ import {
   localToday,
   resolveSplitKeyForEntry,
 } from "./api";
+import { type AckScope, AttentionStore, isValidAckScope } from "./attention-state";
 import type { ActivityCategory } from "./categories";
 import { getCategory } from "./categories";
 import { getDashboardHtml } from "./html";
@@ -38,6 +40,7 @@ export interface DashboardDeps {
   agent?: EmbeddedAgentRuntime;
   openClawConfig?: Record<string, unknown>;
   guardrailStore?: GuardrailStore;
+  attentionStore?: AttentionStore;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -293,6 +296,47 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
         sendJson(res, getInterventions(entries, date, deps.guardrailStore));
+        return true;
+      }
+
+      // ── Attention Inbox ─────────────────────────
+
+      if (subPath === "api/attention" && req.method === "GET") {
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, getAttention(entries, deps.guardrailStore, deps.attentionStore));
+        return true;
+      }
+
+      if (
+        (subPath === "api/attention/ack" || subPath === "api/attention/dismiss") &&
+        req.method === "POST"
+      ) {
+        if (!deps.attentionStore) {
+          res.writeHead(501, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Attention store not configured" }));
+          return true;
+        }
+        const body = (await readBody(req)) as {
+          scope?: unknown;
+          note?: unknown;
+          ackedBy?: unknown;
+        };
+        if (!isValidAckScope(body.scope)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid scope" }));
+          return true;
+        }
+        const action: "ack" | "dismiss" = subPath === "api/attention/ack" ? "ack" : "dismiss";
+        const record = {
+          id: AttentionStore.generateId(),
+          scope: body.scope as AckScope,
+          ackedAt: new Date().toISOString(),
+          ackedBy: typeof body.ackedBy === "string" ? body.ackedBy : undefined,
+          action,
+          note: typeof body.note === "string" ? body.note : undefined,
+        };
+        deps.attentionStore.append(record);
+        sendJson(res, { ok: true, id: record.id, ackedAt: record.ackedAt });
         return true;
       }
 

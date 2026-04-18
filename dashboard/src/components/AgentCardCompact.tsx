@@ -15,11 +15,14 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
 
 interface Props {
   agent: AgentInfo;
+  /** From AttentionResponse.agentAttention. Prefer this over agent.needsAttention when provided. */
+  needsAttention?: boolean;
 }
 
-export default function AgentCard({ agent }: Props) {
+export default function AgentCard({ agent, needsAttention }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
+  const attentionFlag = needsAttention ?? agent.needsAttention;
   const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode, agent.schedule);
   const sessionKey = agent.lastSessionKey ?? agent.currentSession?.sessionKey ?? null;
   const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
@@ -28,9 +31,13 @@ export default function AgentCard({ agent }: Props) {
     <Link
       to={`/agent/${encodeURIComponent(agent.id)}`}
       className="block rounded-xl transition-colors"
+      data-cl-agent-attention={attentionFlag ? "true" : undefined}
       style={{
         backgroundColor: "var(--cl-surface)",
         border: "1px solid var(--cl-border-subtle)",
+        borderLeft: attentionFlag
+          ? `2px solid ${riskColorRaw("medium")}`
+          : "1px solid var(--cl-border-subtle)",
         padding: 12,
         opacity: hasActivity ? 1 : 0.35,
         textDecoration: "none",

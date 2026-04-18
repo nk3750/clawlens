@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   computeHealthState,
   computeTrend,
-  derivePendingCount,
   formatDateChipLabel,
   formatHealthChromeLabel,
   formatHealthFooterLabel,
@@ -182,8 +181,6 @@ describe("quickDateOptions", () => {
   });
 });
 
-// ── derivePendingCount ───────────────────────────────────────
-
 describe("quickRangeSpans", () => {
   it("emits Last 7 days with range='7d' and no date shift", () => {
     const spans = quickRangeSpans();
@@ -203,29 +200,6 @@ describe("quickRangeSpans", () => {
       expect(typeof s.dateOffset).toBe("number");
       expect(s.range === null || typeof s.range === "string").toBe(true);
     }
-  });
-});
-
-describe("derivePendingCount", () => {
-  it("counts effectiveDecision === 'pending'", () => {
-    expect(
-      derivePendingCount([
-        { effectiveDecision: "pending" },
-        { effectiveDecision: "pending" },
-        { effectiveDecision: "block" },
-        { effectiveDecision: "allow" },
-      ]),
-    ).toBe(2);
-  });
-
-  it("returns 0 when no pending entries", () => {
-    expect(derivePendingCount([{ effectiveDecision: "allow" }])).toBe(0);
-  });
-
-  it("returns 0 for empty / nullish input", () => {
-    expect(derivePendingCount([])).toBe(0);
-    expect(derivePendingCount(null)).toBe(0);
-    expect(derivePendingCount(undefined)).toBe(0);
   });
 });
 

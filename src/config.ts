@@ -4,6 +4,7 @@ import * as path from "node:path";
 export interface ClawLensConfig {
   auditLogPath: string;
   guardrailsPath: string;
+  attentionStatePath: string;
   retention: string;
   digest: {
     schedule: string;
@@ -31,6 +32,7 @@ const DEFAULT_DIR = path.join(os.homedir(), ".openclaw", "clawlens");
 export const DEFAULT_CONFIG: ClawLensConfig = {
   auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
   guardrailsPath: path.join(DEFAULT_DIR, "guardrails.json"),
+  attentionStatePath: path.join(DEFAULT_DIR, "attention.jsonl"),
   retention: "30d",
   digest: {
     schedule: "daily",
@@ -63,6 +65,9 @@ export function resolveConfig(
     auditLogPath: resolve((pluginConfig.auditLogPath as string) || DEFAULT_CONFIG.auditLogPath),
     guardrailsPath: resolve(
       (pluginConfig.guardrailsPath as string) || DEFAULT_CONFIG.guardrailsPath,
+    ),
+    attentionStatePath: resolve(
+      (pluginConfig.attentionStatePath as string) || DEFAULT_CONFIG.attentionStatePath,
     ),
     retention: (pluginConfig.retention as string) || DEFAULT_CONFIG.retention,
     digest: {

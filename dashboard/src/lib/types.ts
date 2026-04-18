@@ -61,6 +61,50 @@ export interface InterventionEntry {
   sessionKey?: string;
 }
 
+// ── Attention Inbox (homepage-v3-attention-inbox-spec) ────────────
+
+export type AckScope =
+  | { kind: "entry"; toolCallId: string }
+  | { kind: "agent"; agentId: string; upToIso: string };
+
+export interface AttentionItem {
+  kind: "pending" | "blocked" | "timeout" | "high_risk";
+  toolCallId: string;
+  timestamp: string;
+  agentId: string;
+  agentName: string;
+  toolName: string;
+  description: string;
+  riskScore: number;
+  riskTier: RiskTier;
+  sessionKey?: string;
+  /** T1 only — milliseconds remaining on the approval countdown. */
+  timeoutMs?: number;
+  /** T3 only — why this is surfaced (e.g. "no matching guardrail"). */
+  guardrailHint?: string;
+  ackedAt?: string;
+}
+
+export interface AttentionAgent {
+  agentId: string;
+  agentName: string;
+  triggerAt: string;
+  reason: "block_cluster" | "high_risk_cluster" | "sustained_elevation";
+  description: string;
+  triggerCount: number;
+  peakTier: RiskTier;
+  lastSessionKey?: string;
+  ackedAt?: string;
+}
+
+export interface AttentionResponse {
+  pending: AttentionItem[];
+  blocked: AttentionItem[];
+  agentAttention: AttentionAgent[];
+  highRisk: AttentionItem[];
+  generatedAt: string;
+}
+
 export interface EntryResponse {
   timestamp: string;
   toolName: string;

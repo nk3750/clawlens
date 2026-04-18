@@ -1,6 +1,7 @@
 import { type LlmHealthSnapshot } from "../audit/llm-health";
 import type { AuditEntry } from "../audit/logger";
 import type { GuardrailStore } from "../guardrails/store";
+import type { AttentionStore } from "./attention-state";
 import { type ActivityCategory, type RiskPosture } from "./categories";
 /** Fallback agent ID when audit entries have no agentId. */
 export declare const DEFAULT_AGENT_ID = "default";
@@ -43,6 +44,53 @@ export interface InterventionEntry {
     decision: string;
     effectiveDecision: string;
     sessionKey?: string;
+}
+export type RiskTierLabel = "low" | "medium" | "high" | "critical";
+export type AckScope = {
+    kind: "entry";
+    toolCallId: string;
+} | {
+    kind: "agent";
+    agentId: string;
+    upToIso: string;
+};
+export interface AttentionItem {
+    kind: "pending" | "blocked" | "timeout" | "high_risk";
+    toolCallId: string;
+    timestamp: string;
+    agentId: string;
+    agentName: string;
+    toolName: string;
+    description: string;
+    riskScore: number;
+    riskTier: RiskTierLabel;
+    sessionKey?: string;
+    /** T1 only — milliseconds remaining until approval times out. */
+    timeoutMs?: number;
+    /** T3 only — explains why this is surfaced without a matching guardrail. */
+    guardrailHint?: string;
+    /** When set, this item has been acked (but not dismissed). */
+    ackedAt?: string;
+}
+export interface AttentionAgent {
+    agentId: string;
+    agentName: string;
+    /** ISO of the most recent entry that contributed to the trigger. Use as `upToIso` for agent acks. */
+    triggerAt: string;
+    reason: "block_cluster" | "high_risk_cluster" | "sustained_elevation";
+    description: string;
+    triggerCount: number;
+    peakTier: RiskTierLabel;
+    lastSessionKey?: string;
+    /** When set, this agent has been acked (but not dismissed). */
+    ackedAt?: string;
+}
+export interface AttentionResponse {
+    pending: AttentionItem[];
+    blocked: AttentionItem[];
+    agentAttention: AttentionAgent[];
+    highRisk: AttentionItem[];
+    generatedAt: string;
 }
 export interface EntryResponse {
     timestamp: string;
@@ -172,6 +220,28 @@ export declare function getEffectiveDecision(entry: AuditEntry): string;
 export declare function computeHistoricDailyMax(entries: AuditEntry[]): number;
 /** Blocked + approval_required entries for a day, most recent first. Optionally includes high-risk allowed entries (Tier 3). */
 export declare function getInterventions(entries: AuditEntry[], date?: string, guardrailStore?: GuardrailStore): InterventionEntry[];
+declare function tierRank(t: RiskTierLabel): number;
+/**
+ * Derive "needs attention" agents from recent audit entries. Three rules, each
+ * inside a rolling 24h window:
+ *   1. block_cluster         — 2+ blocks within 10 min
+ *   2. high_risk_cluster     — 3+ unguarded high-risk actions within 20 min
+ *   3. sustained_elevation   — session avg risk > 50 and 10+ actions
+ *
+ * Results are filtered against the AttentionStore: any agent whose `triggerAt`
+ * is covered by an existing ack (scope=agent, upToIso >= triggerAt) is hidden
+ * *unless* the ack was an `ack` (not `dismiss`), in which case we keep the row
+ * but flag it with `ackedAt` so the UI can render it at reduced weight.
+ */
+export declare function deriveAgentAttention(entries: AuditEntry[], guardrailStore?: GuardrailStore, attentionStore?: AttentionStore, now?: number): AttentionAgent[];
+/**
+ * Single consolidated attention response. Replaces `/api/interventions` on the
+ * homepage. Items that the user has already dismissed are hidden entirely;
+ * items that are only acked are kept in the response with `ackedAt` set so the
+ * UI can render them with reduced weight.
+ */
+export declare function getAttention(entries: AuditEntry[], guardrailStore?: GuardrailStore, attentionStore?: AttentionStore, now?: number): AttentionResponse;
+export { tierRank as _tierRankForTests };
 /** Compute today's decision counts. */
 export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */
