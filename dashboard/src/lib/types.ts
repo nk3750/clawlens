@@ -82,6 +82,8 @@ export interface AttentionItem {
   timeoutMs?: number;
   /** T3 only — why this is surfaced (e.g. "no matching guardrail"). */
   guardrailHint?: string;
+  /** T3 only — identity key (tool + normalized params) used to pre-fill the guardrail modal. */
+  identityKey?: string;
 }
 
 export interface AttentionAgent {

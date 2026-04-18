@@ -8,6 +8,8 @@ interface Props {
   isLast: boolean;
   onOptimisticRemove: () => () => void;
   onPersisted: () => void;
+  /** Optional: when provided, renders a 🛡 button that hands the item to the parent's guardrail modal. */
+  onAddGuardrail?: (item: AttentionItem) => void;
   showShortcutHint?: boolean;
   isTopmost?: boolean;
 }
@@ -18,6 +20,7 @@ export default function HighRiskRow({
   isLast,
   onOptimisticRemove,
   onPersisted,
+  onAddGuardrail,
   showShortcutHint,
   isTopmost,
 }: Props) {
@@ -94,6 +97,26 @@ export default function HighRiskRow({
         >
           View
         </Link>
+      )}
+      {onAddGuardrail && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onAddGuardrail(item);
+          }}
+          className="px-3 py-1 rounded-lg text-xs font-semibold shrink-0"
+          style={{
+            backgroundColor: "var(--cl-elevated)",
+            border: "1px solid var(--cl-border-default)",
+            color: "var(--cl-text-primary)",
+            cursor: "pointer",
+          }}
+          title="Add a guardrail to govern this tool + identity key"
+        >
+          🛡 Add guardrail
+        </button>
       )}
       <AckButtons
         scope={{ kind: "entry", toolCallId: item.toolCallId }}

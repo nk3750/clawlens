@@ -69,6 +69,8 @@ export interface AttentionItem {
     timeoutMs?: number;
     /** T3 only — explains why this is surfaced without a matching guardrail. */
     guardrailHint?: string;
+    /** T3 only — identity key derived from tool + params, pre-filled into GuardrailModal. */
+    identityKey?: string;
 }
 export interface AttentionAgent {
     agentId: string;

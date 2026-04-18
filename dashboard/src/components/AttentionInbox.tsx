@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useKeyboardShortcut } from "../hooks/useKeyboardShortcut";
 import type { AttentionAgent, AttentionItem, AttentionResponse } from "../lib/types";
 import { riskColorRaw } from "../lib/utils";
+import GuardrailModal from "./GuardrailModal";
 import AgentAttentionRow from "./attention/AgentAttentionRow";
 import ApprovalCard from "./attention/ApprovalCard";
 import BlockedRow from "./attention/BlockedRow";
@@ -32,6 +33,7 @@ export default function AttentionInbox({ data, refetch }: Props) {
   const [expanded, setExpanded] = useState(false);
   /** Keys locally removed (optimistic) so the row disappears before the refetch completes. */
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
+  const [guardrailDraft, setGuardrailDraft] = useState<AttentionItem | null>(null);
   const navigate = useNavigate();
   const containerRef = useRef<HTMLElement | null>(null);
 
@@ -221,6 +223,7 @@ export default function AttentionInbox({ data, refetch }: Props) {
                   isLast={isLast}
                   onOptimisticRemove={removeFn}
                   onPersisted={onPersisted}
+                  onAddGuardrail={setGuardrailDraft}
                   showShortcutHint
                   isTopmost={isTopmost}
                 />
@@ -256,6 +259,27 @@ export default function AttentionInbox({ data, refetch }: Props) {
             </button>
           )}
         </div>
+      )}
+
+      {guardrailDraft && (
+        <GuardrailModal
+          entry={{
+            timestamp: guardrailDraft.timestamp,
+            toolName: guardrailDraft.toolName,
+            toolCallId: guardrailDraft.toolCallId,
+            agentId: guardrailDraft.agentId,
+            riskScore: guardrailDraft.riskScore,
+            params: {},
+            effectiveDecision: "allow",
+            category: "commands",
+          }}
+          description={guardrailDraft.description}
+          onClose={() => setGuardrailDraft(null)}
+          onCreated={() => {
+            setGuardrailDraft(null);
+            refetch();
+          }}
+        />
       )}
     </section>
   );

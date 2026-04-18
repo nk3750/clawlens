@@ -636,17 +636,16 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
         }
         if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
             // Skip entries with a matching active guardrail — already governed.
-            if (guardrailStore) {
-                const key = extractIdentityKey(e.toolName, e.params);
-                if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
-                    continue;
-            }
+            const key = extractIdentityKey(e.toolName, e.params);
+            if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
+                continue;
             if (isEntryAcked(attentionStore, e.toolCallId))
                 continue;
             highRisk.push({
                 ...common,
                 kind: "high_risk",
                 guardrailHint: "no matching guardrail",
+                identityKey: key,
             });
         }
     }

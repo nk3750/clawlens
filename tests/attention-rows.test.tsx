@@ -152,6 +152,41 @@ describe("HighRiskRow", () => {
     );
     expect(screen.queryByText(/Unguarded/)).toBeNull();
   });
+
+  it("omits the 🛡 Add guardrail button when onAddGuardrail is not provided", () => {
+    wrap(
+      <HighRiskRow
+        item={blockedItem({ kind: "high_risk", identityKey: "rm -rf /" })}
+        isLast
+        onOptimisticRemove={() => () => {}}
+        onPersisted={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Add guardrail/i })).toBeNull();
+  });
+
+  it("fires onAddGuardrail with the item when the 🛡 button is clicked", async () => {
+    const user = userEvent.setup();
+    const onAddGuardrail = vi.fn();
+    const item = blockedItem({
+      kind: "high_risk",
+      toolCallId: "tc_hr",
+      identityKey: "rm -rf /tmp/scratch",
+    });
+    wrap(
+      <HighRiskRow
+        item={item}
+        isLast
+        onOptimisticRemove={() => () => {}}
+        onPersisted={vi.fn()}
+        onAddGuardrail={onAddGuardrail}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Add guardrail/i });
+    await user.click(btn);
+    expect(onAddGuardrail).toHaveBeenCalledTimes(1);
+    expect(onAddGuardrail).toHaveBeenCalledWith(item);
+  });
 });
 
 describe("ApprovalCard", () => {
