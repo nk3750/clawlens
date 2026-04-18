@@ -1030,14 +1030,7 @@ export function getRecentEntries(
   }
 
   // Build split session index so entries get correct sub-session keys (#2, #3, etc.)
-  const sessionMap = groupBySessions(entries.filter((e) => e.sessionKey));
-  const splitSessionIndex = new Map<string, string>();
-  for (const [splitKey, sEntries] of sessionMap) {
-    for (const e of sEntries) {
-      const entryKey = e.toolCallId ?? e.timestamp;
-      splitSessionIndex.set(entryKey, splitKey);
-    }
-  }
+  const splitSessionIndex = buildSplitSessionIndex(entries);
 
   const reversed = filtered.reverse();
   return reversed.slice(offset, offset + limit).map((e) => {
@@ -1046,6 +1039,25 @@ export function getRecentEntries(
     mapped.sessionKey = splitSessionIndex.get(entryKey) ?? mapped.sessionKey;
     return mapped;
   });
+}
+
+/**
+ * Build a Map from `(entry.toolCallId ?? entry.timestamp)` → split session key
+ * (e.g. `agent:main:telegram:direct:7928586762#2`). Bulk-optimized partner of
+ * `resolveSplitKeyForEntry`: build once, look up per-entry in O(1).
+ *
+ * Use this when iterating many entries that each need split-key mapping.
+ * Use `resolveSplitKeyForEntry` when you have a single entry.
+ */
+export function buildSplitSessionIndex(entries: AuditEntry[]): Map<string, string> {
+  const sessionMap = groupBySessions(entries.filter((e) => e.sessionKey));
+  const index = new Map<string, string>();
+  for (const [splitKey, sEntries] of sessionMap) {
+    for (const e of sEntries) {
+      index.set(e.toolCallId ?? e.timestamp, splitKey);
+    }
+  }
+  return index;
 }
 
 /**
@@ -1520,13 +1532,7 @@ export function getAgentDetail(
 
   // Build reverse lookup: entry key → split session key
   // so entries and riskTrend points use the correct sub-session (#2, #3, etc.)
-  const splitSessionIndex = new Map<string, string>();
-  for (const [splitKey, sEntries] of sessionMap) {
-    for (const e of sEntries) {
-      const entryKey = e.toolCallId ?? e.timestamp;
-      splitSessionIndex.set(entryKey, splitKey);
-    }
-  }
+  const splitSessionIndex = buildSplitSessionIndex(agentEntries);
 
   const mapAndPatchSession = (e: AuditEntry): EntryResponse => {
     const mapped = mapEntry(e, evalIdx);
@@ -1710,14 +1716,7 @@ export function getActivityTimeline(
 
   // Build split session index from ALL entries (not day/range-filtered) so #N
   // numbering matches resolveSessionEntries, which also operates on the full log
-  const sessionMap = groupBySessions(entries);
-  const splitSessionIndex = new Map<string, string>();
-  for (const [splitKey, sEntries] of sessionMap) {
-    for (const e of sEntries) {
-      const entryKey = e.toolCallId ?? e.timestamp;
-      splitSessionIndex.set(entryKey, splitKey);
-    }
-  }
+  const splitSessionIndex = buildSplitSessionIndex(entries);
 
   // Per-bucket tracking maps
   const sessionMaps = new Map<string, Map<string, number>>();
@@ -1904,14 +1903,7 @@ export function getSessionTimeline(
   if (decisions.length === 0) return emptyResponse;
 
   // Build session index from ALL entries so #N numbering is consistent
-  const sessionMap = groupBySessions(entries);
-  const splitSessionIndex = new Map<string, string>();
-  for (const [splitKey, sEntries] of sessionMap) {
-    for (const e of sEntries) {
-      const entryKey = e.toolCallId ?? e.timestamp;
-      splitSessionIndex.set(entryKey, splitKey);
-    }
-  }
+  const splitSessionIndex = buildSplitSessionIndex(entries);
 
   const evalIdx = buildEvalIndex(entries);
   const now = Date.now();

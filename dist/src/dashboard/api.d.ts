@@ -247,6 +247,15 @@ export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */
 export declare function getRecentEntries(entries: AuditEntry[], limit: number, offset: number, filters?: EntryFilters, guardrailStore?: GuardrailStore): EntryResponse[];
 /**
+ * Build a Map from `(entry.toolCallId ?? entry.timestamp)` → split session key
+ * (e.g. `agent:main:telegram:direct:7928586762#2`). Bulk-optimized partner of
+ * `resolveSplitKeyForEntry`: build once, look up per-entry in O(1).
+ *
+ * Use this when iterating many entries that each need split-key mapping.
+ * Use `resolveSplitKeyForEntry` when you have a single entry.
+ */
+export declare function buildSplitSessionIndex(entries: AuditEntry[]): Map<string, string>;
+/**
  * Resolve the split session key for a single entry.
  * Used by the SSE handler to emit entries with correct sub-session keys.
  */
