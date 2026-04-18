@@ -15,6 +15,7 @@ import type {
   EmbeddedAgentRuntime,
   ModelAuth,
 } from "../types";
+import type { PendingApprovalStore } from "./pending-approval-store";
 
 export interface BeforeToolCallDeps {
   auditLogger: AuditLogger;
@@ -30,6 +31,12 @@ export interface BeforeToolCallDeps {
   };
   provider?: string;
   openClawConfig?: Record<string, unknown>;
+  /**
+   * Optional so existing test harnesses keep compiling. Production wiring in
+   * index.ts always supplies one; without it, dashboard-side approval
+   * resolution is disabled and Telegram / timeouts still work.
+   */
+  pendingApprovalStore?: PendingApprovalStore;
 }
 
 export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
@@ -72,37 +79,58 @@ export function createBeforeToolCallHandler(deps: BeforeToolCallDeps) {
           }
 
           if (matched.action.type === "require_approval") {
+            const approvalTimeoutMs = 300_000;
+            // Wrapper also called by /api/attention/resolve via store.take().
+            // `pendingApprovalStore.take()` is idempotent / single-winner, so
+            // this remains safe whether Telegram, the dashboard, or OpenClaw's
+            // own timeout fires first.
+            const onResolution = (decision: string): void => {
+              if (toolCallId) {
+                deps.pendingApprovalStore?.take(toolCallId);
+              }
+              const approved = decision === "allow-once" || decision === "allow-always";
+
+              let storeAction: "removed" | "unchanged" = "unchanged";
+              if (decision === "allow-always" && guardrailStore) {
+                const removed = guardrailStore.remove(matched.id);
+                if (removed) {
+                  storeAction = "removed";
+                  logger?.info(
+                    `ClawLens: Guardrail ${matched.id} removed (allow-always resolution)`,
+                  );
+                }
+              }
+
+              auditLogger.logGuardrailResolution({
+                guardrailId: matched.id,
+                toolCallId,
+                toolName,
+                approved,
+                decision,
+                storeAction,
+              });
+            };
+
+            if (deps.pendingApprovalStore && toolCallId) {
+              deps.pendingApprovalStore.put({
+                toolCallId,
+                agentId,
+                toolName,
+                stashedAt: Date.now(),
+                timeoutMs: approvalTimeoutMs,
+                resolve: async (decision) => onResolution(decision),
+              });
+            }
+
             return {
               requireApproval: {
                 title: "ClawLens Guardrail",
                 description: formatGuardrailApproval(matched, toolName, params),
                 severity: "warning",
-                timeoutMs: 300_000,
+                timeoutMs: approvalTimeoutMs,
                 timeoutBehavior: "deny",
                 pluginId: "clawlens",
-                onResolution: (decision) => {
-                  const approved = decision === "allow-once" || decision === "allow-always";
-
-                  let storeAction: "removed" | "unchanged" = "unchanged";
-                  if (decision === "allow-always" && guardrailStore) {
-                    const removed = guardrailStore.remove(matched.id);
-                    if (removed) {
-                      storeAction = "removed";
-                      logger?.info(
-                        `ClawLens: Guardrail ${matched.id} removed (allow-always resolution)`,
-                      );
-                    }
-                  }
-
-                  auditLogger.logGuardrailResolution({
-                    guardrailId: matched.id,
-                    toolCallId,
-                    toolName,
-                    approved,
-                    decision,
-                    storeAction,
-                  });
-                },
+                onResolution,
               },
             };
           }

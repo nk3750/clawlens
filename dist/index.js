@@ -8,6 +8,7 @@ import { registerDashboardRoutes } from "./src/dashboard/routes";
 import { GuardrailStore } from "./src/guardrails/store";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
+import { PendingApprovalStore } from "./src/hooks/pending-approval-store";
 import { createSessionEndHandler } from "./src/hooks/session-end";
 import { createSessionStartHandler } from "./src/hooks/session-start";
 import { EvalCache } from "./src/risk/eval-cache";
@@ -17,6 +18,7 @@ import { SessionContext } from "./src/risk/session-context";
 // (gateway dispatches tool calls through different api contexts).
 let _handlerDeps;
 let _attentionStore;
+let _pendingApprovalStore;
 let _serviceRegistered = false;
 // biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
 const _hookedApis = new WeakSet();
@@ -52,6 +54,7 @@ const plugin = {
             const guardrailStore = new GuardrailStore(config.guardrailsPath);
             guardrailStore.load();
             _attentionStore = new AttentionStore(config.attentionStatePath);
+            _pendingApprovalStore = new PendingApprovalStore();
             // Alert send function — uses gateway method if available
             let alertSend;
             try {
@@ -79,6 +82,7 @@ const plugin = {
                 runtime: typedRuntime,
                 provider,
                 openClawConfig: api.config,
+                pendingApprovalStore: _pendingApprovalStore,
             };
             // Create handler instances once — reused across api registrations
             _beforeToolCallHandler = createBeforeToolCallHandler(_handlerDeps);
@@ -182,6 +186,7 @@ const plugin = {
                 openClawConfig: api.config,
                 guardrailStore: grStore,
                 attentionStore: _attentionStore,
+                pendingApprovalStore: _pendingApprovalStore,
             });
             _serviceRegistered = true;
         }

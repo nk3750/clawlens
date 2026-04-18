@@ -33,33 +33,52 @@ export function createBeforeToolCallHandler(deps) {
                         };
                     }
                     if (matched.action.type === "require_approval") {
+                        const approvalTimeoutMs = 300_000;
+                        // Wrapper also called by /api/attention/resolve via store.take().
+                        // `pendingApprovalStore.take()` is idempotent / single-winner, so
+                        // this remains safe whether Telegram, the dashboard, or OpenClaw's
+                        // own timeout fires first.
+                        const onResolution = (decision) => {
+                            if (toolCallId) {
+                                deps.pendingApprovalStore?.take(toolCallId);
+                            }
+                            const approved = decision === "allow-once" || decision === "allow-always";
+                            let storeAction = "unchanged";
+                            if (decision === "allow-always" && guardrailStore) {
+                                const removed = guardrailStore.remove(matched.id);
+                                if (removed) {
+                                    storeAction = "removed";
+                                    logger?.info(`ClawLens: Guardrail ${matched.id} removed (allow-always resolution)`);
+                                }
+                            }
+                            auditLogger.logGuardrailResolution({
+                                guardrailId: matched.id,
+                                toolCallId,
+                                toolName,
+                                approved,
+                                decision,
+                                storeAction,
+                            });
+                        };
+                        if (deps.pendingApprovalStore && toolCallId) {
+                            deps.pendingApprovalStore.put({
+                                toolCallId,
+                                agentId,
+                                toolName,
+                                stashedAt: Date.now(),
+                                timeoutMs: approvalTimeoutMs,
+                                resolve: async (decision) => onResolution(decision),
+                            });
+                        }
                         return {
                             requireApproval: {
                                 title: "ClawLens Guardrail",
                                 description: formatGuardrailApproval(matched, toolName, params),
                                 severity: "warning",
-                                timeoutMs: 300_000,
+                                timeoutMs: approvalTimeoutMs,
                                 timeoutBehavior: "deny",
                                 pluginId: "clawlens",
-                                onResolution: (decision) => {
-                                    const approved = decision === "allow-once" || decision === "allow-always";
-                                    let storeAction = "unchanged";
-                                    if (decision === "allow-always" && guardrailStore) {
-                                        const removed = guardrailStore.remove(matched.id);
-                                        if (removed) {
-                                            storeAction = "removed";
-                                            logger?.info(`ClawLens: Guardrail ${matched.id} removed (allow-always resolution)`);
-                                        }
-                                    }
-                                    auditLogger.logGuardrailResolution({
-                                        guardrailId: matched.id,
-                                        toolCallId,
-                                        toolName,
-                                        approved,
-                                        decision,
-                                        storeAction,
-                                    });
-                                },
+                                onResolution,
                             },
                         };
                     }

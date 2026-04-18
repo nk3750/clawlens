@@ -1,6 +1,7 @@
 import type { AuditLogger } from "../audit/logger";
 import type { ClawLensConfig } from "../config";
 import { GuardrailStore } from "../guardrails/store";
+import type { PendingApprovalStore } from "../hooks/pending-approval-store";
 import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
 import { AttentionStore } from "./attention-state";
 export interface DashboardDeps {
@@ -13,5 +14,6 @@ export interface DashboardDeps {
     openClawConfig?: Record<string, unknown>;
     guardrailStore?: GuardrailStore;
     attentionStore?: AttentionStore;
+    pendingApprovalStore?: PendingApprovalStore;
 }
 export declare function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardDeps): void;

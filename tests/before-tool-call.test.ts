@@ -47,9 +47,36 @@ function mockAuditLogger() {
     logDecision: vi.fn(),
     appendEvaluation: vi.fn(),
     logApprovalResolution: vi.fn(),
+    logGuardrailMatch: vi.fn(),
+    logGuardrailResolution: vi.fn(),
     init: vi.fn(),
     readEntries: vi.fn().mockReturnValue([]),
     flush: vi.fn(),
+  };
+}
+
+function mockPendingApprovalStore() {
+  return {
+    put: vi.fn(),
+    take: vi.fn(),
+    peek: vi.fn(),
+    size: vi.fn().mockReturnValue(0),
+    shutdown: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    emit: vi.fn(),
+  };
+}
+
+function mockGuardrailStore(match: unknown) {
+  return {
+    load: vi.fn(),
+    list: vi.fn().mockReturnValue([]),
+    match: vi.fn().mockReturnValue(match),
+    peek: vi.fn().mockReturnValue(match),
+    add: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn().mockReturnValue(true),
   };
 }
 
@@ -333,5 +360,134 @@ describe("createBeforeToolCallHandler", () => {
       expect.anything(),
       undefined, // openClawConfig
     );
+  });
+});
+
+describe("require_approval wrap — PendingApprovalStore integration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockComputeRiskScore.mockReturnValue(lowRisk());
+  });
+
+  const guardrailMatch = {
+    id: "gr_1",
+    tool: "exec",
+    identityKey: "exec:curl https://example.com",
+    matchMode: "exact" as const,
+    action: { type: "require_approval" as const },
+    agentId: "test-agent",
+    createdAt: new Date().toISOString(),
+    source: { toolCallId: "tc_src", sessionKey: "test-session", agentId: "test-agent" },
+    description: "Needs review",
+    riskScore: 70,
+  };
+
+  it("stashes the approval in the store with the correct fields", async () => {
+    const store = mockPendingApprovalStore();
+    const deps = makeDeps({
+      guardrailStore: mockGuardrailStore(
+        guardrailMatch,
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+      pendingApprovalStore: store as unknown as BeforeToolCallDeps["pendingApprovalStore"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    const result = await handler(makeEvent({ toolCallId: "tc-wrap-001" }), ctx);
+
+    expect(result?.requireApproval).toBeDefined();
+    expect(store.put).toHaveBeenCalledTimes(1);
+    const stashed = store.put.mock.calls[0][0];
+    expect(stashed).toMatchObject({
+      toolCallId: "tc-wrap-001",
+      agentId: "test-agent",
+      toolName: "exec",
+      timeoutMs: 300_000,
+    });
+    expect(typeof stashed.stashedAt).toBe("number");
+    expect(typeof stashed.resolve).toBe("function");
+  });
+
+  it("invoking the stashed resolve() fires logGuardrailResolution and calls store.take()", async () => {
+    const store = mockPendingApprovalStore();
+    const auditLogger = mockAuditLogger();
+    const deps = makeDeps({
+      auditLogger: auditLogger as unknown as BeforeToolCallDeps["auditLogger"],
+      guardrailStore: mockGuardrailStore(
+        guardrailMatch,
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+      pendingApprovalStore: store as unknown as BeforeToolCallDeps["pendingApprovalStore"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    await handler(makeEvent({ toolCallId: "tc-wrap-002" }), ctx);
+
+    const stashed = store.put.mock.calls[0][0];
+    await stashed.resolve("allow-once");
+    expect(store.take).toHaveBeenCalledWith("tc-wrap-002");
+    expect(auditLogger.logGuardrailResolution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guardrailId: "gr_1",
+        toolCallId: "tc-wrap-002",
+        approved: true,
+        decision: "allow-once",
+      }),
+    );
+  });
+
+  it("requireApproval.onResolution is the same wrapper stashed in the store", async () => {
+    const store = mockPendingApprovalStore();
+    const deps = makeDeps({
+      guardrailStore: mockGuardrailStore(
+        guardrailMatch,
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+      pendingApprovalStore: store as unknown as BeforeToolCallDeps["pendingApprovalStore"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    const result = await handler(makeEvent({ toolCallId: "tc-wrap-003" }), ctx);
+
+    const stashed = store.put.mock.calls[0][0];
+    const onResolution = result?.requireApproval?.onResolution;
+    // OpenClaw will call this directly on Telegram resolution — must drain
+    // the store in the same way as the stashed wrapped resolver.
+    await onResolution?.("deny");
+    expect(store.take).toHaveBeenCalledWith("tc-wrap-003");
+    // Calling the stashed resolve() separately also triggers another take —
+    // which is safe because take() is single-winner on the real store.
+    await stashed.resolve("deny");
+    expect(store.take).toHaveBeenCalledTimes(2);
+  });
+
+  it("omitting pendingApprovalStore keeps the approval path working (no wrap, no crash)", async () => {
+    const auditLogger = mockAuditLogger();
+    const deps = makeDeps({
+      auditLogger: auditLogger as unknown as BeforeToolCallDeps["auditLogger"],
+      guardrailStore: mockGuardrailStore(
+        guardrailMatch,
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+      // No pendingApprovalStore — simulates pre-wiring / test harness.
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    const result = await handler(makeEvent({ toolCallId: "tc-wrap-004" }), ctx);
+
+    expect(result?.requireApproval?.onResolution).toBeDefined();
+    await result?.requireApproval?.onResolution?.("allow-once");
+    expect(auditLogger.logGuardrailResolution).toHaveBeenCalledWith(
+      expect.objectContaining({ approved: true }),
+    );
+  });
+
+  it("does not stash when toolCallId is missing (OpenClaw contract edge)", async () => {
+    const store = mockPendingApprovalStore();
+    const deps = makeDeps({
+      guardrailStore: mockGuardrailStore(
+        guardrailMatch,
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+      pendingApprovalStore: store as unknown as BeforeToolCallDeps["pendingApprovalStore"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    const result = await handler(makeEvent({ toolCallId: undefined }), ctx);
+
+    // We still return the approval so OpenClaw can prompt, but we have
+    // nothing to key off in the store.
+    expect(result?.requireApproval).toBeDefined();
+    expect(store.put).not.toHaveBeenCalled();
   });
 });

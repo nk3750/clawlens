@@ -269,6 +269,59 @@ export function registerDashboardRoutes(api, deps) {
                 sendJson(res, { ok: true, id: record.id, ackedAt: record.ackedAt });
                 return true;
             }
+            if (subPath === "api/attention/resolve" && req.method === "POST") {
+                if (!deps.pendingApprovalStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Approval store not configured" }));
+                    return true;
+                }
+                const body = (await readBody(req));
+                if (typeof body.toolCallId !== "string" ||
+                    body.toolCallId.length === 0 ||
+                    (body.decision !== "approve" && body.decision !== "deny")) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Invalid body" }));
+                    return true;
+                }
+                const entry = deps.pendingApprovalStore.take(body.toolCallId);
+                if (!entry) {
+                    res.writeHead(404, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Already resolved", reason: "already_resolved" }));
+                    return true;
+                }
+                // Translate the dashboard verb into the guardrail decision string
+                // OpenClaw expects. "allow-once" proceeds without relaxing future
+                // matches; "deny" blocks. We intentionally do NOT use "allow-always"
+                // — that would silently disarm the guardrail; the user can do that
+                // explicitly from the guardrails page.
+                const openClawDecision = body.decision === "approve" ? "allow-once" : "deny";
+                try {
+                    await entry.resolve(openClawDecision);
+                }
+                catch (err) {
+                    api.logger.error("pendingApproval.resolve threw:", err);
+                    res.writeHead(500, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Resolver threw", message: String(err) }));
+                    return true;
+                }
+                // Decorate the audit log so the resolution source is distinguishable
+                // from Telegram / timeout. The inner guardrail resolution already
+                // writes its own entry; this one adds dashboard provenance.
+                deps.auditLogger.logApprovalResolution({
+                    toolCallId: entry.toolCallId,
+                    toolName: entry.toolName,
+                    approved: body.decision === "approve",
+                    resolvedBy: "dashboard",
+                    note: typeof body.note === "string" ? body.note : undefined,
+                    agentId: entry.agentId,
+                });
+                sendJson(res, {
+                    ok: true,
+                    resolvedAt: new Date().toISOString(),
+                    decision: body.decision,
+                });
+                return true;
+            }
             const agentMatch = subPath.match(/^api\/agent\/([^/]+)$/);
             if (agentMatch) {
                 const agentId = decodeURIComponent(agentMatch[1]);

@@ -68,6 +68,8 @@ export declare class AuditLogger extends EventEmitter {
         toolName: string;
         approved: boolean;
         resolvedBy?: string;
+        note?: string;
+        agentId?: string;
     }): void;
     /** Log a tool call result (from after_tool_call). */
     logResult(data: {

@@ -115,13 +115,17 @@ export class AuditLogger extends EventEmitter {
     }
     /** Log an approval resolution callback. */
     logApprovalResolution(data) {
+        const params = { resolvedBy: data.resolvedBy };
+        if (data.note !== undefined)
+            params.note = data.note;
         this.append({
             timestamp: new Date().toISOString(),
             toolName: data.toolName,
             toolCallId: data.toolCallId,
-            params: { resolvedBy: data.resolvedBy },
+            params,
             decision: data.approved ? "allow" : "block",
             userResponse: data.approved ? "approved" : "denied",
+            agentId: data.agentId,
         });
     }
     /** Log a tool call result (from after_tool_call). */

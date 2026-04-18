@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AttentionItem } from "../../lib/types";
 import { riskColorRaw } from "../../lib/utils";
+import ResolveButtons from "./ResolveButtons";
 
 interface Props {
   item: AttentionItem;
@@ -10,10 +11,9 @@ interface Props {
 }
 
 /**
- * T1 hero: pending approval. Includes the approval countdown, a risk context
- * line, and a Review link. The spec also calls for in-place Approve / Deny
- * buttons, but ClawLens has no approval-resolution route yet — the Review
- * link into SessionDetail is the authoritative path.
+ * T1 hero: pending approval. Countdown + in-place Approve/Deny + Review link.
+ * Approve/Deny race cleanly with Telegram and the OpenClaw timer — whichever
+ * fires first wins via the PendingApprovalStore's single-winner take().
  */
 export default function ApprovalCard({ item, pulsing }: Props) {
   const riskColor = riskColorRaw(item.riskTier);
@@ -72,6 +72,7 @@ export default function ApprovalCard({ item, pulsing }: Props) {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <ApprovalCountdown initialMs={item.timeoutMs ?? 0} />
+          <ResolveButtons toolCallId={item.toolCallId} disabled={!!item.ackedAt} />
           {item.sessionKey && (
             <Link
               to={`/session/${encodeURIComponent(item.sessionKey)}`}

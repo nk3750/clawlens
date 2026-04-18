@@ -8,6 +8,7 @@ import { registerDashboardRoutes } from "./src/dashboard/routes";
 import { GuardrailStore } from "./src/guardrails/store";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
 import { type BeforeToolCallDeps, createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
+import { PendingApprovalStore } from "./src/hooks/pending-approval-store";
 import { createSessionEndHandler } from "./src/hooks/session-end";
 import { createSessionStartHandler } from "./src/hooks/session-start";
 import { EvalCache } from "./src/risk/eval-cache";
@@ -24,6 +25,7 @@ import type {
 // (gateway dispatches tool calls through different api contexts).
 let _handlerDeps: BeforeToolCallDeps | undefined;
 let _attentionStore: AttentionStore | undefined;
+let _pendingApprovalStore: PendingApprovalStore | undefined;
 let _serviceRegistered = false;
 // biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
 const _hookedApis = new WeakSet<any>();
@@ -76,6 +78,7 @@ const plugin: OpenClawPluginDefinition = {
       const guardrailStore = new GuardrailStore(config.guardrailsPath);
       guardrailStore.load();
       _attentionStore = new AttentionStore(config.attentionStatePath);
+      _pendingApprovalStore = new PendingApprovalStore();
 
       // Alert send function — uses gateway method if available
       let alertSend: ((msg: string) => Promise<void> | void) | undefined;
@@ -104,6 +107,7 @@ const plugin: OpenClawPluginDefinition = {
         runtime: typedRuntime,
         provider,
         openClawConfig: api.config as Record<string, unknown>,
+        pendingApprovalStore: _pendingApprovalStore,
       };
 
       // Create handler instances once — reused across api registrations
@@ -224,6 +228,7 @@ const plugin: OpenClawPluginDefinition = {
         openClawConfig: api.config as Record<string, unknown>,
         guardrailStore: grStore as GuardrailStore,
         attentionStore: _attentionStore,
+        pendingApprovalStore: _pendingApprovalStore,
       });
 
       _serviceRegistered = true;
