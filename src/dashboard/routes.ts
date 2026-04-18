@@ -343,6 +343,10 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       }
 
       if (subPath === "api/attention/resolve" && req.method === "POST") {
+        // Kept wired for when upstream lands onRegistered (see
+        // openclaw/openclaw#68626). Today the resolver closure only cleans our
+        // stash and decorates audit — it does NOT unblock
+        // plugin.approval.waitDecision.
         if (!deps.pendingApprovalStore) {
           res.writeHead(501, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Approval store not configured" }));

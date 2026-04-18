@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AttentionItem } from "../../lib/types";
 import { riskColorRaw } from "../../lib/utils";
-import ResolveButtons from "./ResolveButtons";
 
 interface Props {
   item: AttentionItem;
@@ -11,9 +10,9 @@ interface Props {
 }
 
 /**
- * T1 hero: pending approval. Countdown + in-place Approve/Deny + Review link.
- * Approve/Deny race cleanly with Telegram and the OpenClaw timer — whichever
- * fires first wins via the PendingApprovalStore's single-winner take().
+ * T1 hero: pending approval. Resolution happens via Telegram / webchat until
+ * OpenClaw SDK exposes a plugin-side resolver (see openclaw/openclaw#68626
+ * and clawLens#4).
  */
 export default function ApprovalCard({ item, pulsing }: Props) {
   const riskColor = riskColorRaw(item.riskTier);
@@ -61,6 +60,14 @@ export default function ApprovalCard({ item, pulsing }: Props) {
           >
             {item.description}
           </p>
+          {item.kind === "pending" && (
+            <p
+              className="font-mono text-[11px]"
+              style={{ color: "var(--cl-text-muted)" }}
+            >
+              Resolve via Telegram — dashboard resolution pending upstream SDK support.
+            </p>
+          )}
           {item.sessionKey && (
             <p
               className="font-mono text-[11px] truncate"
@@ -72,7 +79,6 @@ export default function ApprovalCard({ item, pulsing }: Props) {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <ApprovalCountdown initialMs={item.timeoutMs ?? 0} />
-          <ResolveButtons toolCallId={item.toolCallId} disabled={!!item.ackedAt} />
           {item.sessionKey && (
             <Link
               to={`/session/${encodeURIComponent(item.sessionKey)}`}

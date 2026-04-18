@@ -34,10 +34,11 @@ export function createBeforeToolCallHandler(deps) {
                     }
                     if (matched.action.type === "require_approval") {
                         const approvalTimeoutMs = 300_000;
-                        // Wrapper also called by /api/attention/resolve via store.take().
-                        // `pendingApprovalStore.take()` is idempotent / single-winner, so
-                        // this remains safe whether Telegram, the dashboard, or OpenClaw's
-                        // own timeout fires first.
+                        // Wrapper called by /api/attention/resolve via store.take(). Until
+                        // OpenClaw exposes a plugin-side resolver (openclaw/openclaw#68626),
+                        // this only cleans our stash + writes the guardrail-resolution audit
+                        // row — it does NOT actually unblock the tool call. Telegram /
+                        // timeout remain the only real resolution paths today.
                         const onResolution = (decision) => {
                             if (toolCallId) {
                                 deps.pendingApprovalStore?.take(toolCallId);
