@@ -907,14 +907,18 @@ export function getAttention(
     ) {
       if (isEntryAcked(attentionStore, e.toolCallId)) continue;
       const elapsedMs = now - new Date(e.timestamp).getTime();
-      let guardrailMatch: AttentionItem["guardrailMatch"];
-      if (guardrailStore) {
-        const key = extractIdentityKey(e.toolName, e.params);
-        const matched = guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key);
-        if (matched) {
-          guardrailMatch = { id: matched.id, identityKey: key };
-        }
-      }
+      // Read the guardrail that historically matched at decision time from the
+      // audit entry's own params (written by `logGuardrailMatch`). Do NOT peek
+      // the live store — current store state diverges from the decision-time
+      // state when guardrails are added/removed while an approval is pending.
+      const historicalGuardrailId =
+        typeof e.params.guardrailId === "string" ? e.params.guardrailId : undefined;
+      const historicalIdentityKey =
+        typeof e.params.identityKey === "string" ? e.params.identityKey : undefined;
+      const guardrailMatch: AttentionItem["guardrailMatch"] =
+        historicalGuardrailId && historicalIdentityKey
+          ? { id: historicalGuardrailId, identityKey: historicalIdentityKey }
+          : undefined;
       pending.push({
         ...common,
         kind: "pending",
