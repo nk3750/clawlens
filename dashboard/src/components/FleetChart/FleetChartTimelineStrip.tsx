@@ -1,0 +1,296 @@
+import { useNavigate } from "react-router-dom";
+import type { TimelineSession } from "../../lib/types";
+import { riskColorRaw, riskTierFromScore } from "../../lib/utils";
+import type { RangeOption } from "../fleetheader/utils";
+import {
+  cluster as clusterSessions,
+  isAttentionSession,
+  makeTimeToX,
+  type Cluster,
+} from "./utils";
+import { useStripWidth } from "./useStripWidth";
+
+interface Props {
+  range: RangeOption;
+  agentSessions: TimelineSession[];
+  pendingSessionKeys: ReadonlySet<string>;
+  breathingRingKeys: ReadonlySet<string>;
+  ghostNextRunMs: number | null;
+  startMs: number;
+  endMs: number;
+  nowMs: number;
+  isToday: boolean;
+  height: number;
+  onHover: (
+    c: Cluster | null,
+    event: React.MouseEvent<SVGGElement> | null,
+  ) => void;
+  onClick: (c: Cluster, event: React.MouseEvent<SVGGElement>) => void;
+}
+
+const DOT_ROUTINE_R = 4;
+const DOT_ATTENTION_R = 6;
+const HIT_R = 12;
+const TAIL_MIN_PX = 4;
+
+function hideGhost(range: RangeOption): boolean {
+  return range === "12h" || range === "24h";
+}
+
+export default function FleetChartTimelineStrip({
+  range,
+  agentSessions,
+  pendingSessionKeys,
+  breathingRingKeys,
+  ghostNextRunMs,
+  startMs,
+  endMs,
+  nowMs,
+  isToday,
+  height,
+  onHover,
+  onClick,
+}: Props) {
+  const navigate = useNavigate();
+  const [stripRef, renderWidth] = useStripWidth();
+
+  const timeToX = makeTimeToX(startMs, endMs, renderWidth);
+  const cy = height / 2;
+  const clusters = clusterSessions(agentSessions, timeToX, pendingSessionKeys);
+  const nowX = isToday ? timeToX(nowMs) : null;
+
+  return (
+    <div
+      ref={stripRef}
+      style={{ width: "100%", height, position: "relative" }}
+      data-cl-fleet-strip-container
+    >
+      <svg
+        viewBox={`0 0 ${renderWidth} ${height}`}
+        width={renderWidth}
+        height={height}
+        style={{ display: "block" }}
+        data-cl-fleet-strip
+      >
+        {/* Baseline guide */}
+        <line
+          x1={0}
+          x2={renderWidth}
+          y1={height - 6}
+          y2={height - 6}
+          stroke="var(--cl-border-subtle)"
+          strokeWidth={0.5}
+        />
+
+        {/* Tails (back) */}
+        {clusters.map((c) => {
+          if (c.isCluster) return null;
+          const s = c.sessions[0];
+          const sStart = new Date(s.startTime).getTime();
+          const sEnd = new Date(s.endTime).getTime();
+          const tailPx =
+            ((sEnd - sStart) / (endMs - startMs || 1)) * renderWidth;
+          if (tailPx < TAIL_MIN_PX) return null;
+          const tier = riskTierFromScore(s.peakRisk);
+          const color = riskColorRaw(tier);
+          return (
+            <line
+              key={`tail-${s.sessionKey}`}
+              x1={timeToX(sStart)}
+              x2={timeToX(sEnd)}
+              y1={cy + 6}
+              y2={cy + 6}
+              stroke={color}
+              strokeWidth={1.5}
+              opacity={0.55}
+              data-cl-fleet-tail
+            />
+          );
+        })}
+
+        {/* Ghost marker (next scheduled run) */}
+        {ghostNextRunMs !== null &&
+          !hideGhost(range) &&
+          ghostNextRunMs > nowMs &&
+          ghostNextRunMs <= endMs && (
+            <circle
+              cx={timeToX(ghostNextRunMs)}
+              cy={cy}
+              r={DOT_ROUTINE_R}
+              fill="none"
+              stroke="var(--cl-text-muted)"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+              opacity={0.5}
+              data-cl-fleet-ghost
+            />
+          )}
+
+        {/* Dots / clusters (front) */}
+        {clusters.map((c) => {
+          const hasAttention = c.isCluster
+            ? c.peakRisk >= 65 || c.blockedCount > 0 || c.hasPending
+            : isAttentionSession(c.sessions[0], pendingSessionKeys);
+          const r = hasAttention ? DOT_ATTENTION_R : DOT_ROUTINE_R;
+          const tier = riskTierFromScore(c.peakRisk);
+          const color = riskColorRaw(tier);
+          const key = c.sessions.map((s) => s.sessionKey).join("|");
+          const showBreathing =
+            c.sessions.some((s) => breathingRingKeys.has(s.sessionKey)) &&
+            (range === "1h" || range === "3h");
+
+          return (
+            <g
+              key={key}
+              style={{ cursor: "pointer" }}
+              onMouseEnter={(e) => onHover(c, e)}
+              onMouseMove={(e) => onHover(c, e)}
+              onMouseLeave={() => onHover(null, null)}
+              onClick={(e) => {
+                if (c.isCluster) {
+                  onClick(c, e);
+                } else {
+                  navigate(
+                    `/session/${encodeURIComponent(c.sessions[0].sessionKey)}`,
+                  );
+                }
+              }}
+              data-cl-fleet-dot
+              data-cl-cluster={c.isCluster ? "true" : "false"}
+              data-cl-risk-tier={tier}
+            >
+              {/* Core dot */}
+              <circle cx={c.cx} cy={cy} r={r} fill={color} opacity={0.9} />
+
+              {/* Attention ring */}
+              {hasAttention && (
+                <circle
+                  cx={c.cx}
+                  cy={cy}
+                  r={r + 2}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1.5}
+                  opacity={0.55}
+                  data-cl-fleet-attention-ring
+                />
+              )}
+
+              {/* Pending crown */}
+              {c.hasPending && (
+                <circle
+                  cx={c.cx}
+                  cy={cy}
+                  r={r + 4}
+                  fill="none"
+                  stroke="var(--cl-risk-medium)"
+                  strokeWidth={1}
+                  strokeDasharray="2 2"
+                  data-cl-fleet-pending
+                >
+                  <animate
+                    attributeName="opacity"
+                    values="0.4;0.8;0.4"
+                    dur="2s"
+                    repeatCount="indefinite"
+                  />
+                </circle>
+              )}
+
+              {/* Blocked glyph */}
+              {c.blockedCount > 0 && (
+                <g data-cl-fleet-blocked>
+                  <circle
+                    cx={c.cx + r}
+                    cy={cy - r}
+                    r={2.5}
+                    fill="var(--cl-risk-high)"
+                  />
+                  <line
+                    x1={c.cx + r - 1.3}
+                    y1={cy - r - 1.3}
+                    x2={c.cx + r + 1.3}
+                    y2={cy - r + 1.3}
+                    stroke="var(--cl-surface)"
+                    strokeWidth={0.8}
+                    strokeLinecap="round"
+                  />
+                </g>
+              )}
+
+              {/* Cluster count badge */}
+              {c.isCluster && (
+                <text
+                  x={c.cx}
+                  y={cy - r - 4}
+                  textAnchor="middle"
+                  className="label-mono"
+                  style={{
+                    fill: "var(--cl-text-secondary)",
+                    fontSize: 9,
+                    fontWeight: 700,
+                  }}
+                  data-cl-fleet-cluster-count
+                >
+                  {c.sessions.length}
+                </text>
+              )}
+
+              {/* Active breathing ring */}
+              {showBreathing && (
+                <circle
+                  cx={c.cx}
+                  cy={cy}
+                  r={r}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1.5}
+                  data-cl-fleet-breathing
+                >
+                  <animate
+                    attributeName="r"
+                    from={String(r)}
+                    to={String(r + 8)}
+                    dur="2s"
+                    repeatCount="indefinite"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    from="0.6"
+                    to="0"
+                    dur="2s"
+                    repeatCount="indefinite"
+                  />
+                </circle>
+              )}
+
+              {/* Invisible hit target */}
+              <circle cx={c.cx} cy={cy} r={HIT_R} fill="transparent" />
+            </g>
+          );
+        })}
+
+        {/* NOW line inside this strip */}
+        {nowX !== null && nowX >= 0 && nowX <= renderWidth && (
+          <line
+            x1={nowX}
+            x2={nowX}
+            y1={0}
+            y2={height}
+            stroke="var(--cl-accent)"
+            strokeWidth={1}
+            opacity={0.4}
+            data-cl-fleet-now-line
+          >
+            <animate
+              attributeName="opacity"
+              values="0.25;0.55;0.25"
+              dur="2s"
+              repeatCount="indefinite"
+            />
+          </line>
+        )}
+      </svg>
+    </div>
+  );
+}

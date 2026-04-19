@@ -4,7 +4,7 @@ import type { AgentInfo, AttentionResponse, Guardrail, StatsResponse } from "../
 import FleetHeader from "../components/FleetHeader";
 import AttentionInbox from "../components/AttentionInbox";
 import AgentRow from "../components/AgentCardCompact";
-import ActivityTimeline from "../components/ActivityTimeline";
+import FleetChart from "../components/FleetChart/FleetChart";
 import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
 import DormantState from "../components/DormantState";
@@ -112,12 +112,20 @@ export default function Agents() {
         <AttentionInbox data={attention} refetch={refetchAttention} />
       </div>
 
-      {/* Activity Timeline — range is now driven by FleetHeader */}
+      {/* Fleet Chart — range is driven by FleetHeader */}
       <div data-cl-fleet-chart-anchor>
-        <ActivityTimeline
+        <FleetChart
           isToday={isToday}
           selectedDate={selectedDate}
           range={range}
+          agents={agents}
+          pendingSessionKeys={
+            new Set(
+              (attention?.pending ?? [])
+                .map((p) => p.sessionKey)
+                .filter((k): k is string => Boolean(k)),
+            )
+          }
         />
       </div>
 
