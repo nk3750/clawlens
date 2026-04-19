@@ -461,12 +461,12 @@ describe("FleetChart — edge-clamp dots at strip left", () => {
     expect(cx).toBeGreaterThanOrEqual(r);
   });
 
-  it("clamps attention dots so the core circle is fully visible (ring allowed 2px overhang)", () => {
+  it("clamps attention dots so BOTH the core circle AND the ring are fully visible", () => {
     // Attention sessions use r=6 for the core dot and r+2=8 for the ring.
-    // The clamp uses the core `r` — the core stays fully visible, the ring
-    // accepts a 2 px overhang as the "this session sits at the boundary"
-    // visual cue (vs. the unclamped half-moon which hid the dot entirely).
-    // Both circles must share a single cx so the glyph stays centered.
+    // The clamp now uses the widest visible radius (r+4, accounting for the
+    // pending crown's outer ring) so the ring never clips against the strip
+    // edge. The old "2 px overhang for boundary semantics" rationale read
+    // as a clipping bug in practice — removed.
     const nowMs = Date.parse(NOW_ISO);
     const windowStart = new Date(nowMs - 60 * 60_000).toISOString();
     const session = makeSession({
@@ -504,9 +504,12 @@ describe("FleetChart — edge-clamp dots at strip left", () => {
     const coreCx = Number.parseFloat(core?.getAttribute("cx") ?? "NaN");
     const coreR = Number.parseFloat(core?.getAttribute("r") ?? "NaN");
     const ringCx = Number.parseFloat(ring?.getAttribute("cx") ?? "NaN");
-    // Core is fully visible and shares its cx with the ring.
-    expect(coreCx).toBeGreaterThanOrEqual(coreR);
+    const ringR = Number.parseFloat(ring?.getAttribute("r") ?? "NaN");
+    // Core and ring share a single cx (same dot stays centered).
     expect(ringCx).toBe(coreCx);
+    // Both must be fully inside the strip — no clipping at the left edge.
+    expect(coreCx - coreR).toBeGreaterThanOrEqual(0);
+    expect(ringCx - ringR).toBeGreaterThanOrEqual(0);
   });
 });
 

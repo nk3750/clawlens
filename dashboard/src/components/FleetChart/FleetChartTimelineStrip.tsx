@@ -161,13 +161,18 @@ export default function FleetChartTimelineStrip({
             c.sessions.some((s) => breathingRingKeys.has(s.sessionKey)) &&
             (range === "1h" || range === "3h");
           // Clamp the visible circle's center so a session whose startTime
-          // sits outside the window doesn't render as a half-moon clipped
-          // against the strip edge. Use `r` for the bound so the core dot
-          // stays fully visible; the attention ring at r+2 accepts the 2px
-          // overhang for "this session is at the boundary" semantics. The
-          // hit area uses its own, larger bound (HIT_R) so pointer events
-          // land on the rendered dot even when pushed inward.
-          const dotCx = Math.max(r, Math.min(c.cx, renderWidth - r));
+          // sits outside the window doesn't render clipped against the
+          // strip edge. Bound at the widest visible radius (r + 4, the
+          // pending-crown outer ring) so EVERY ring — attention, pending,
+          // breathing — stays fully inside the strip. Routine dots accept
+          // the matching 4-px inset; consistency across variants wins over
+          // tight-to-edge rendering. Hit area uses its own HIT_R clamp so
+          // pointer events land on the rendered dot even when pushed in.
+          const outerR = r + 4;
+          const dotCx = Math.max(
+            outerR,
+            Math.min(c.cx, renderWidth - outerR),
+          );
           const hitCx = Math.max(HIT_R, Math.min(c.cx, renderWidth - HIT_R));
 
           return (
