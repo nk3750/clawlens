@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,8 +28,11 @@ import {
   cullLabelsForWidth,
   IDENTITY_WIDTH,
   IDENTITY_WIDTH_MOBILE,
+  NOW_LABEL_GUARD_PX,
   TOTALS_WIDTH,
   TOTALS_WIDTH_MOBILE,
+  VISIBLE_ROW_CAP_DESKTOP,
+  VISIBLE_ROW_CAP_MOBILE,
   makeTimeToX,
   pickBreathingRingSessions,
   predictNextRun,
@@ -49,7 +53,6 @@ interface Props {
   pendingSessionKeys: ReadonlySet<string>;
 }
 
-const IDLE_COLLAPSE_THRESHOLD = 5;
 const MOBILE_MAX_WIDTH = 640;
 
 function localTodayIso(ms: number): string {
@@ -106,14 +109,22 @@ export default function FleetChart({
     y: 0,
   });
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
-  const [showIdle, setShowIdle] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [clusterPopover, setClusterPopover] = useState<{
     cluster: Cluster;
     pos: { x: number; y: number };
   } | null>(null);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Body container as STATE (not useRef) — when it first becomes non-null
+  // we need the layout effect to run again so it can measure the newly-
+  // attached element. A useRef would not trigger a re-run; the initial
+  // loading/empty branch renders no body, so a ref-based effect would
+  // capture null and never re-fire when the body appeared on a later
+  // render.
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(
+    null,
+  );
   const [measuredWidth, setMeasuredWidth] = useState(800);
 
   // Seed from REST whenever the response lands. Resets SSE accretion.
@@ -175,12 +186,16 @@ export default function FleetChart({
     ),
   );
 
-  // Measure container width for strip layout.
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const el = containerRef.current;
+  // Measure container width for strip layout. useLayoutEffect runs synchro-
+  // nously after commit, so the post-measurement re-render lands before
+  // paint — keeps the mobile/desktop branching in sync with useStripWidth
+  // and avoids a flash where the layout briefly thinks it's desktop on a
+  // narrow viewport. Depends on `containerEl` so it re-runs when the body
+  // first attaches (the initial loading/empty branch renders no body).
+  useLayoutEffect(() => {
+    if (!containerEl) return;
     const update = () => {
-      const rect = el.getBoundingClientRect();
+      const rect = containerEl.getBoundingClientRect();
       setMeasuredWidth(Math.max(Math.floor(rect.width), 320));
     };
     update();
@@ -188,13 +203,13 @@ export default function FleetChart({
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(update)
         : null;
-    if (observer) observer.observe(el);
+    if (observer) observer.observe(containerEl);
     window.addEventListener("resize", update);
     return () => {
       observer?.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, []);
+  }, [containerEl]);
 
   // ── Derived data ─────────────────────────────────────────
 
@@ -278,28 +293,82 @@ export default function FleetChart({
       info: AgentInfo;
       total: number;
       isIdle: boolean;
+      scheduleLabel: string | null;
+      channels: ReturnType<typeof surfacedChannelsForRow>;
+      hasScheduleOrChannel: boolean;
+      lastActiveMs: number;
     }[] = [];
     for (const id of allAgentIds) {
       const info = agentInfoById.get(id) ?? fallbackAgent(id);
       const total = totals.get(id) ?? 0;
-      const isIdle = total === 0;
-      withInfo.push({ id, info, total, isIdle });
+      const scheduleLabel = deriveScheduleLabel(
+        info.mode,
+        cronStartsForAgent(id, liveSessions),
+        info.schedule,
+      );
+      const channels = surfacedChannelsForRow(id, liveSessions);
+      // §3 — drop rows that carry no signal in this window: zero actions, no
+      // surfaced channel, no usable schedule label, no attention flag. These
+      // belong in the agents-grid roster, not in the chart.
+      const dormant =
+        total === 0 &&
+        channels.length === 0 &&
+        scheduleLabel === null &&
+        !info.needsAttention;
+      if (dormant) continue;
+      const lastActiveMs = info.lastActiveTimestamp
+        ? new Date(info.lastActiveTimestamp).getTime()
+        : 0;
+      withInfo.push({
+        id,
+        info,
+        total,
+        isIdle: total === 0,
+        scheduleLabel,
+        channels,
+        hasScheduleOrChannel: scheduleLabel !== null || channels.length > 0,
+        lastActiveMs,
+      });
     }
+    // §4 ranking: needs-attention first, then total desc, then
+    // scheduled/channel-tagged before plain idle, then most-recently-active,
+    // then stable by id. Step 4 of the polish pass replaces the active/idle
+    // split with a single ranked list — this ranking already lives here so
+    // that step is a one-line change.
     withInfo.sort((a, b) => {
-      if (a.isIdle !== b.isIdle) return a.isIdle ? 1 : -1;
-      return b.total - a.total;
+      if (a.info.needsAttention !== b.info.needsAttention) {
+        return a.info.needsAttention ? -1 : 1;
+      }
+      if (a.total !== b.total) return b.total - a.total;
+      if (a.hasScheduleOrChannel !== b.hasScheduleOrChannel) {
+        return a.hasScheduleOrChannel ? -1 : 1;
+      }
+      if (a.lastActiveMs !== b.lastActiveMs) {
+        return b.lastActiveMs - a.lastActiveMs;
+      }
+      return a.id.localeCompare(b.id);
     });
     return withInfo;
   }, [allAgentIds, agentInfoById, liveSessions]);
 
-  const activeRows = sortedAgents.filter((r) => !r.isIdle);
-  const idleRows = sortedAgents.filter((r) => r.isIdle);
-  const shouldCollapseIdle = idleRows.length > IDLE_COLLAPSE_THRESHOLD;
-  const visibleIdleRows = shouldCollapseIdle && !showIdle ? [] : idleRows;
-  // First rendered row owns the NOW cap — actives win over idles. If both
-  // lists are empty there's no row to anchor against and the cap is skipped.
+  // §4 — unified ranked list capped at VISIBLE_ROW_CAP_*. Hidden rows live
+  // behind one expander button. Needs-attention agents bypass the cap (they
+  // ride along even when ranking would push them below it) — see §4 spec.
+  const visibleCap = mobile ? VISIBLE_ROW_CAP_MOBILE : VISIBLE_ROW_CAP_DESKTOP;
+  const attentionRows = sortedAgents.filter((r) => r.info.needsAttention);
+  const regularRows = sortedAgents.filter((r) => !r.info.needsAttention);
+  const regularSlot = Math.max(0, visibleCap - attentionRows.length);
+  const visibleRows = [
+    ...attentionRows,
+    ...regularRows.slice(0, regularSlot),
+  ];
+  const hiddenRows = regularRows.slice(regularSlot);
+  // The NOW cap rides on the first rendered strip so it inherits the
+  // strip's measured width. When the expander is collapsed but visibleRows
+  // is empty (e.g., every non-dormant agent is hidden — pathological), the
+  // first hidden row still anchors the cap so it doesn't disappear.
   const firstRenderedAgentId =
-    activeRows[0]?.id ?? visibleIdleRows[0]?.id ?? null;
+    visibleRows[0]?.id ?? hiddenRows[0]?.id ?? null;
 
   const dayBuckets = useMemo(
     () => bucketByDay(allAgentIds, liveSessions, nowMs),
@@ -339,6 +408,21 @@ export default function FleetChart({
   // per-row NOW line). Attaching it to the parent body's measurement would
   // desync against the actual strip render width — see bug #1.
   const showNowCap = isToday && range !== "7d";
+
+  // §2 — drop axis labels within NOW_LABEL_GUARD_PX of the NOW marker so the
+  // hour-tick text doesn't visually stack on the ▼ NOW cap. The tick LINE
+  // still draws; only the text is suppressed (filter happens after the
+  // existing density cull).
+  const labelShownFinal = useMemo(() => {
+    if (!showNowCap) return labelShown;
+    const nowX = timeToX(nowMs);
+    const kept = new Set<number>();
+    for (const ms of labelShown) {
+      const tx = timeToX(ms);
+      if (Math.abs(tx - nowX) >= NOW_LABEL_GUARD_PX) kept.add(ms);
+    }
+    return kept;
+  }, [labelShown, showNowCap, timeToX, nowMs]);
 
   // ── Handlers ─────────────────────────────────────────────
 
@@ -482,7 +566,7 @@ export default function FleetChart({
 
       {/* Chart body */}
       <div
-        ref={containerRef}
+        ref={setContainerEl}
         data-cl-fleet-body
         data-cl-fleet-hovered={hoveredAgent ?? undefined}
         style={{ position: "relative" }}
@@ -528,8 +612,9 @@ export default function FleetChart({
             );
           })()}
 
-        {/* Active rows */}
-        {activeRows.map((r) => (
+        {/* Visible rows (top-N from the ranked list, including any
+            needs-attention agents that bypass the cap) */}
+        {visibleRows.map((r) => (
           <FleetChartRow
             key={r.id}
             agent={r.info}
@@ -537,12 +622,8 @@ export default function FleetChart({
             isToday={isToday}
             mobile={mobile}
             sessions={sessionsByAgent.get(r.id) ?? []}
-            scheduleLabel={deriveScheduleLabel(
-              r.info.mode,
-              cronStartsForAgent(r.id, liveSessions),
-              r.info.schedule,
-            )}
-            channels={surfacedChannelsForRow(r.id, liveSessions)}
+            scheduleLabel={r.scheduleLabel}
+            channels={r.channels}
             pendingSessionKeys={pendingSessionKeys}
             breathingRingKeys={breathingRingKeys}
             ghostNextRunMs={
@@ -566,11 +647,14 @@ export default function FleetChart({
           />
         ))}
 
-        {/* Idle rows (collapsible) */}
-        {idleRows.length > 0 && shouldCollapseIdle && (
+        {/* Unified expander — one button collapses everything below the cap.
+            `data-cl-fleet-idle-toggle` retained for back-compat with existing
+            Playwright + unit tests; new tests should target the
+            `data-cl-fleet-more-toggle` selector. */}
+        {hiddenRows.length > 0 && (
           <button
             type="button"
-            onClick={() => setShowIdle((v) => !v)}
+            onClick={() => setShowHidden((v) => !v)}
             className="label-mono flex items-center gap-1 mt-2"
             style={{
               fontSize: 10,
@@ -581,47 +665,46 @@ export default function FleetChart({
               padding: "4px 0",
             }}
             data-cl-fleet-idle-toggle
+            data-cl-fleet-more-toggle
           >
-            {showIdle ? "Hide" : "Show"} {idleRows.length} idle agent
-            {idleRows.length !== 1 ? "s" : ""}
+            {showHidden ? "Hide" : `Show ${hiddenRows.length} more agent${hiddenRows.length === 1 ? "" : "s"}`}
+            {showHidden ? " \u25B4" : " \u25BE"}
           </button>
         )}
-        {visibleIdleRows.map((r) => (
-          <FleetChartRow
-            key={r.id}
-            agent={r.info}
-            range={range}
-            isToday={isToday}
-            mobile={mobile}
-            sessions={sessionsByAgent.get(r.id) ?? []}
-            scheduleLabel={deriveScheduleLabel(
-              r.info.mode,
-              cronStartsForAgent(r.id, liveSessions),
-              r.info.schedule,
-            )}
-            channels={surfacedChannelsForRow(r.id, liveSessions)}
-            pendingSessionKeys={pendingSessionKeys}
-            breathingRingKeys={breathingRingKeys}
-            ghostNextRunMs={
-              r.info.mode === "scheduled"
-                ? predictNextRun(r.id, liveSessions, nowMs)
-                : null
-            }
-            startMs={startMs}
-            endMs={endMs}
-            nowMs={nowMs}
-            days={dayBuckets.get(r.id) ?? []}
-            maxDayActions={maxDayActions}
-            todayIso={todayIso}
-            isDimmed={hoveredAgent !== null && hoveredAgent !== r.id}
-            showNowCap={showNowCap && r.id === firstRenderedAgentId}
-            onHoverRow={setHoveredAgent}
-            onHoverCluster={handleHoverCluster}
-            onClickCluster={handleClickCluster}
-            onHoverDay={handleHoverDay}
-            onClickDay={handleClickDay}
-          />
-        ))}
+
+        {showHidden &&
+          hiddenRows.map((r) => (
+            <FleetChartRow
+              key={r.id}
+              agent={r.info}
+              range={range}
+              isToday={isToday}
+              mobile={mobile}
+              sessions={sessionsByAgent.get(r.id) ?? []}
+              scheduleLabel={r.scheduleLabel}
+              channels={r.channels}
+              pendingSessionKeys={pendingSessionKeys}
+              breathingRingKeys={breathingRingKeys}
+              ghostNextRunMs={
+                r.info.mode === "scheduled"
+                  ? predictNextRun(r.id, liveSessions, nowMs)
+                  : null
+              }
+              startMs={startMs}
+              endMs={endMs}
+              nowMs={nowMs}
+              days={dayBuckets.get(r.id) ?? []}
+              maxDayActions={maxDayActions}
+              todayIso={todayIso}
+              isDimmed={hoveredAgent !== null && hoveredAgent !== r.id}
+              showNowCap={showNowCap && r.id === firstRenderedAgentId}
+              onHoverRow={setHoveredAgent}
+              onHoverCluster={handleHoverCluster}
+              onClickCluster={handleClickCluster}
+              onHoverDay={handleHoverDay}
+              onClickDay={handleClickDay}
+            />
+          ))}
 
         {/* Hour-tick axis (not 7d) */}
         {range !== "7d" && stripWidth > 0 && (
@@ -660,7 +743,7 @@ export default function FleetChart({
                         stroke="var(--cl-text-muted)"
                         strokeWidth={0.5}
                       />
-                      {labelShown.has(t.ms) && (
+                      {labelShownFinal.has(t.ms) && (
                         <text
                           x={tx}
                           y={13}

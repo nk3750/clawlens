@@ -322,8 +322,12 @@ describe("FleetChart — day-grid 7-cell shape (range=7d)", () => {
   });
 });
 
-describe("FleetChart — idle agent visibility (§4d)", () => {
-  it("keeps agents with zero sessions in the row list", () => {
+describe("FleetChart — idle agent visibility (§4d, narrowed by polish §3)", () => {
+  it("keeps idle agents in the row list when they still carry signal (schedule)", () => {
+    // Polish §3 overrides the broad §4d "always keep idle agents" rule —
+    // dormant rows (no actions, no schedule, no channels, no attention) now
+    // drop. Idle-with-schedule still renders because the schedule chip
+    // carries information for the user.
     const { container } = renderChart({
       agents: [
         makeAgent({ id: "a1", name: "a1", todayToolCalls: 5 }),
@@ -331,6 +335,8 @@ describe("FleetChart — idle agent visibility (§4d)", () => {
           id: "idle",
           name: "idle",
           status: "idle",
+          mode: "scheduled",
+          schedule: "0 */6 * * *",
           todayToolCalls: 0,
           lastActiveTimestamp: null,
         }),

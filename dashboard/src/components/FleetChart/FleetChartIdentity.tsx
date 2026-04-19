@@ -55,8 +55,18 @@ export default function FleetChartIdentity({
   }
 
   const idle = scheduleLabel ? null : idleBadge(agent);
-  const displayChannels = channels.slice(0, 2);
-  const extraChannels = channels.length - displayChannels.length;
+  // When the schedule chip already implies a recurring runner (`⏰ every Nh`),
+  // suppress any schedule-kind channel chip (cron, heartbeat, …) — they would
+  // double the same icon for the same signal. Idle rows (no scheduleLabel)
+  // keep the chip because there it carries unique signal: "ran on cron in
+  // this window even though no live cadence is set." Filter by `kind`, not
+  // id, so future schedule channels inherit the dedupe.
+  const surfaced =
+    scheduleLabel !== null
+      ? channels.filter((c) => c.kind !== "schedule")
+      : channels;
+  const displayChannels = surfaced.slice(0, 2);
+  const extraChannels = surfaced.length - displayChannels.length;
   const hasSecondary =
     scheduleLabel !== null || idle !== null || displayChannels.length > 0;
 
