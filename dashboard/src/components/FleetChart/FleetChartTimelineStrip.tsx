@@ -21,6 +21,14 @@ interface Props {
   nowMs: number;
   isToday: boolean;
   height: number;
+  /**
+   * When true the ▼ + "NOW" caption renders above this row's NOW line.
+   * Only the first fleet row sets this — the rest get the in-strip NOW line
+   * without the caption so all agents share one visual marker. Anchored in
+   * the strip's own coordinate space so the cap stays locked to the actual
+   * right-edge of the rendered strip, not the parent body's stale width.
+   */
+  showNowCap?: boolean;
   onHover: (
     c: Cluster | null,
     event: React.MouseEvent<SVGGElement> | null,
@@ -48,6 +56,7 @@ export default function FleetChartTimelineStrip({
   nowMs,
   isToday,
   height,
+  showNowCap = false,
   onHover,
   onClick,
 }: Props) {
@@ -58,6 +67,8 @@ export default function FleetChartTimelineStrip({
   const cy = height / 2;
   const clusters = clusterSessions(agentSessions, timeToX, pendingSessionKeys);
   const nowX = isToday ? timeToX(nowMs) : null;
+  const capVisible =
+    showNowCap && nowX !== null && nowX >= 0 && nowX <= renderWidth;
 
   return (
     <div
@@ -65,6 +76,44 @@ export default function FleetChartTimelineStrip({
       style={{ width: "100%", height, position: "relative" }}
       data-cl-fleet-strip-container
     >
+      {capVisible && nowX !== null && (
+        <div
+          data-cl-fleet-now-cap
+          style={{
+            position: "absolute",
+            top: -12,
+            left: nowX,
+            transform: "translateX(-50%)",
+            pointerEvents: "none",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            zIndex: 5,
+            animation: "pulse 2s ease-in-out infinite",
+          }}
+        >
+          <span
+            className="label-mono"
+            style={{
+              color: "var(--cl-accent)",
+              fontSize: 9,
+              lineHeight: 1,
+            }}
+          >
+            NOW
+          </span>
+          <span
+            style={{
+              color: "var(--cl-accent)",
+              fontSize: 9,
+              lineHeight: 1,
+              marginTop: 1,
+            }}
+          >
+            ▼
+          </span>
+        </div>
+      )}
       <svg
         viewBox={`0 0 ${renderWidth} ${height}`}
         width={renderWidth}

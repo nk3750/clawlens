@@ -651,3 +651,188 @@ describe("predictNextRun — sub-minute cadence (bug-adjacent)", () => {
     if (next !== null) expect(next).toBeGreaterThan(now);
   });
 });
+
+// ── Regression: NOW cap coord-system (bug ghost/now fix) ───
+
+describe("FleetChart — NOW cap coord system (bug #1 follow-up)", () => {
+  it("renders the NOW cap INSIDE the first row's strip container (not the body)", () => {
+    const { container } = renderChart({ range: "1h" });
+    const caps = container.querySelectorAll("[data-cl-fleet-now-cap]");
+    expect(caps).toHaveLength(1);
+    const cap = caps[0];
+    // Walking up from the cap we must hit a strip container before the body.
+    const stripContainer = cap.closest("[data-cl-fleet-strip-container]");
+    const body = cap.closest("[data-cl-fleet-body]");
+    expect(stripContainer).not.toBeNull();
+    expect(body).not.toBeNull();
+    // The cap MUST live inside a strip — the old coord-desynced build put it
+    // as a direct body child.
+    expect(stripContainer?.contains(body as Node)).toBe(false);
+  });
+
+  it("renders exactly one NOW cap across multiple rows (first row only)", () => {
+    const { container } = renderChart({
+      agents: [
+        makeAgent({ id: "a1", name: "a1", todayToolCalls: 3 }),
+        makeAgent({ id: "a2", name: "a2", todayToolCalls: 3 }),
+        makeAgent({ id: "a3", name: "a3", todayToolCalls: 3 }),
+      ],
+      sessions: [
+        makeSession({ sessionKey: "agent:a1:main:s", agentId: "a1" }),
+        makeSession({ sessionKey: "agent:a2:main:s", agentId: "a2" }),
+        makeSession({ sessionKey: "agent:a3:main:s", agentId: "a3" }),
+      ],
+    });
+    const caps = container.querySelectorAll("[data-cl-fleet-now-cap]");
+    expect(caps).toHaveLength(1);
+    // First row is whichever sortedAgents puts first — check it sits in the
+    // first rendered row (not some later one).
+    const rows = container.querySelectorAll("[data-cl-fleet-row]");
+    expect(rows[0].contains(caps[0] as Node)).toBe(true);
+  });
+
+  it("places the NOW cap at the strip's own measured right-edge (x == renderWidth)", () => {
+    // With endMs==nowMs and the jsdom stub reporting strip width=900, the NOW
+    // line sits at x=900 in the strip's coord space. The cap's `left` style
+    // must agree — that's the fix for the 720 vs 900 coord desync.
+    const { container } = renderChart({ range: "1h" });
+    const cap = container.querySelector("[data-cl-fleet-now-cap]") as HTMLElement | null;
+    expect(cap).not.toBeNull();
+    if (!cap) return;
+    const leftValue = cap.style.left;
+    expect(leftValue).toMatch(/^\d+(?:\.\d+)?px$/);
+    const px = Number.parseFloat(leftValue);
+    // The STUB_STRIP_WIDTH is 900. Allow a few px of slack for ghost-extension
+    // or layout rounding.
+    expect(px).toBeGreaterThan(850);
+    expect(px).toBeLessThanOrEqual(900);
+  });
+
+  it("does NOT render a NOW cap when not isToday", () => {
+    mockApiReturn(response([makeSession()]));
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday={false}
+          selectedDate="2026-04-15"
+          range="3h"
+          agents={[makeAgent()]}
+          pendingSessionKeys={new Set()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector("[data-cl-fleet-now-cap]")).toBeNull();
+  });
+
+  it("does NOT render a NOW cap on the 7d day-grid view", () => {
+    const { container } = renderChart({ range: "7d" });
+    expect(container.querySelector("[data-cl-fleet-now-cap]")).toBeNull();
+  });
+});
+
+// ── Regression: ghost markers render when predictable (§2f) ─
+
+describe("FleetChart — ghost next-run markers (§2f)", () => {
+  it("renders a ghost dot for a scheduled agent with a predictable cadence", () => {
+    const now = Date.parse(NOW_ISO);
+    // Two cron runs 5 minutes apart. Last start 3 minutes ago → next expected
+    // 2 minutes from now, which is well inside 15% of a 1h range (9 min cap).
+    const sessions = [
+      makeSession({
+        sessionKey: "agent:a1:cron:job#1",
+        agentId: "a1",
+        startTime: new Date(now - 8 * 60_000).toISOString(),
+        endTime: new Date(now - 8 * 60_000 + 2000).toISOString(),
+      }),
+      makeSession({
+        sessionKey: "agent:a1:cron:job#2",
+        agentId: "a1",
+        startTime: new Date(now - 3 * 60_000).toISOString(),
+        endTime: new Date(now - 3 * 60_000 + 2000).toISOString(),
+      }),
+    ];
+    const { container } = renderChart({
+      range: "1h",
+      agents: [makeAgent({ id: "a1", name: "a1", mode: "scheduled" })],
+      sessions,
+    });
+    expect(container.querySelector("[data-cl-fleet-ghost]")).not.toBeNull();
+  });
+
+  it("does NOT render a ghost when the next run is beyond the 15% axis cap", () => {
+    const now = Date.parse(NOW_ISO);
+    // Two cron runs 30 minutes apart. Last start was 2 minutes ago, so next
+    // expected run is 28 minutes out — well beyond 15% of a 1h range (9 min
+    // cap). The axis won't extend far enough to reveal the ghost.
+    const sessions = [
+      makeSession({
+        sessionKey: "agent:a1:cron:hourly#1",
+        agentId: "a1",
+        startTime: new Date(now - 32 * 60_000).toISOString(),
+        endTime: new Date(now - 32 * 60_000 + 2000).toISOString(),
+      }),
+      makeSession({
+        sessionKey: "agent:a1:cron:hourly#2",
+        agentId: "a1",
+        startTime: new Date(now - 2 * 60_000).toISOString(),
+        endTime: new Date(now - 2 * 60_000 + 2000).toISOString(),
+      }),
+    ];
+    const { container } = renderChart({
+      range: "1h",
+      agents: [makeAgent({ id: "a1", name: "a1", mode: "scheduled" })],
+      sessions,
+    });
+    expect(container.querySelector("[data-cl-fleet-ghost]")).toBeNull();
+  });
+
+  it("does NOT render a ghost at 12h range (hideGhost gates it)", () => {
+    const now = Date.parse(NOW_ISO);
+    const sessions = [
+      makeSession({
+        sessionKey: "agent:a1:cron:job#1",
+        agentId: "a1",
+        startTime: new Date(now - 8 * 60_000).toISOString(),
+        endTime: new Date(now - 8 * 60_000 + 2000).toISOString(),
+      }),
+      makeSession({
+        sessionKey: "agent:a1:cron:job#2",
+        agentId: "a1",
+        startTime: new Date(now - 3 * 60_000).toISOString(),
+        endTime: new Date(now - 3 * 60_000 + 2000).toISOString(),
+      }),
+    ];
+    const { container } = renderChart({
+      range: "12h",
+      agents: [makeAgent({ id: "a1", name: "a1", mode: "scheduled" })],
+      sessions,
+    });
+    expect(container.querySelector("[data-cl-fleet-ghost]")).toBeNull();
+  });
+
+  it("does NOT render a ghost for an interactive (non-scheduled) agent", () => {
+    const now = Date.parse(NOW_ISO);
+    // Even with a predictable interval, interactive agents shouldn't show a
+    // cron prediction — the ghost is gated on mode === "scheduled".
+    const sessions = [
+      makeSession({
+        sessionKey: "agent:a1:cron:job#1",
+        agentId: "a1",
+        startTime: new Date(now - 8 * 60_000).toISOString(),
+        endTime: new Date(now - 8 * 60_000 + 2000).toISOString(),
+      }),
+      makeSession({
+        sessionKey: "agent:a1:cron:job#2",
+        agentId: "a1",
+        startTime: new Date(now - 3 * 60_000).toISOString(),
+        endTime: new Date(now - 3 * 60_000 + 2000).toISOString(),
+      }),
+    ];
+    const { container } = renderChart({
+      range: "1h",
+      agents: [makeAgent({ id: "a1", name: "a1", mode: "interactive" })],
+      sessions,
+    });
+    expect(container.querySelector("[data-cl-fleet-ghost]")).toBeNull();
+  });
+});

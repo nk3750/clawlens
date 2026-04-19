@@ -30,6 +30,9 @@ interface Props {
   maxDayActions: number;
   todayIso: string;
   isDimmed: boolean;
+  /** Passed only to the first rendered row so the ▼ + NOW caption attaches
+   *  inside that row's strip and inherits its correctly-measured width. */
+  showNowCap?: boolean;
   onHoverRow: (agentId: string | null) => void;
   onHoverCluster: (
     c: Cluster | null,
@@ -79,6 +82,7 @@ export default function FleetChartRow({
   maxDayActions,
   todayIso,
   isDimmed,
+  showNowCap = false,
   onHoverRow,
   onHoverCluster,
   onClickCluster,
@@ -137,6 +141,7 @@ export default function FleetChartRow({
             nowMs={nowMs}
             isToday={isToday}
             height={rowHeight}
+            showNowCap={showNowCap}
             onHover={onHoverCluster}
             onClick={onClickCluster}
           />

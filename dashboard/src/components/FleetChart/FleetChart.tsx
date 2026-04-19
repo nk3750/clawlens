@@ -199,12 +199,38 @@ export default function FleetChart({
   // ── Derived data ─────────────────────────────────────────
 
   const nowMs = Date.now();
-  const startMs = liveStartTime ? new Date(liveStartTime).getTime() : 0;
-  const endMs = isToday
-    ? nowMs
-    : liveEndTime
-      ? new Date(liveEndTime).getTime()
-      : nowMs;
+  // On the first render — before the REST useEffect has seeded
+  // `liveStartTime` — fall back to `nowMs - rangeSpanMs(range)` so the axis
+  // math spans a sensible window. Using 0 here is catastrophic: with an
+  // epoch-based startMs and a NOW-based endMs, `buildAxisTicks` iterates
+  // ~2M times creating DOM nodes and blows the heap before the effect's
+  // re-render arrives. (Scheduled agents trigger this because
+  // `hasScheduledAgents` bypasses the empty-state early return that otherwise
+  // masks the same issue for interactive-only fleets.)
+  const startMs = liveStartTime
+    ? new Date(liveStartTime).getTime()
+    : nowMs - rangeSpanMs(range);
+  // Axis extension for ghost markers (§2f). `endMs` defaults to NOW on today,
+  // but that makes `ghostNextRunMs > nowMs && ghostNextRunMs <= endMs`
+  // contradictory — ghosts never render. When a scheduled agent has a stable
+  // cadence we nudge endMs forward just enough to fit the soonest predicted
+  // run, capped at 15% of the range span so a mis-inferred far-future run
+  // doesn't balloon the axis. 12h/24h hide ghosts per §2f so we skip there.
+  const endMs = useMemo(() => {
+    if (!isToday) {
+      return liveEndTime ? new Date(liveEndTime).getTime() : nowMs;
+    }
+    if (range !== "1h" && range !== "3h" && range !== "6h") return nowMs;
+    let latestGhost = 0;
+    for (const a of agents ?? []) {
+      if (a.mode !== "scheduled") continue;
+      const ghost = predictNextRun(a.id, liveSessions, nowMs);
+      if (ghost !== null && ghost > latestGhost) latestGhost = ghost;
+    }
+    if (latestGhost <= nowMs) return nowMs;
+    const cap = nowMs + rangeSpanMs(range) * 0.15;
+    return Math.min(latestGhost, cap);
+  }, [isToday, liveEndTime, range, agents, liveSessions, nowMs]);
 
   const mobile = measuredWidth < MOBILE_MAX_WIDTH;
   const identityW = mobile ? IDENTITY_WIDTH_MOBILE : IDENTITY_WIDTH;
@@ -270,6 +296,10 @@ export default function FleetChart({
   const idleRows = sortedAgents.filter((r) => r.isIdle);
   const shouldCollapseIdle = idleRows.length > IDLE_COLLAPSE_THRESHOLD;
   const visibleIdleRows = shouldCollapseIdle && !showIdle ? [] : idleRows;
+  // First rendered row owns the NOW cap — actives win over idles. If both
+  // lists are empty there's no row to anchor against and the cap is skipped.
+  const firstRenderedAgentId =
+    activeRows[0]?.id ?? visibleIdleRows[0]?.id ?? null;
 
   const dayBuckets = useMemo(
     () => bucketByDay(allAgentIds, liveSessions, nowMs),
@@ -304,17 +334,11 @@ export default function FleetChart({
 
   const totalActions = isToday ? liveTotalActions : apiData?.totalActions ?? 0;
 
-  // NOW cap position (▼ + NOW label above the strips) — only when today &
-  // on a non-day-grid range. The cap sits above the first row; the per-row
-  // NOW line continues the visual through each strip.
-  const nowCapLeft =
-    isToday && range !== "7d" && stripWidth > 0
-      ? identityW + timeToX(nowMs)
-      : null;
-  const nowCapVisible =
-    nowCapLeft !== null &&
-    timeToX(nowMs) >= 0 &&
-    timeToX(nowMs) <= stripWidth;
+  // NOW cap (▼ + NOW label) is rendered INSIDE the first row's strip so it
+  // anchors against the strip's own measured width (which is what drives the
+  // per-row NOW line). Attaching it to the parent body's measurement would
+  // desync against the actual strip render width — see bug #1.
+  const showNowCap = isToday && range !== "7d";
 
   // ── Handlers ─────────────────────────────────────────────
 
@@ -496,46 +520,6 @@ export default function FleetChart({
         data-cl-fleet-hovered={hoveredAgent ?? undefined}
         style={{ position: "relative" }}
       >
-        {/* NOW cap — ▼ triangle + "NOW" text above the first row, aligned
-            horizontally with the per-row vertical NOW line. */}
-        {nowCapVisible && nowCapLeft !== null && (
-          <div
-            data-cl-fleet-now-cap
-            style={{
-              position: "absolute",
-              top: -6,
-              left: nowCapLeft,
-              transform: "translateX(-50%)",
-              pointerEvents: "none",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              zIndex: 5,
-            }}
-          >
-            <span
-              className="label-mono"
-              style={{
-                color: "var(--cl-accent)",
-                fontSize: 9,
-                lineHeight: 1,
-                animation: "pulse 2s ease-in-out infinite",
-              }}
-            >
-              NOW
-            </span>
-            <span
-              style={{
-                color: "var(--cl-accent)",
-                fontSize: 9,
-                lineHeight: 1,
-                marginTop: 1,
-              }}
-            >
-              ▼
-            </span>
-          </div>
-        )}
         {/* 7d column headers — rendered above rows */}
         {range === "7d" &&
           (() => {
@@ -606,6 +590,7 @@ export default function FleetChart({
             maxDayActions={maxDayActions}
             todayIso={todayIso}
             isDimmed={hoveredAgent !== null && hoveredAgent !== r.id}
+            showNowCap={showNowCap && r.id === firstRenderedAgentId}
             onHoverRow={setHoveredAgent}
             onHoverCluster={handleHoverCluster}
             onClickCluster={handleClickCluster}
@@ -662,6 +647,7 @@ export default function FleetChart({
             maxDayActions={maxDayActions}
             todayIso={todayIso}
             isDimmed={hoveredAgent !== null && hoveredAgent !== r.id}
+            showNowCap={showNowCap && r.id === firstRenderedAgentId}
             onHoverRow={setHoveredAgent}
             onHoverCluster={handleHoverCluster}
             onClickCluster={handleClickCluster}
@@ -784,6 +770,24 @@ function emptyMessage(range: RangeOption): string {
       return "No agent activity in the last 24 hours";
     case "7d":
       return "No agent activity in the last 7 days";
+  }
+}
+
+const HOUR_MS = 3_600_000;
+function rangeSpanMs(range: RangeOption): number {
+  switch (range) {
+    case "1h":
+      return HOUR_MS;
+    case "3h":
+      return 3 * HOUR_MS;
+    case "6h":
+      return 6 * HOUR_MS;
+    case "12h":
+      return 12 * HOUR_MS;
+    case "24h":
+      return 24 * HOUR_MS;
+    case "7d":
+      return 7 * 24 * HOUR_MS;
   }
 }
 
