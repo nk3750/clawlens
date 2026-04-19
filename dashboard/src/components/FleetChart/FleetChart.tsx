@@ -471,45 +471,12 @@ export default function FleetChart({
       data-cl-fleet-chart
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <div className="flex items-center mb-3">
         <span
           className="font-display text-sm font-medium"
           style={{ color: "var(--cl-text-secondary)" }}
         >
           Fleet Activity
-        </span>
-        <span
-          className="flex items-center gap-3 label-mono"
-          style={{ fontSize: 10, color: "var(--cl-text-muted)" }}
-        >
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block rounded-full"
-              style={{
-                width: 7,
-                height: 7,
-                border: "1.5px solid var(--cl-text-secondary)",
-              }}
-            />
-            attention
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block rounded-full"
-              style={{
-                width: 4,
-                height: 4,
-                backgroundColor: "var(--cl-text-secondary)",
-              }}
-            />
-            routine
-          </span>
-          {range !== "7d" && range !== "12h" && range !== "24h" && (
-            <span className="flex items-center gap-1">
-              <span style={{ color: "var(--cl-text-muted)" }}>⌇</span>
-              scheduled
-            </span>
-          )}
         </span>
       </div>
 

@@ -414,6 +414,117 @@ describe("FleetChart — empty state", () => {
   });
 });
 
+// ── Regression: edge-clamped dots (half-moon fix) ──────────
+
+describe("FleetChart — edge-clamp dots at strip left", () => {
+  it("pulls a dot whose startTime < windowStart inward so the circle stays fully visible", () => {
+    // Window = NOW-1h .. NOW. Session starts 2h ago (before window) →
+    // timeToX returns a negative number. The unclamped build painted cx=0
+    // and clipped the left half of the circle. The clamp pulls cx to r so
+    // the full circle sits inside the strip.
+    const nowMs = Date.parse(NOW_ISO);
+    const windowStart = new Date(nowMs - 60 * 60_000).toISOString();
+    const session = makeSession({
+      sessionKey: "agent:a1:main:early",
+      agentId: "a1",
+      startTime: new Date(nowMs - 2 * 60 * 60_000).toISOString(),
+      endTime: new Date(nowMs - 2 * 60 * 60_000 + 500).toISOString(),
+      actionCount: 1,
+    });
+    mockApiReturn({
+      agents: ["a1"],
+      sessions: [session],
+      startTime: windowStart,
+      endTime: NOW_ISO,
+      totalActions: 1,
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="1h"
+          agents={[makeAgent({ id: "a1", name: "a1" })]}
+          pendingSessionKeys={new Set()}
+        />
+      </MemoryRouter>,
+    );
+    const dot = container.querySelector("[data-cl-fleet-dot]");
+    expect(dot).not.toBeNull();
+    const core = dot?.querySelector("circle");
+    expect(core).not.toBeNull();
+    const cx = Number.parseFloat(core?.getAttribute("cx") ?? "NaN");
+    const r = Number.parseFloat(core?.getAttribute("r") ?? "NaN");
+    expect(Number.isNaN(cx)).toBe(false);
+    expect(Number.isNaN(r)).toBe(false);
+    // Full circle visible means cx >= r (left edge of circle >= 0).
+    expect(cx).toBeGreaterThanOrEqual(r);
+  });
+
+  it("clamps attention dots so the core circle is fully visible (ring allowed 2px overhang)", () => {
+    // Attention sessions use r=6 for the core dot and r+2=8 for the ring.
+    // The clamp uses the core `r` — the core stays fully visible, the ring
+    // accepts a 2 px overhang as the "this session sits at the boundary"
+    // visual cue (vs. the unclamped half-moon which hid the dot entirely).
+    // Both circles must share a single cx so the glyph stays centered.
+    const nowMs = Date.parse(NOW_ISO);
+    const windowStart = new Date(nowMs - 60 * 60_000).toISOString();
+    const session = makeSession({
+      sessionKey: "agent:a1:main:earlycrit",
+      agentId: "a1",
+      startTime: new Date(nowMs - 2 * 60 * 60_000).toISOString(),
+      endTime: new Date(nowMs - 2 * 60 * 60_000 + 500).toISOString(),
+      peakRisk: 80,
+      actionCount: 1,
+    });
+    mockApiReturn({
+      agents: ["a1"],
+      sessions: [session],
+      startTime: windowStart,
+      endTime: NOW_ISO,
+      totalActions: 1,
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="1h"
+          agents={[makeAgent({ id: "a1", name: "a1" })]}
+          pendingSessionKeys={new Set()}
+        />
+      </MemoryRouter>,
+    );
+    const core = container.querySelector("[data-cl-fleet-dot] > circle") as SVGCircleElement | null;
+    const ring = container.querySelector(
+      "[data-cl-fleet-attention-ring]",
+    ) as SVGCircleElement | null;
+    expect(core).not.toBeNull();
+    expect(ring).not.toBeNull();
+    const coreCx = Number.parseFloat(core?.getAttribute("cx") ?? "NaN");
+    const coreR = Number.parseFloat(core?.getAttribute("r") ?? "NaN");
+    const ringCx = Number.parseFloat(ring?.getAttribute("cx") ?? "NaN");
+    // Core is fully visible and shares its cx with the ring.
+    expect(coreCx).toBeGreaterThanOrEqual(coreR);
+    expect(ringCx).toBe(coreCx);
+  });
+});
+
+// ── Regression: legend removed from chart header ───────────
+
+describe("FleetChart — chart header has no legend", () => {
+  it("header contains only 'Fleet Activity' with no right-aligned legend", () => {
+    const { container } = renderChart();
+    // The header row is the first direct child of the wrapper that contains
+    // 'Fleet Activity'. No sibling span with attention/routine/scheduled.
+    expect(container.textContent).not.toMatch(/attention/);
+    expect(container.textContent).not.toMatch(/routine/);
+    // "scheduled" still appears elsewhere in the UI (e.g., agent chips), so
+    // we only assert the legend clauses unique to it are absent, not the
+    // word itself. The combination test above is the strong signal.
+  });
+});
+
 // ── Regression: tails removed (spec §2d amendment) ─────────
 
 describe("FleetChart — session tails removed (§2d amendment)", () => {

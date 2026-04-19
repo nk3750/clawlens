@@ -160,6 +160,15 @@ export default function FleetChartTimelineStrip({
           const showBreathing =
             c.sessions.some((s) => breathingRingKeys.has(s.sessionKey)) &&
             (range === "1h" || range === "3h");
+          // Clamp the visible circle's center so a session whose startTime
+          // sits outside the window doesn't render as a half-moon clipped
+          // against the strip edge. Use `r` for the bound so the core dot
+          // stays fully visible; the attention ring at r+2 accepts the 2px
+          // overhang for "this session is at the boundary" semantics. The
+          // hit area uses its own, larger bound (HIT_R) so pointer events
+          // land on the rendered dot even when pushed inward.
+          const dotCx = Math.max(r, Math.min(c.cx, renderWidth - r));
+          const hitCx = Math.max(HIT_R, Math.min(c.cx, renderWidth - HIT_R));
 
           return (
             <g
@@ -182,12 +191,12 @@ export default function FleetChartTimelineStrip({
               data-cl-risk-tier={tier}
             >
               {/* Core dot */}
-              <circle cx={c.cx} cy={cy} r={r} fill={color} opacity={0.9} />
+              <circle cx={dotCx} cy={cy} r={r} fill={color} opacity={0.9} />
 
               {/* Attention ring */}
               {hasAttention && (
                 <circle
-                  cx={c.cx}
+                  cx={dotCx}
                   cy={cy}
                   r={r + 2}
                   fill="none"
@@ -201,7 +210,7 @@ export default function FleetChartTimelineStrip({
               {/* Pending crown */}
               {c.hasPending && (
                 <circle
-                  cx={c.cx}
+                  cx={dotCx}
                   cy={cy}
                   r={r + 4}
                   fill="none"
@@ -223,15 +232,15 @@ export default function FleetChartTimelineStrip({
               {c.blockedCount > 0 && (
                 <g data-cl-fleet-blocked>
                   <circle
-                    cx={c.cx + r}
+                    cx={dotCx + r}
                     cy={cy - r}
                     r={2.5}
                     fill="var(--cl-risk-high)"
                   />
                   <line
-                    x1={c.cx + r - 1.3}
+                    x1={dotCx + r - 1.3}
                     y1={cy - r - 1.3}
-                    x2={c.cx + r + 1.3}
+                    x2={dotCx + r + 1.3}
                     y2={cy - r + 1.3}
                     stroke="var(--cl-surface)"
                     strokeWidth={0.8}
@@ -243,7 +252,7 @@ export default function FleetChartTimelineStrip({
               {/* Cluster count badge */}
               {c.isCluster && (
                 <text
-                  x={c.cx}
+                  x={dotCx}
                   y={cy - r - 4}
                   textAnchor="middle"
                   className="label-mono"
@@ -261,7 +270,7 @@ export default function FleetChartTimelineStrip({
               {/* Active breathing ring */}
               {showBreathing && (
                 <circle
-                  cx={c.cx}
+                  cx={dotCx}
                   cy={cy}
                   r={r}
                   fill="none"
@@ -287,7 +296,7 @@ export default function FleetChartTimelineStrip({
               )}
 
               {/* Invisible hit target */}
-              <circle cx={c.cx} cy={cy} r={HIT_R} fill="transparent" />
+              <circle cx={hitCx} cy={cy} r={HIT_R} fill="transparent" />
             </g>
           );
         })}
