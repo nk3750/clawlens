@@ -3,13 +3,19 @@ import type { AgentInfo } from "../../lib/types";
 import type { ChannelMeta } from "../../lib/channel-catalog";
 import { relTime } from "../../lib/utils";
 import GradientAvatar from "../GradientAvatar";
-import { IDENTITY_WIDTH, IDENTITY_WIDTH_MOBILE } from "./utils";
+import {
+  IDENTITY_WIDTH,
+  IDENTITY_WIDTH_MOBILE,
+  chipText,
+} from "./utils";
 
 interface Props {
   agent: AgentInfo;
   /** Pre-computed cadence label ("every 3h"). Null = no schedule to show. */
   scheduleLabel: string | null;
-  /** Channel metadata already filtered/sorted by caller. First is most-frequent. */
+  /** Surface-filtered channel metadata from `surfacedChannelsForRow`. Order
+   *  is most-frequent-first; main / unknown / unrenderable channels are
+   *  already excluded by the parent. */
   channels: ChannelMeta[];
   /** Compact mode hides the secondary line and renders avatar-only. */
   mobile: boolean;
@@ -20,17 +26,6 @@ const NAME_MAX = 14;
 function truncate(name: string): string {
   if (name.length <= NAME_MAX) return name;
   return `${name.slice(0, NAME_MAX - 1)}\u2026`;
-}
-
-function chipText(c: { shortLabel: string; id: string; kind: string }): string {
-  // Catalog-hand-authored shortLabels are unique (tg, wa, sk…). For unknown
-  // channels the catalog falls through to `id.slice(0, 2)` which collides
-  // across different ids (maintenance/macro both "ma") — fall back to the
-  // full id so chips stay distinguishable.
-  if (c.kind !== "unknown" && c.shortLabel) return c.shortLabel;
-  const src = c.id || "";
-  if (!src) return "";
-  return src.length > 6 ? `${src.slice(0, 5)}\u2026` : src;
 }
 
 function idleBadge(agent: AgentInfo): string | null {
@@ -60,18 +55,8 @@ export default function FleetChartIdentity({
   }
 
   const idle = scheduleLabel ? null : idleBadge(agent);
-  // Channels worth surfacing: skip main (implicit default), skip unknown, and
-  // skip any catalog entry whose shortLabel is intentionally empty (main).
-  // Custom channels not in the catalog land here via their own id.
-  const surfaced = channels.filter(
-    (c) =>
-      c.id !== "main" &&
-      c.id !== "unknown" &&
-      c.shortLabel !== "" &&
-      chipText(c) !== "",
-  );
-  const displayChannels = surfaced.slice(0, 2);
-  const extraChannels = surfaced.length - displayChannels.length;
+  const displayChannels = channels.slice(0, 2);
+  const extraChannels = channels.length - displayChannels.length;
   const hasSecondary =
     scheduleLabel !== null || idle !== null || displayChannels.length > 0;
 

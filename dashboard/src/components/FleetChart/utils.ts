@@ -19,6 +19,14 @@ export const IDENTITY_WIDTH = 220;
 export const TOTALS_WIDTH = 80;
 export const IDENTITY_WIDTH_MOBILE = 40;
 export const TOTALS_WIDTH_MOBILE = 48;
+/** Maximum non-dormant rows rendered inline before the unified expander
+ *  hides the rest behind a single "Show N more agents" button. Desktop. */
+export const VISIBLE_ROW_CAP_DESKTOP = 10;
+/** Same cap, mobile viewports (`measuredWidth < MOBILE_MAX_WIDTH`). */
+export const VISIBLE_ROW_CAP_MOBILE = 6;
+/** Minimum pixel distance an axis label must keep from the NOW marker.
+ *  Labels closer than this are suppressed (the tick line still draws). */
+export const NOW_LABEL_GUARD_PX = 24;
 
 const MIN_MS = 60_000;
 const DAY_MS = 24 * 3_600_000;
@@ -155,6 +163,47 @@ export function channelsForAgent(
   return [...counts.values()]
     .sort((a, b) => b.count - a.count)
     .map((c) => c.meta);
+}
+
+/**
+ * Catalog-hand-authored shortLabels are unique (tg, wa, sk…). For unknown
+ * channels the catalog falls through to `id.slice(0, 2)` which collides
+ * across different ids (maintenance/macro both "ma") — fall back to the
+ * full id (truncated past 6 chars) so chips stay distinguishable.
+ */
+export function chipText(c: {
+  shortLabel: string;
+  id: string;
+  kind: string;
+}): string {
+  if (c.kind !== "unknown" && c.shortLabel) return c.shortLabel;
+  const src = c.id || "";
+  if (!src) return "";
+  return src.length > 6 ? `${src.slice(0, 5)}\u2026` : src;
+}
+
+/**
+ * Channels that should appear as identity-strip chips for an agent. Wraps
+ * `channelsForAgent` with the same surface filter the Identity component
+ * uses (drop main, drop unknown, drop empty shortLabel, drop entries whose
+ * chipText would be empty). Centralized so the dormancy classifier in
+ * `FleetChart` and the chip renderer in `FleetChartIdentity` stay in sync.
+ *
+ * Schedule-channel dedupe (when a row already shows a `⏰ every Nh` chip)
+ * is layered on top by the Identity component — it is conditional on the
+ * derived scheduleLabel and does not belong here.
+ */
+export function surfacedChannelsForRow(
+  agentId: string,
+  sessions: TimelineSession[],
+): ChannelMeta[] {
+  return channelsForAgent(agentId, sessions).filter(
+    (c) =>
+      c.id !== "main" &&
+      c.id !== "unknown" &&
+      c.shortLabel !== "" &&
+      chipText(c) !== "",
+  );
 }
 
 // ── Next-run prediction (§2f mirror of backend cadence) ─

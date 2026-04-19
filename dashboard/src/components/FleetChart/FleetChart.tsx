@@ -24,7 +24,6 @@ import FleetChartClusterPopover from "./FleetChartClusterPopover";
 import {
   bucketByDay,
   buildAxisTicks,
-  channelsForAgent,
   cullLabelsForWidth,
   IDENTITY_WIDTH,
   IDENTITY_WIDTH_MOBILE,
@@ -34,6 +33,7 @@ import {
   pickBreathingRingSessions,
   predictNextRun,
   reduceSSEEntry,
+  surfacedChannelsForRow,
   type Cluster,
   type DayBucket,
   type SSEUpdate,
@@ -542,7 +542,7 @@ export default function FleetChart({
               cronStartsForAgent(r.id, liveSessions),
               r.info.schedule,
             )}
-            channels={channelsForAgent(r.id, liveSessions)}
+            channels={surfacedChannelsForRow(r.id, liveSessions)}
             pendingSessionKeys={pendingSessionKeys}
             breathingRingKeys={breathingRingKeys}
             ghostNextRunMs={
@@ -599,7 +599,7 @@ export default function FleetChart({
               cronStartsForAgent(r.id, liveSessions),
               r.info.schedule,
             )}
-            channels={channelsForAgent(r.id, liveSessions)}
+            channels={surfacedChannelsForRow(r.id, liveSessions)}
             pendingSessionKeys={pendingSessionKeys}
             breathingRingKeys={breathingRingKeys}
             ghostNextRunMs={
