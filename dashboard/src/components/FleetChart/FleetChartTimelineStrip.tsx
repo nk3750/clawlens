@@ -39,7 +39,6 @@ interface Props {
 const DOT_ROUTINE_R = 4;
 const DOT_ATTENTION_R = 6;
 const HIT_R = 12;
-const TAIL_MIN_PX = 4;
 
 function hideGhost(range: RangeOption): boolean {
   return range === "12h" || range === "24h";
@@ -130,32 +129,6 @@ export default function FleetChartTimelineStrip({
           stroke="var(--cl-border-subtle)"
           strokeWidth={0.5}
         />
-
-        {/* Tails (back) */}
-        {clusters.map((c) => {
-          if (c.isCluster) return null;
-          const s = c.sessions[0];
-          const sStart = new Date(s.startTime).getTime();
-          const sEnd = new Date(s.endTime).getTime();
-          const tailPx =
-            ((sEnd - sStart) / (endMs - startMs || 1)) * renderWidth;
-          if (tailPx < TAIL_MIN_PX) return null;
-          const tier = riskTierFromScore(s.peakRisk);
-          const color = riskColorRaw(tier);
-          return (
-            <line
-              key={`tail-${s.sessionKey}`}
-              x1={timeToX(sStart)}
-              x2={timeToX(sEnd)}
-              y1={cy + 6}
-              y2={cy + 6}
-              stroke={color}
-              strokeWidth={1.5}
-              opacity={0.55}
-              data-cl-fleet-tail
-            />
-          );
-        })}
 
         {/* Ghost marker (next scheduled run) */}
         {ghostNextRunMs !== null &&

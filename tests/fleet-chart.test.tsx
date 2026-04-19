@@ -414,6 +414,32 @@ describe("FleetChart — empty state", () => {
   });
 });
 
+// ── Regression: tails removed (spec §2d amendment) ─────────
+
+describe("FleetChart — session tails removed (§2d amendment)", () => {
+  it("renders NO tail line for a 10-minute session at 1h range", () => {
+    // 10-min duration at range=1h with a 900px strip would previously draw
+    // a ~150px tail — well above the old 4px threshold. The amendment
+    // removes tails entirely, so this must stay empty regardless of scale.
+    const now = Date.parse(NOW_ISO);
+    const { container } = renderChart({
+      range: "1h",
+      agents: [makeAgent({ id: "a1", name: "a1" })],
+      sessions: [
+        makeSession({
+          sessionKey: "agent:a1:main:long",
+          agentId: "a1",
+          startTime: new Date(now - 30 * 60_000).toISOString(),
+          endTime: new Date(now - 20 * 60_000).toISOString(),
+          actionCount: 5,
+        }),
+      ],
+    });
+    const tails = container.querySelectorAll("[data-cl-fleet-tail]");
+    expect(tails).toHaveLength(0);
+  });
+});
+
 // ── Regression: SVG aspect ratio lock (bug #1) ──────────────
 
 describe("FleetChart — SVG aspect-ratio regression (bug #1)", () => {
