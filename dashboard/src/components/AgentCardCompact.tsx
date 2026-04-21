@@ -254,7 +254,7 @@ function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, 
               height="12"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="var(--cl-text-muted)"
+              stroke={meta.color}
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"

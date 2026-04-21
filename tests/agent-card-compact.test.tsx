@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guard)", () => {
-  it("does NOT reference any --cl-cat-* token in the rendered DOM (bar fills or icon strokes)", () => {
+  it("keeps bar fills + tracks monochrome (no --cl-cat-* color tokens on bar backgrounds)", () => {
     // Active agent with several category buckets — all six surfaced at least once so the
     // legacy code path would have rendered the full rainbow.
     const agent = makeAgent({
@@ -78,10 +78,44 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
     });
     const { container } = renderCard(agent);
 
-    // The legacy implementation inlined var(--cl-cat-exploring) / var(--cl-cat-changes) / …
-    // both on the SVG `stroke` attribute and on the bar-fill inline style. The Stage C
-    // requirement is that the homepage agent card is monochrome — no cat tokens at all.
-    expect(container.innerHTML).not.toMatch(/--cl-cat-/);
+    // Bars = the two inline-styled <div>s nested inside each category row. The Phase-1
+    // review called these out as the "AI-slop rainbow" — they must stay monochrome.
+    // Icons (SVG stroke) are allowed to carry category hue for subtle differentiation.
+    const rows = container.querySelectorAll("[data-cl-cat-row]");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      for (const div of row.querySelectorAll("div")) {
+        expect((div as HTMLElement).style.backgroundColor ?? "").not.toMatch(/--cl-cat-/);
+      }
+    }
+  });
+
+  it("colors category icons via CATEGORY_META (--cl-cat-* tokens on SVG stroke)", () => {
+    // Icons are 12×12 strokes — low visual weight, high categorical signal. Restoring
+    // hue here after the initial Stage C monochrome pass gives the card differentiation
+    // without re-introducing the rainbow bars.
+    const agent = makeAgent({
+      todayActivityBreakdown: {
+        exploring: 4,
+        changes: 3,
+        commands: 2,
+        web: 2,
+        comms: 0,
+        data: 0,
+      },
+    });
+    const { container } = renderCard(agent);
+
+    const svgs = container.querySelectorAll("[data-cl-cat-row] svg");
+    expect(svgs.length).toBeGreaterThan(0);
+    const strokes = Array.from(svgs).map((s) => s.getAttribute("stroke") ?? "");
+    // Every surfaced icon must reference a --cl-cat-* token.
+    for (const stroke of strokes) {
+      expect(stroke).toMatch(/--cl-cat-/);
+    }
+    // And the set of strokes must include more than one distinct token (i.e. the icons
+    // carry per-category hue, not a single shared one).
+    expect(new Set(strokes).size).toBeGreaterThan(1);
   });
 
   it("renders exactly one row per surfaced category (top 4), anchored with data-cl-cat-row", () => {
