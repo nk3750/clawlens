@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useLiveApi } from "../hooks/useLiveApi";
 import type { AgentInfo, AttentionResponse, StatsResponse } from "../lib/types";
@@ -66,7 +67,6 @@ export default function Agents() {
       { replace: true },
     );
   }, [setSearchParams]);
-  const chartAnchorRef = useRef<HTMLDivElement>(null);
 
   // Esc-to-close while the modal is open. Listener lives on window because
   // React's synthetic event system won't fire keydown on unfocused elements.
@@ -90,22 +90,9 @@ export default function Agents() {
     };
   }, [chartFullscreenParam]);
 
-  // Focus the minimize button when the modal opens — gives keyboard users a
-  // clear exit and matches the modal-dialog affordance. The button already
-  // renders with data-cl-chart-fullscreen-toggle; we query it off the anchor
-  // rather than drilling a ref through FleetChart. Defer one frame so
-  // FleetChart's own measurement-driven re-renders can't snatch focus back
-  // to body before our effect lands.
-  useEffect(() => {
-    if (!chartFullscreenParam) return;
-    const handle = requestAnimationFrame(() => {
-      const btn = chartAnchorRef.current?.querySelector<HTMLButtonElement>(
-        "[data-cl-chart-fullscreen-toggle]",
-      );
-      btn?.focus();
-    });
-    return () => cancelAnimationFrame(handle);
-  }, [chartFullscreenParam]);
+  // Focus is handled by `autoFocus={fullscreen}` on the minimize button in
+  // FleetChart — fires synchronously when that specific element mounts,
+  // naturally sequenced around FleetChart's loading/measurement branches.
 
   const isToday = selectedDate === null;
   const dateParam = selectedDate ? `?date=${selectedDate}` : "";
@@ -176,6 +163,30 @@ export default function Agents() {
       </div>
     );
   }
+
+  // Chart body is shared between inline (grid cell) and portaled (modal)
+  // positions. Same element — placement flips based on chartFullscreenParam.
+  // Moving FleetChart between positions does remount it (useApi refetches,
+  // SSE reconnects, popover state resets) — accepted cost of toggling
+  // fullscreen.
+  const chartAnchor = (
+    <FleetChart
+      isToday={isToday}
+      selectedDate={selectedDate}
+      range={range}
+      agents={agents}
+      pendingSessionKeys={
+        new Set(
+          (attention?.pending ?? [])
+            .map((p) => p.sessionKey)
+            .filter((k): k is string => Boolean(k)),
+        )
+      }
+      fullscreen={chartFullscreenParam}
+      tight={!chartFullscreenParam && !isNarrow}
+      onToggleFullscreen={toggleFullscreen}
+    />
+  );
 
   return (
     <div className="page-enter flex flex-col" style={{ gap: "var(--cl-section-gap)" }}>
@@ -316,28 +327,14 @@ export default function Agents() {
         )}
       </section>
 
-      {/* Backdrop sibling — only rendered while the modal is open. Sits
-          above the bottom-row grid in DOM order so a click on it while the
-          chart is fixed-positioned above still reads e.target===e.currentTarget
-          correctly (guard below). */}
-      {chartFullscreenParam && (
-        <div
-          aria-hidden="true"
-          className="cl-chart-modal-backdrop"
-          onClick={(e) => {
-            // Guard: bubbled clicks from inside the chart (cluster popover,
-            // tooltip drags, button releases) must not dismiss. Pattern
-            // matches GuardrailModal.
-            if (e.target === e.currentTarget) toggleFullscreen();
-          }}
-        />
-      )}
-
       {/* Bottom row — Fleet Chart + Live Feed side-by-side (spec §D1,
           layout-fixes §1).
-          - default: weighted 2fr/1fr split with min-widths (520/380)
-          - ?chart=full: modal overlay (cl-chart-modal-host on the anchor)
-            with the grid collapsed to 1fr so the feed fills the row behind
+          - default: weighted 2fr/1fr split, chart inline in its grid cell
+          - ?chart=full: chart + backdrop portal out to document.body (see
+            below); grid collapses to 1fr so the LiveFeed fills the row
+            behind the modal. Portaling escapes `.page-enter`'s persisted
+            transform, which would otherwise make position:fixed measure
+            from the wrong origin.
           - narrow viewports (<= 911px): single column regardless of param
           - minWidth:0 on both anchors so Grid can shrink them below their
             content's min-content (fr math needs this). */}
@@ -352,40 +349,43 @@ export default function Agents() {
           gap: 12,
         }}
       >
-        <div
-          ref={chartAnchorRef}
-          data-cl-fleet-chart-anchor
-          className={chartFullscreenParam ? "cl-chart-modal-host" : undefined}
-          role={chartFullscreenParam ? "dialog" : undefined}
-          aria-modal={chartFullscreenParam ? true : undefined}
-          aria-label={
-            chartFullscreenParam ? "Fleet chart (fullscreen)" : undefined
-          }
-          style={{ minWidth: 0 }}
-        >
-          <FleetChart
-            isToday={isToday}
-            selectedDate={selectedDate}
-            range={range}
-            agents={agents}
-            pendingSessionKeys={
-              new Set(
-                (attention?.pending ?? [])
-                  .map((p) => p.sessionKey)
-                  .filter((k): k is string => Boolean(k)),
-              )
-            }
-            fullscreen={chartFullscreenParam}
-            tight={!chartFullscreenParam && !isNarrow}
-            onToggleFullscreen={toggleFullscreen}
-          />
-        </div>
+        {!chartFullscreenParam && (
+          <div data-cl-fleet-chart-anchor style={{ minWidth: 0 }}>
+            {chartAnchor}
+          </div>
+        )}
         {isToday && (
           <div data-cl-live-feed-anchor style={{ minWidth: 0 }}>
             <LiveFeed />
           </div>
         )}
       </section>
+      {chartFullscreenParam &&
+        createPortal(
+          <>
+            <div
+              aria-hidden="true"
+              className="cl-chart-modal-backdrop"
+              onClick={(e) => {
+                // Guard: bubbled clicks from inside the chart must not
+                // dismiss. Backdrop + modal host are siblings in the portal,
+                // not nested — clicks on the chart never reach this handler
+                // via bubbling, but the guard stays as defense-in-depth.
+                if (e.target === e.currentTarget) toggleFullscreen();
+              }}
+            />
+            <div
+              data-cl-fleet-chart-anchor
+              className="cl-chart-modal-host"
+              role="dialog"
+              aria-modal
+              aria-label="Fleet chart (fullscreen)"
+            >
+              {chartAnchor}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

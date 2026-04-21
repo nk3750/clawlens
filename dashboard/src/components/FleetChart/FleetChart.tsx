@@ -588,6 +588,12 @@ export default function FleetChart({
             style={{ height: 24, padding: "0 8px" }}
             aria-label={fullscreen ? "Exit fullscreen" : "Expand fleet chart"}
             data-cl-chart-fullscreen-toggle
+            // biome-ignore lint/a11y/noAutofocus: modal dialog pattern — on
+            //   fullscreen open the minimize button is the natural keyboard
+            //   exit, and autoFocus naturally sequences around FleetChart's
+            //   loading/measurement re-renders (fires when THIS specific
+            //   element mounts, not when the chart first renders).
+            autoFocus={fullscreen}
           >
             {fullscreen ? (
               // Lucide minimize-2 — two inward arrows.

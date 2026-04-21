@@ -311,33 +311,37 @@ describe("Agents homepage — fullscreen toggle (§D3)", () => {
   });
 
   it("click flips data-cl-chart-fullscreen on the bottom-row and toggles gridTemplateColumns", () => {
+    // Re-query the button each time — opening/closing the modal portals
+    // the chart in/out of document.body, which remounts the button.
     const { container } = renderAt("/");
-    const btn = container.querySelector(
-      "[data-cl-chart-fullscreen-toggle]",
-    ) as HTMLButtonElement | null;
-    expect(btn).not.toBeNull();
-    if (!btn) return;
+    const queryBtn = () =>
+      document.body.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+    const queryRow = () => container.querySelector<HTMLElement>("[data-cl-bottom-row]");
 
     // Pre-click state — two columns.
-    let row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    expect(queryRow()?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
 
+    const openBtn = queryBtn();
+    expect(openBtn).not.toBeNull();
+    if (!openBtn) return;
     act(() => {
-      fireEvent.click(btn);
+      fireEvent.click(openBtn);
     });
 
     // Post-click — fullscreen on.
-    row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(row?.getAttribute("data-cl-chart-fullscreen")).toBe("true");
-    expect(row?.style.gridTemplateColumns).toBe("1fr");
+    expect(queryRow()?.getAttribute("data-cl-chart-fullscreen")).toBe("true");
+    expect(queryRow()?.style.gridTemplateColumns).toBe("1fr");
 
-    // Click again — back to side-by-side.
+    // Click again — back to side-by-side. Fresh button reference from the
+    // portaled chart.
+    const closeBtn = queryBtn();
+    expect(closeBtn).not.toBeNull();
+    if (!closeBtn) return;
     act(() => {
-      fireEvent.click(btn);
+      fireEvent.click(closeBtn);
     });
-    row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(row?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
-    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    expect(queryRow()?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
+    expect(queryRow()?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
   });
 });
 
@@ -376,10 +380,23 @@ describe("Agents homepage — narrow-viewport collapse (layout-fixes §1 — 911
 
 // ── Modal fullscreen overlay (layout-fixes §2) ────────────
 
-describe("Agents homepage — modal fullscreen overlay (layout-fixes §2)", () => {
-  it("applies .cl-chart-modal-host to the chart anchor when ?chart=full", () => {
+describe("Agents homepage — modal fullscreen overlay (layout-fixes §2, portaled)", () => {
+  it("portals the chart anchor + backdrop to document.body (NOT inside the app container)", () => {
+    // The fix: modal mounts via createPortal(..., document.body) so it
+    // escapes the `.page-enter` transformed ancestor that was making
+    // `position: fixed` measure from the wrong origin.
     const { container } = renderAt("/?chart=full");
-    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    // Inside the rendered app container: no modal host, no backdrop.
+    expect(container.querySelector(".cl-chart-modal-host")).toBeNull();
+    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    // At document.body level: both present.
+    expect(document.body.querySelector(".cl-chart-modal-host")).not.toBeNull();
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+  });
+
+  it("applies .cl-chart-modal-host + dialog aria to the portaled chart anchor when ?chart=full", () => {
+    renderAt("/?chart=full");
+    const chart = document.body.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
     expect(chart).not.toBeNull();
     expect(chart?.className ?? "").toMatch(/\bcl-chart-modal-host\b/);
     expect(chart?.getAttribute("role")).toBe("dialog");
@@ -395,69 +412,63 @@ describe("Agents homepage — modal fullscreen overlay (layout-fixes §2)", () =
   });
 
   it("does NOT render a backdrop at default (no URL param)", () => {
-    const { container } = renderAt("/");
-    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    renderAt("/");
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).toBeNull();
   });
 
-  it("renders the backdrop element while the modal is open", () => {
-    const { container } = renderAt("/?chart=full");
-    const backdrop = container.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
+  it("renders the backdrop while the modal is open", () => {
+    renderAt("/?chart=full");
+    const backdrop = document.body.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
     expect(backdrop).not.toBeNull();
     expect(backdrop?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("backdrop unmounts when the toggle is clicked", () => {
-    const { container } = renderAt("/?chart=full");
-    expect(container.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
-    const btn = container.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+    renderAt("/?chart=full");
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+    const btn = document.body.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
     expect(btn).not.toBeNull();
     if (!btn) return;
     act(() => {
       fireEvent.click(btn);
     });
-    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).toBeNull();
   });
 
   it("backdrop click dismisses the modal (flips the URL param)", () => {
-    const { container } = renderAt("/?chart=full");
-    const backdrop = container.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
+    renderAt("/?chart=full");
+    const backdrop = document.body.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
     expect(backdrop).not.toBeNull();
     if (!backdrop) return;
     act(() => {
       fireEvent.click(backdrop);
     });
-    // Modal gone.
-    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
-    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
-    expect(chart?.className ?? "").not.toMatch(/cl-chart-modal-host/);
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    expect(document.body.querySelector(".cl-chart-modal-host")).toBeNull();
   });
 
   it("backdrop click is guarded — bubbled clicks from inside the modal don't dismiss", () => {
-    const { container } = renderAt("/?chart=full");
-    const backdrop = container.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
-    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    renderAt("/?chart=full");
+    const backdrop = document.body.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
+    const chart = document.body.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
     expect(backdrop).not.toBeNull();
     expect(chart).not.toBeNull();
     if (!backdrop || !chart) return;
-    // A click whose target is the chart (bubbling up through backdrop —
-    // in practice from the fixed-position layering) must NOT close the
-    // modal. The guard is `e.target === e.currentTarget`.
+    // A click whose target is the chart (not the backdrop itself) must
+    // NOT close the modal. Guard: e.target === e.currentTarget.
     act(() => {
-      fireEvent.click(backdrop, {
-        target: chart,
-      });
+      fireEvent.click(backdrop, { target: chart });
     });
-    // Still open.
-    expect(container.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
   });
 
   it("Esc keydown on window dismisses the modal", () => {
-    const { container } = renderAt("/?chart=full");
-    expect(container.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+    renderAt("/?chart=full");
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
     act(() => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
-    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).toBeNull();
   });
 
   it("Esc keydown is a no-op when the modal is not open", () => {
@@ -467,7 +478,6 @@ describe("Agents homepage — modal fullscreen overlay (layout-fixes §2)", () =
     act(() => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
-    // Still side-by-side.
     const after = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
     expect(after?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
   });
@@ -475,20 +485,17 @@ describe("Agents homepage — modal fullscreen overlay (layout-fixes §2)", () =
   it("locks body scroll while modal is open and restores prior overflow when toggled off", () => {
     const prior = "auto";
     document.body.style.overflow = prior;
-    const { container } = renderAt("/?chart=full");
+    renderAt("/?chart=full");
     expect(document.body.style.overflow).toBe("hidden");
 
-    // Toggle off by clicking the minimize button.
-    const btn = container.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+    const btn = document.body.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
     expect(btn).not.toBeNull();
     if (!btn) return;
     act(() => {
       fireEvent.click(btn);
     });
-    // Body overflow restored to the prior value captured on open.
     expect(document.body.style.overflow).toBe(prior);
-    // And the modal is actually gone.
-    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    expect(document.body.querySelector(".cl-chart-modal-backdrop")).toBeNull();
   });
 
   it("restores prior body overflow on unmount while modal still open", () => {
@@ -500,18 +507,12 @@ describe("Agents homepage — modal fullscreen overlay (layout-fixes §2)", () =
     expect(document.body.style.overflow).toBe(prior);
   });
 
-  it("focuses the minimize button on modal open", async () => {
-    const { container } = renderAt("/?chart=full");
-    const btn = container.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+  it("focuses the minimize button on modal open (via autoFocus)", () => {
+    // No rAF advance needed — autoFocus on the button fires synchronously
+    // when the portaled modal mounts.
+    renderAt("/?chart=full");
+    const btn = document.body.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
     expect(btn).not.toBeNull();
-    // Focus is deferred via rAF so FleetChart's own measurement-driven
-    // re-render can't reset activeElement to body before our effect lands.
-    // Await one rAF cycle for the deferred focus to flush.
-    await act(async () => {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => resolve());
-      });
-    });
     expect(document.activeElement).toBe(btn);
   });
 });
@@ -527,8 +528,11 @@ describe("Agents homepage — tight prop threads from layout state (layout-fixes
   });
 
   it("dot radius reflects tight=false at ?chart=full (4px routine — modal mode)", () => {
-    const { container } = renderAt("/?chart=full");
-    const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
+    // Chart is portaled to document.body when fullscreen — query there.
+    renderAt("/?chart=full");
+    const dot = document.body.querySelector(
+      '[data-cl-fleet-dot][data-cl-cluster="false"] > circle',
+    );
     expect(dot).not.toBeNull();
     expect(dot?.getAttribute("r")).toBe("4");
   });
