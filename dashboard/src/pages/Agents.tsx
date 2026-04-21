@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useLiveApi } from "../hooks/useLiveApi";
-import type { AgentInfo, AttentionResponse, Guardrail, StatsResponse } from "../lib/types";
+import type { AgentInfo, AttentionResponse, StatsResponse } from "../lib/types";
 import FleetHeader from "../components/FleetHeader";
 import AttentionInbox from "../components/AttentionInbox";
 import AgentRow from "../components/AgentCardCompact";
@@ -45,10 +45,12 @@ export default function Agents() {
       },
     },
   );
-  const { data: guardrailsData } = useLiveApi<{ guardrails: Guardrail[] }>("api/guardrails");
 
-  const guardrails = guardrailsData?.guardrails ?? [];
   const pendingCount = attention?.pending.length ?? 0;
+  const pendingAgentNames = useMemo(
+    () => (attention?.pending ?? []).map((p) => p.agentName),
+    [attention],
+  );
 
   // Cross-reference attention-flagged agents so AgentCardCompact can show a
   // sidelight without re-deriving from its own AgentInfo snapshot.
@@ -98,8 +100,8 @@ export default function Agents() {
         <FleetHeader
           stats={stats}
           totalAgents={agents?.length ?? 0}
-          guardrailCount={guardrails.length}
           pendingCount={pendingCount}
+          pendingAgentNames={pendingAgentNames}
           selectedDate={selectedDate}
           onDateChange={setSelectedDate}
           range={range}

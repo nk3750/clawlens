@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { AttentionItem } from "../../lib/types";
-import { relTime, riskColorRaw } from "../../lib/utils";
+import { relTime } from "../../lib/utils";
 import AckButtons from "./AckButtons";
 
 interface Props {
@@ -8,13 +8,27 @@ interface Props {
   isLast: boolean;
   onOptimisticRemove: () => () => void;
   onPersisted: () => void;
-  /** Optional: when provided, renders a 🛡 button that hands the item to the parent's guardrail modal. */
+  /** Optional: when provided, renders an Add-guardrail button that hands the item to the parent modal. */
   onAddGuardrail?: (item: AttentionItem) => void;
   showShortcutHint?: boolean;
   isTopmost?: boolean;
 }
 
-/** T3: single unguarded high-risk allow. Thinner row, yellow tint. */
+const TIER_CLASS: Record<string, string> = {
+  low: "cl-tier-low",
+  medium: "cl-tier-med",
+  high: "cl-tier-high",
+  critical: "cl-tier-crit",
+};
+
+const TIER_STRIPE: Record<string, string> = {
+  low: "var(--cl-risk-low)",
+  medium: "var(--cl-risk-medium)",
+  high: "var(--cl-risk-high)",
+  critical: "var(--cl-risk-critical)",
+};
+
+/** T3: single unguarded high-risk allow. Thinner row. */
 export default function HighRiskRow({
   item,
   isLast,
@@ -24,60 +38,76 @@ export default function HighRiskRow({
   showShortcutHint,
   isTopmost,
 }: Props) {
-  const borderColor = riskColorRaw(item.riskTier);
+  const stripeColor = TIER_STRIPE[item.riskTier] ?? "var(--cl-risk-medium)";
+  const tierClass = TIER_CLASS[item.riskTier] ?? "cl-tier-med";
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2.5"
       data-cl-attention-row="highrisk"
       data-cl-attention-topmost={isTopmost ? "true" : undefined}
       style={{
-        borderLeft: `2px solid ${borderColor}`,
-        backgroundColor: "rgba(251, 191, 36, 0.04)",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "8px 14px 8px 18px",
         borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
       }}
     >
-      <span aria-hidden="true" className="text-sm shrink-0">
-        ⚠
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 2,
+          background: stripeColor,
+        }}
+      />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span
-            className="font-sans text-sm font-semibold"
-            style={{ color: "var(--cl-text-primary)" }}
+            style={{
+              fontFamily: "var(--cl-font-sans)",
+              fontSize: 14,
+              fontWeight: 510,
+              color: "var(--cl-text-primary)",
+            }}
           >
             {item.agentName}
           </span>
           <span
-            className="font-mono text-[11px]"
-            style={{ color: "var(--cl-text-muted)" }}
+            className="label-mono"
             title={new Date(item.timestamp).toLocaleString()}
+            style={{ textTransform: "none" }}
           >
-            · {relTime(item.timestamp)}
+            {relTime(item.timestamp)}
           </span>
-          <span
-            className="font-mono text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
-            style={{
-              color: borderColor,
-              backgroundColor: `color-mix(in srgb, ${borderColor} 12%, transparent)`,
-            }}
-          >
-            {item.riskTier} ({item.riskScore})
+          <span className={`cl-tier ${tierClass}`} title={`risk ${item.riskScore}`}>
+            {item.riskTier} {item.riskScore}
           </span>
+          {item.guardrailHint && (
+            <span className="cl-pill" title={item.guardrailHint}>
+              Unguarded
+            </span>
+          )}
         </div>
         <p
-          className="font-mono text-xs mt-0.5 truncate"
-          style={{ color: "var(--cl-text-secondary)" }}
+          style={{
+            fontFamily: "var(--cl-font-mono)",
+            fontFeatureSettings: "normal",
+            fontSize: 12,
+            color: "var(--cl-text-secondary)",
+            marginTop: 3,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
-          {item.guardrailHint && (
-            <span style={{ color: "var(--cl-text-muted)" }}>Unguarded: </span>
-          )}
           {item.description}
           {item.sessionKey && (
-            <span
-              className="font-mono text-[11px] ml-2"
-              style={{ color: "var(--cl-text-muted)" }}
-            >
+            <span style={{ marginLeft: 10, color: "var(--cl-text-subdued)" }}>
               {truncateSessionKey(item.sessionKey)}
             </span>
           )}
@@ -88,12 +118,8 @@ export default function HighRiskRow({
           to={`/session/${encodeURIComponent(item.sessionKey)}`}
           state={{ highlightToolCallId: item.toolCallId }}
           data-cl-attention-view
-          className="px-3 py-1 rounded-lg text-xs font-semibold shrink-0"
-          style={{
-            backgroundColor: "var(--cl-elevated)",
-            color: "var(--cl-text-primary)",
-            textDecoration: "none",
-          }}
+          className="cl-btn"
+          style={{ height: 26, padding: "0 10px", fontSize: 12, flexShrink: 0 }}
         >
           View
         </Link>
@@ -106,16 +132,11 @@ export default function HighRiskRow({
             e.stopPropagation();
             onAddGuardrail(item);
           }}
-          className="px-3 py-1 rounded-lg text-xs font-semibold shrink-0"
-          style={{
-            backgroundColor: "var(--cl-elevated)",
-            border: "1px solid var(--cl-border-default)",
-            color: "var(--cl-text-primary)",
-            cursor: "pointer",
-          }}
+          className="cl-btn"
           title="Add a guardrail to govern this tool + identity key"
+          style={{ height: 26, padding: "0 10px", fontSize: 12, flexShrink: 0 }}
         >
-          🛡 Add guardrail
+          Add guardrail
         </button>
       )}
       <AckButtons

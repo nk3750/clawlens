@@ -1,24 +1,26 @@
+import { useEffect, useState } from "react";
+import { useTotalFlash } from "../hooks/useTotalFlash";
+import { useSSEStatus } from "../hooks/useSSEStatus";
 import type { StatsResponse } from "../lib/types";
-import ActionsStat from "./fleetheader/ActionsStat";
-import AgentsRunning from "./fleetheader/AgentsRunning";
-import BlockedChip from "./fleetheader/BlockedChip";
 import DateChip from "./fleetheader/DateChip";
-import HealthIndicator from "./fleetheader/HealthIndicator";
-import OverflowMenu from "./fleetheader/OverflowMenu";
-import PendingChip from "./fleetheader/PendingChip";
-import PostureChip from "./fleetheader/PostureChip";
 import RangePillGroup from "./fleetheader/RangePillGroup";
+import RiskMixDonut from "./fleetheader/RiskMixDonut";
 import {
+  computeHealthState,
+  computeTrend,
+  formatLagShort,
+  lagSeconds,
   type RangeOption,
-  shouldShowBlockedChip,
-  shouldShowPendingChip,
+  splitAgentsRunning,
 } from "./fleetheader/utils";
 
 interface Props {
   stats: StatsResponse;
   totalAgents: number;
-  guardrailCount: number;
   pendingCount: number;
+  /** Names of agents that currently have a pending approval, for the
+   *  PENDING APPROVAL card's secondary line. Order = newest first. */
+  pendingAgentNames?: string[];
   selectedDate: string | null;
   onDateChange: (date: string | null) => void;
   range: RangeOption;
@@ -28,73 +30,352 @@ interface Props {
 }
 
 /**
- * Single-row fleet header. Replaces FleetPulse. Three logical clusters:
- *   left   — date chip + range pills (temporal context)
- *   center — actions total + day-over-day trend
- *   right  — agents running, posture, blocked/pending (conditional), health, overflow
+ * Linear-adjacent fleet header — two stacked strips.
+ *   Top:    TODAY chip + range pills + "last updated Ns ago"
+ *   Bottom: 4-card stat grid — ACTIONS / AGENTS RUNNING / PENDING APPROVAL / RISK MIX · 24H
  *
- * Layout collapses at the breakpoints in spec §11; CSS in index.css owns the
- * actual flex/wrap rules so the component stays declarative.
+ * Keeps all temporal chrome + stats data pathways. Drops the old dense
+ * single-row layout, BlockedChip, PostureChip, OverflowMenu, and
+ * HealthIndicator's pill variant — health surfaces in the top strip's
+ * "last updated" label (reconnecting state tinted medium).
  */
 export default function FleetHeader({
   stats,
   totalAgents,
-  guardrailCount,
   pendingCount,
+  pendingAgentNames,
   selectedDate,
   onDateChange,
   range,
   onRangeChange,
   retention,
 }: Props) {
-  const showBlocked = shouldShowBlockedChip(stats.blocked);
-  const showPending = shouldShowPendingChip(pendingCount);
-
   return (
-    <section
-      className="cl-fleet-header stagger"
-      aria-label="Fleet header"
-      data-cl-fleet-header
-    >
-      <div className="cl-fh-left">
-        <DateChip
-          selectedDate={selectedDate}
-          onChange={onDateChange}
-          onRangeChange={onRangeChange}
-          retention={retention ?? null}
-        />
-        <RangePillGroup value={range} onChange={onRangeChange} />
-      </div>
-
-      <div className="cl-fh-center">
-        <ActionsStat
+    <section aria-label="Fleet header" data-cl-fleet-header>
+      <RangeChromeStrip
+        selectedDate={selectedDate}
+        onDateChange={onDateChange}
+        range={range}
+        onRangeChange={onRangeChange}
+        retention={retention}
+        lastEntryIso={stats.lastEntryTimestamp ?? null}
+        llmStatus={stats.llmHealth?.status ?? null}
+      />
+      <div
+        className="cl-fleet-stat-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 12,
+          marginTop: 12,
+        }}
+      >
+        <ActionsCard
           total={stats.total}
           yesterdayTotal={stats.yesterdayTotal}
-          weekAverage={stats.weekAverage}
-          historicDailyMax={stats.historicDailyMax}
         />
-      </div>
-
-      <div className="cl-fh-right">
-        <AgentsRunning
+        <AgentsRunningCard
           active={stats.activeAgents}
           activeSessions={stats.activeSessions}
           total={totalAgents}
         />
-        <PostureChip posture={stats.riskPosture} />
-        {showBlocked && <BlockedChip count={stats.blocked} />}
-        {showPending && <PendingChip count={pendingCount} />}
-        <HealthIndicator
-          variant="chrome"
-          lastEntryIso={stats.lastEntryTimestamp ?? null}
-          llmStatus={stats.llmHealth?.status ?? null}
-        />
-        <OverflowMenu
-          guardrailCount={guardrailCount}
-          selectedDate={selectedDate}
-          rangeParam={range}
-        />
+        <PendingCard count={pendingCount} agentNames={pendingAgentNames ?? []} />
+        <RiskMixCard breakdown={stats.riskBreakdown} />
       </div>
     </section>
+  );
+}
+
+// ── Top strip ───────────────────────────────────────────────────────────
+
+interface RangeChromeProps {
+  selectedDate: string | null;
+  onDateChange: (date: string | null) => void;
+  range: RangeOption;
+  onRangeChange: (range: RangeOption) => void;
+  retention?: string | null;
+  lastEntryIso: string | null;
+  llmStatus: StatsResponse["llmHealth"]["status"] | null;
+}
+
+function RangeChromeStrip({
+  selectedDate,
+  onDateChange,
+  range,
+  onRangeChange,
+  retention,
+  lastEntryIso,
+  llmStatus,
+}: RangeChromeProps) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 0",
+        flexWrap: "wrap",
+      }}
+    >
+      <DateChip
+        selectedDate={selectedDate}
+        onChange={onDateChange}
+        onRangeChange={onRangeChange}
+        retention={retention ?? null}
+      />
+      <RangePillGroup value={range} onChange={onRangeChange} />
+      <div style={{ marginLeft: "auto" }}>
+        <LastUpdatedLabel lastEntryIso={lastEntryIso} llmStatus={llmStatus} />
+      </div>
+    </div>
+  );
+}
+
+function LastUpdatedLabel({
+  lastEntryIso,
+  llmStatus,
+}: {
+  lastEntryIso: string | null;
+  llmStatus: StatsResponse["llmHealth"]["status"] | null;
+}) {
+  const sseStatus = useSSEStatus();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const state = computeHealthState({
+    sseStatus,
+    lastEntryIso: lastEntryIso ?? undefined,
+    llmStatus: llmStatus ?? undefined,
+    nowMs: now,
+  });
+  const lag = lagSeconds(lastEntryIso, now);
+
+  let text = "—";
+  let color: string = "var(--cl-text-muted)";
+  if (state === "reconnecting") {
+    text = "reconnecting…";
+    color = "var(--cl-risk-medium)";
+  } else if (state === "offline") {
+    text = "offline";
+    color = "var(--cl-risk-high)";
+  } else if (state === "llm_degraded") {
+    text = "LLM degraded";
+    color = "var(--cl-risk-medium)";
+  } else if (state === "stale") {
+    text = `stale · ${formatLagShort(lag ?? 0)} lag`;
+    color = "var(--cl-risk-medium)";
+  } else if (state === "live") {
+    text = lag == null ? "live" : `last updated ${formatLagShort(lag)} ago`;
+  }
+
+  return (
+    <span className="label-mono" style={{ color }}>
+      {text}
+    </span>
+  );
+}
+
+// ── Stat cards ──────────────────────────────────────────────────────────
+
+function StatCardShell({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="cl-card"
+      style={{
+        padding: "16px 18px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        minHeight: 132,
+      }}
+    >
+      <span
+        className="label-mono"
+        style={{
+          letterSpacing: "0.04em",
+          color: "var(--cl-text-muted)",
+        }}
+      >
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+const BIG_NUMBER_STYLE: React.CSSProperties = {
+  fontFamily: "var(--cl-font-sans)",
+  fontSize: 48,
+  fontWeight: 510,
+  lineHeight: 1,
+  letterSpacing: "-1.056px",
+  color: "var(--cl-text-primary)",
+  fontVariantNumeric: "tabular-nums",
+};
+
+const SUBLABEL_STYLE: React.CSSProperties = {
+  fontFamily: "var(--cl-font-sans)",
+  fontSize: 14,
+  fontWeight: 400,
+  color: "var(--cl-text-muted)",
+};
+
+const SECONDARY_LINE_STYLE: React.CSSProperties = {
+  fontFamily: "var(--cl-font-sans)",
+  fontSize: 13,
+  fontWeight: 400,
+  color: "var(--cl-text-muted)",
+};
+
+function ActionsCard({
+  total,
+  yesterdayTotal,
+}: {
+  total: number;
+  yesterdayTotal: number;
+}) {
+  const flashing = useTotalFlash(total);
+  const trend = computeTrend(total, yesterdayTotal);
+
+  let trendNode: React.ReactNode = null;
+  if (trend.kind === "up") {
+    trendNode = (
+      <span style={SECONDARY_LINE_STYLE}>
+        <span style={{ color: "var(--cl-risk-low)", fontWeight: 510 }}>
+          ↑ {trend.pct}%
+        </span>{" "}
+        vs yesterday
+      </span>
+    );
+  } else if (trend.kind === "down") {
+    trendNode = (
+      <span style={SECONDARY_LINE_STYLE}>
+        <span style={{ color: "var(--cl-risk-high)", fontWeight: 510 }}>
+          ↓ {trend.pct}%
+        </span>{" "}
+        vs yesterday
+      </span>
+    );
+  } else if (trend.kind === "same") {
+    trendNode = <span style={SECONDARY_LINE_STYLE}>— same as yesterday</span>;
+  } else if (trend.kind === "new") {
+    trendNode = <span style={SECONDARY_LINE_STYLE}>first day tracking</span>;
+  }
+
+  return (
+    <StatCardShell label="ACTIONS">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span
+          key={flashing ? `flash-${total}` : "rest"}
+          className={flashing ? "cl-total-flash" : undefined}
+          style={BIG_NUMBER_STYLE}
+        >
+          {total.toLocaleString()}
+        </span>
+        <span style={SUBLABEL_STYLE}>actions</span>
+      </div>
+      <div style={{ minHeight: 17 }}>{trendNode}</div>
+    </StatCardShell>
+  );
+}
+
+function AgentsRunningCard({
+  active,
+  activeSessions,
+  total,
+}: {
+  active: number;
+  activeSessions: number;
+  total: number;
+}) {
+  const pct = total > 0 ? Math.round((active / total) * 100) : 0;
+  const idle = Math.max(0, total - active);
+  const { betweenSessions } = splitAgentsRunning(active, activeSessions);
+
+  return (
+    <StatCardShell label="AGENTS RUNNING">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={BIG_NUMBER_STYLE}>{active}</span>
+        <span style={SUBLABEL_STYLE}>/{pct}%</span>
+      </div>
+      <span style={SECONDARY_LINE_STYLE}>
+        of {total}
+        {idle > 0 ? ` · ${idle} idle` : ""}
+        {betweenSessions > 0 ? ` · ${betweenSessions} between` : ""}
+      </span>
+    </StatCardShell>
+  );
+}
+
+function PendingCard({
+  count,
+  agentNames,
+}: {
+  count: number;
+  agentNames: string[];
+}) {
+  // Dedupe + cap to two names for the inline list; "+N more" catches the rest
+  // so the card never overflows.
+  const uniqueNames = Array.from(new Set(agentNames));
+  const shown = uniqueNames.slice(0, 2);
+  const extra = Math.max(0, uniqueNames.length - shown.length);
+
+  let secondary: React.ReactNode;
+  if (count === 0) {
+    secondary = <span style={SECONDARY_LINE_STYLE}>none waiting</span>;
+  } else if (shown.length === 0) {
+    secondary = (
+      <span style={SECONDARY_LINE_STYLE}>
+        {count === 1 ? "1 action waiting" : `${count} actions waiting`}
+      </span>
+    );
+  } else {
+    secondary = (
+      <span style={SECONDARY_LINE_STYLE}>
+        {shown.join(" · ")}
+        {extra > 0 ? ` · +${extra} more` : ""}
+      </span>
+    );
+  }
+
+  return (
+    <StatCardShell label="PENDING APPROVAL">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={BIG_NUMBER_STYLE}>{count}</span>
+        <span style={SUBLABEL_STYLE}>
+          {count === 1 ? "pending" : "pending"}
+        </span>
+      </div>
+      <div style={{ minHeight: 17 }}>{secondary}</div>
+    </StatCardShell>
+  );
+}
+
+function RiskMixCard({
+  breakdown,
+}: {
+  breakdown: StatsResponse["riskBreakdown"];
+}) {
+  return (
+    <StatCardShell label="RISK MIX · 24H">
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <RiskMixDonut
+          crit={breakdown.critical}
+          high={breakdown.high}
+          medium={breakdown.medium}
+          low={breakdown.low}
+        />
+      </div>
+    </StatCardShell>
   );
 }

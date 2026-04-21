@@ -46,9 +46,10 @@ export default function AckButtons({
   };
 
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
       <button
         type="button"
+        className="cl-btn"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -56,22 +57,21 @@ export default function AckButtons({
         }}
         disabled={busy}
         title="Ack (a)"
-        className="px-2 py-1 rounded-md text-[11px] font-sans transition-colors"
         style={{
-          backgroundColor: "transparent",
-          color: "var(--cl-text-secondary)",
-          border: "1px solid var(--cl-border-default)",
-          cursor: busy ? "not-allowed" : "pointer",
-          opacity: busy ? 0.5 : 1,
+          height: 26,
+          padding: "0 10px",
+          fontSize: 12,
         }}
       >
-        <span aria-hidden="true">✓</span> Ack
+        <span aria-hidden="true">✓</span>
+        <span>Ack</span>
         {showShortcutHint && (
           <kbd
-            className="ml-1 font-mono text-[9px] px-1 rounded"
+            className="cl-pill"
             style={{
-              color: "var(--cl-text-muted)",
-              border: "1px solid var(--cl-border-subtle)",
+              marginLeft: 4,
+              padding: "2px 5px",
+              fontSize: 9,
             }}
           >
             a
@@ -80,9 +80,9 @@ export default function AckButtons({
       </button>
       {error && (
         <span
-          className="font-sans text-[10px]"
-          style={{ color: "var(--cl-risk-high)" }}
           role="alert"
+          className="label-mono"
+          style={{ color: "var(--cl-risk-high)", fontSize: 10 }}
         >
           {error}
         </span>

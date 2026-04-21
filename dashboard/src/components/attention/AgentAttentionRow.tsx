@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { AttentionAgent } from "../../lib/types";
-import { relTime, riskColorRaw } from "../../lib/utils";
+import { relTime } from "../../lib/utils";
 import AckButtons from "./AckButtons";
 
 interface Props {
@@ -12,6 +12,20 @@ interface Props {
   isTopmost?: boolean;
 }
 
+const TIER_CLASS: Record<string, string> = {
+  low: "cl-tier-low",
+  medium: "cl-tier-med",
+  high: "cl-tier-high",
+  critical: "cl-tier-crit",
+};
+
+const TIER_STRIPE: Record<string, string> = {
+  low: "var(--cl-risk-low)",
+  medium: "var(--cl-risk-medium)",
+  high: "var(--cl-risk-high)",
+  critical: "var(--cl-risk-critical)",
+};
+
 /** T2b: an agent has crossed a clustering rule (block/hrisk/sustained). */
 export default function AgentAttentionRow({
   item,
@@ -21,57 +35,69 @@ export default function AgentAttentionRow({
   showShortcutHint,
   isTopmost,
 }: Props) {
-  const borderColor = riskColorRaw(item.peakTier);
+  const stripeColor = TIER_STRIPE[item.peakTier] ?? "var(--cl-risk-medium)";
+  const tierClass = TIER_CLASS[item.peakTier] ?? "cl-tier-med";
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-3"
       data-cl-attention-row="agent"
       data-cl-attention-topmost={isTopmost ? "true" : undefined}
       style={{
-        borderLeft: `3px solid ${borderColor}`,
-        backgroundColor: "rgba(251, 191, 36, 0.05)",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 14px 10px 18px",
         borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
       }}
     >
-      <span aria-hidden="true" className="text-sm shrink-0">
-        ⚠
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 3,
+          background: stripeColor,
+        }}
+      />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span
-            className="font-sans text-sm font-semibold"
-            style={{ color: "var(--cl-text-primary)" }}
+            style={{
+              fontFamily: "var(--cl-font-sans)",
+              fontSize: 14,
+              fontWeight: 510,
+              color: "var(--cl-text-primary)",
+            }}
           >
             {item.agentName}
           </span>
           <span
-            className="font-mono text-[11px]"
-            style={{ color: "var(--cl-text-secondary)" }}
+            className="label-mono"
             title={new Date(item.triggerAt).toLocaleString()}
+            style={{ textTransform: "none" }}
           >
-            · since {relTime(item.triggerAt)}
+            since {relTime(item.triggerAt)}
           </span>
-          <span
-            className="font-mono text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
-            style={{
-              color: borderColor,
-              backgroundColor: `color-mix(in srgb, ${borderColor} 12%, transparent)`,
-            }}
-          >
-            {item.peakTier}
-          </span>
+          <span className={`cl-tier ${tierClass}`}>{item.peakTier}</span>
         </div>
         <p
-          className="font-mono text-xs mt-0.5 truncate"
-          style={{ color: "var(--cl-text-secondary)" }}
+          style={{
+            fontFamily: "var(--cl-font-mono)",
+            fontFeatureSettings: "normal",
+            fontSize: 12,
+            color: "var(--cl-text-secondary)",
+            marginTop: 3,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           {item.description}
           {item.lastSessionKey && (
-            <span
-              className="font-mono text-[11px] ml-2"
-              style={{ color: "var(--cl-text-muted)" }}
-            >
+            <span style={{ marginLeft: 10, color: "var(--cl-text-subdued)" }}>
               {truncateSessionKey(item.lastSessionKey)}
             </span>
           )}
@@ -80,12 +106,8 @@ export default function AgentAttentionRow({
       <Link
         to={`/agent/${encodeURIComponent(item.agentId)}`}
         data-cl-attention-view
-        className="px-3 py-1 rounded-lg text-xs font-semibold shrink-0"
-        style={{
-          backgroundColor: "var(--cl-elevated)",
-          color: "var(--cl-text-primary)",
-          textDecoration: "none",
-        }}
+        className="cl-btn"
+        style={{ height: 26, padding: "0 10px", fontSize: 12, flexShrink: 0 }}
       >
         View agent
       </Link>

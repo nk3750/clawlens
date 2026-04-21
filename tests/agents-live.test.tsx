@@ -65,15 +65,18 @@ function renderHome() {
 }
 
 describe("Agents homepage — useLiveApi subscriptions", () => {
-  it("subscribes to four homepage endpoints via useLiveApi", () => {
+  it("subscribes to three homepage endpoints via useLiveApi", () => {
+    // Phase 2 stage B dropped the /api/guardrails subscription along with the
+    // OverflowMenu that consumed its count. Guardrails management still lives
+    // on /guardrails and wires its own fetch there.
     renderHome();
     const paths = mockedUseLiveApi.mock.calls.map((call) => call[0]);
     expect(paths).toContain("api/stats");
     expect(paths).toContain("api/agents");
     // attention path includes optional ?date= suffix; today (default) has none.
     expect(paths.some((p) => p.startsWith("api/attention"))).toBe(true);
-    expect(paths).toContain("api/guardrails");
-    expect(paths).toHaveLength(4);
+    expect(paths).not.toContain("api/guardrails");
+    expect(paths).toHaveLength(3);
   });
 
   it("passes a filter predicate only on the attention subscription", () => {

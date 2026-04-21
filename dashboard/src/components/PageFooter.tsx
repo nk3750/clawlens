@@ -1,6 +1,6 @@
 import { useApi } from "../hooks/useApi";
-import type { StatsResponse } from "../lib/types";
 import { formatAuditAge, formatGatewayUptime, formatVersionLabel } from "../lib/footerStatus";
+import type { StatsResponse } from "../lib/types";
 import HealthIndicator from "./fleetheader/HealthIndicator";
 
 const HELP_URL = "https://github.com/openclaw/openclaw#readme";
@@ -30,6 +30,7 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
       role="contentinfo"
       className="label-mono"
       style={{
+        background: "var(--cl-panel)",
         borderTop: "1px solid var(--cl-border-subtle)",
         marginTop: 24,
         padding: "8px clamp(16px, 2.5vw, 32px)",
@@ -39,11 +40,9 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
         justifyContent: "space-between",
         gap: 12,
         color: "var(--cl-text-muted)",
-        fontSize: 10.5,
-        letterSpacing: "0.08em",
       }}
     >
-      <div className="flex items-center" style={{ gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span>{versionLabel}</span>
         <Separator />
         <HealthIndicator
@@ -59,22 +58,28 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
         <span className="cl-wide-only">{uptimeLabel}</span>
       </div>
 
-      <div className="flex items-center" style={{ gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <a
           href={HELP_URL}
           target="_blank"
           rel="noreferrer noopener"
           aria-label="Help"
           title="Help"
-          className="btn-press"
           style={{
             display: "inline-grid",
             placeItems: "center",
             width: 22,
             height: 22,
-            borderRadius: "var(--cl-radius-sm, 6px)",
+            borderRadius: "var(--cl-r-sm)",
             color: "var(--cl-text-muted)",
             textDecoration: "none",
+            transition: "color var(--cl-dur-fast) var(--cl-ease)",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.color = "var(--cl-text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.color = "var(--cl-text-muted)";
           }}
         >
           ?
@@ -84,7 +89,6 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
           onClick={reload}
           aria-label="Refresh"
           title="Refresh"
-          className="btn-press"
           style={{
             width: 22,
             height: 22,
@@ -92,9 +96,16 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
             placeItems: "center",
             border: "none",
             background: "none",
-            borderRadius: "var(--cl-radius-sm, 6px)",
+            borderRadius: "var(--cl-r-sm)",
             color: "var(--cl-text-muted)",
             cursor: "pointer",
+            transition: "color var(--cl-dur-fast) var(--cl-ease)",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.color = "var(--cl-text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.color = "var(--cl-text-muted)";
           }}
         >
           ↻
@@ -106,7 +117,7 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
 
 function Separator() {
   return (
-    <span aria-hidden="true" style={{ color: "var(--cl-text-muted)", opacity: 0.6 }}>
+    <span aria-hidden="true" style={{ color: "var(--cl-text-subdued)" }}>
       ·
     </span>
   );

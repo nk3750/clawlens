@@ -9,69 +9,122 @@ export default function Nav() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 cl-glass-nav">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        {/* Brand — Syne font, gradient text, glow */}
-        <Link to="/" className="flex items-center gap-3 shrink-0 group">
-          {/* Hexagonal brand mark */}
-          <svg width="28" height="28" viewBox="0 0 28 28" className="shrink-0">
-            <defs>
-              <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#d4a574" />
-                <stop offset="100%" stopColor="#a78bfa" />
-              </linearGradient>
-            </defs>
+    <nav
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: "var(--cl-z-nav)" as unknown as number,
+        background: "var(--cl-panel)",
+        borderBottom: "1px solid var(--cl-border-subtle)",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1360,
+          margin: "0 auto",
+          height: 48,
+          padding: "0 clamp(16px, 2.5vw, 32px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Link
+          to="/"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 10,
+            color: "var(--cl-text-primary)",
+            textDecoration: "none",
+            flexShrink: 0,
+          }}
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 28 28"
+            aria-hidden="true"
+            style={{ flexShrink: 0 }}
+          >
             <polygon
               points="14,1 25.5,7.5 25.5,20.5 14,27 2.5,20.5 2.5,7.5"
               fill="none"
-              stroke="url(#brand-grad)"
+              stroke="currentColor"
               strokeWidth="1.5"
-              className="transition-all duration-500 group-hover:[filter:drop-shadow(0_0_8px_rgba(212,165,116,0.5))]"
             />
-            <circle cx="14" cy="14" r="3" fill="url(#brand-grad)" opacity="0.8" />
+            <circle cx="14" cy="14" r="3" fill="currentColor" />
           </svg>
           <span
-            className="text-[18px] font-bold tracking-wide"
             style={{
-              fontFamily: "'Syne', sans-serif",
-              background: "linear-gradient(135deg, #ede9e3 30%, #d4a574 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
+              fontFamily: "var(--cl-font-sans)",
+              fontSize: 14,
+              fontWeight: 510,
+              letterSpacing: "-0.01em",
+              color: "var(--cl-text-primary)",
             }}
           >
-            CLAWLENS
+            ClawLens
           </span>
         </Link>
 
-        {/* Page links */}
-        <div className="flex items-center gap-1">
-          <NavLink to="/" active={isActive("/")}>Agents</NavLink>
-          <NavLink to="/activity" active={isActive("/activity")}>Activity</NavLink>
-          <NavLink to="/guardrails" active={isActive("/guardrails")}>Guardrails</NavLink>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <NavLink to="/" active={isActive("/")}>
+            Agents
+          </NavLink>
+          <NavLink to="/activity" active={isActive("/activity")}>
+            Activity
+          </NavLink>
+          <NavLink to="/guardrails" active={isActive("/guardrails")}>
+            Guardrails
+          </NavLink>
         </div>
       </div>
     </nav>
   );
 }
 
-function NavLink({ to, active, children }: { to: string; active: boolean; children: React.ReactNode }) {
+function NavLink({
+  to,
+  active,
+  children,
+}: {
+  to: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       to={to}
-      className="relative px-4 py-2 text-[13px] font-medium transition-colors duration-200"
       style={{
-        fontFamily: "'DM Sans', sans-serif",
-        color: active ? "var(--cl-text-primary)" : "var(--cl-text-muted)",
+        position: "relative",
+        padding: "12px 12px",
+        fontFamily: "var(--cl-font-sans)",
+        fontSize: 13,
+        fontWeight: 510,
+        lineHeight: 1,
+        color: active ? "var(--cl-text-primary)" : "var(--cl-text-secondary)",
+        textDecoration: "none",
+        transition: "color var(--cl-dur-fast) var(--cl-ease)",
       }}
     >
       {children}
       {active && (
         <span
-          className="absolute bottom-1 left-4 right-4 h-[2px] rounded-full"
+          aria-hidden="true"
           style={{
-            backgroundColor: "var(--cl-accent)",
-            boxShadow: "0 0 8px rgba(212, 165, 116, 0.4)",
+            position: "absolute",
+            left: 12,
+            right: 12,
+            bottom: -1,
+            height: 2,
+            background: "var(--cl-accent)",
           }}
         />
       )}

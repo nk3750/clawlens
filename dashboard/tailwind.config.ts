@@ -26,9 +26,14 @@ export default {
         },
       },
       fontFamily: {
-        brand: ['"Syne"', "sans-serif"],
-        display: ['"Bricolage Grotesque"', "sans-serif"],
-        body: ['"DM Sans"', "sans-serif"],
+        // Phase-2 pivot: Syne / Bricolage Grotesque / DM Sans are retired.
+        // All `font-brand|display|body` utility class usages now resolve to
+        // Inter — matches the new design token system and keeps out-of-scope
+        // pages (Activity, AgentHeader, SessionHeader, etc.) rendering with
+        // the correct family until Stage D rewrites their class usage.
+        brand: ['"Inter"', '"Inter Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ['"Inter"', '"Inter Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
+        body: ['"Inter"', '"Inter Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
       },
       borderRadius: {

@@ -2,7 +2,6 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useNavigate } from "react-router-dom";
 import { useKeyboardShortcut } from "../hooks/useKeyboardShortcut";
 import type { AttentionAgent, AttentionItem, AttentionResponse } from "../lib/types";
-import { riskColorRaw } from "../lib/utils";
 import GuardrailModal from "./GuardrailModal";
 import AgentAttentionRow from "./attention/AgentAttentionRow";
 import ApprovalCard from "./attention/ApprovalCard";
@@ -197,7 +196,7 @@ export default function AttentionInbox({ data, refetch }: Props) {
   const visibleList = expanded ? visibleNonHero : visibleNonHero.slice(0, INITIAL_VISIBLE_NON_HERO);
   const hiddenCount = visibleNonHero.length - visibleList.length;
 
-  const headerColor = visiblePending.length > 0 ? riskColorRaw("high") : riskColorRaw("medium");
+  const hasPending = visiblePending.length > 0;
 
   return (
     <section
@@ -206,26 +205,23 @@ export default function AttentionInbox({ data, refetch }: Props) {
       data-cl-attention-anchor
       tabIndex={0}
       aria-label="Attention inbox"
-      className="flex flex-col outline-none"
-      style={{ gap: 10 }}
+      style={{ display: "flex", flexDirection: "column", gap: 10, outline: "none" }}
     >
-      <div className="flex items-center gap-2">
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <svg
-          width="14"
-          height="14"
+          width="12"
+          height="12"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={headerColor}
+          stroke={hasPending ? "var(--cl-risk-high)" : "var(--cl-risk-medium)"}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01" />
         </svg>
-        <span
-          className="font-sans text-xs font-medium tracking-wide uppercase"
-          style={{ color: headerColor }}
-        >
+        <span className="label-mono" style={{ color: "var(--cl-text-secondary)" }}>
           {total} {total === 1 ? "item needs" : "items need"} attention
         </span>
       </div>
@@ -236,11 +232,8 @@ export default function AttentionInbox({ data, refetch }: Props) {
 
       {visibleList.length > 0 && (
         <div
-          className="overflow-hidden"
-          style={{
-            border: "1px solid var(--cl-border-default)",
-            borderRadius: 12,
-          }}
+          className="cl-card"
+          style={{ overflow: "hidden" }}
         >
           {visibleList.map((v, i) => {
             const isLast = i === visibleList.length - 1 && hiddenCount === 0;
@@ -297,17 +290,21 @@ export default function AttentionInbox({ data, refetch }: Props) {
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="w-full text-center font-sans text-xs transition-colors"
+              className="label-mono"
               style={{
+                width: "100%",
+                textAlign: "center",
                 color: "var(--cl-text-muted)",
-                background: "var(--cl-surface)",
+                background: "transparent",
                 border: "none",
                 borderTop: "1px solid var(--cl-border-subtle)",
                 cursor: "pointer",
                 padding: "8px 16px",
+                textTransform: "none",
+                letterSpacing: "0.04em",
               }}
             >
-              Show {hiddenCount} more
+              show {hiddenCount} more
             </button>
           )}
         </div>
