@@ -1,83 +1,106 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    /* ── Base palette ── */
-    --cl-bg: #0d0f15;
-    --cl-surface: #13131c;
-    --cl-elevated: #1a1a26;
-    --cl-glass: rgba(19, 19, 28, 0.65);
+    /* ══════════════════════════════════════════════════════════════
+       LINEAR-ADJACENT TOKEN SYSTEM (homepage-linear-pivot-spec §A)
+       Replaces the prior warm-amber/hex-inspired token set.
+       ══════════════════════════════════════════════════════════════ */
 
-    /* ── Borders — Hex-style color-mix tints ── */
-    --cl-border-subtle: color-mix(in srgb, #d4a574 5%, transparent);
-    --cl-border-default: color-mix(in srgb, #d4a574 10%, transparent);
-    --cl-border-hover: color-mix(in srgb, #d4a574 20%, transparent);
-    --cl-grid-line: color-mix(in srgb, #d4a574 6%, transparent);
+    /* Surface ladder — near-black, luminance-stacked */
+    --cl-bg:       #08090a;   /* page canvas */
+    --cl-panel:    #0f1011;   /* sticky chrome, sidebar */
+    --cl-surface:  #191a1b;   /* card body */
+    --cl-elevated: #28282c;   /* hover, slightly-elevated */
+    --cl-deep:     #010102;   /* deepest — behind heroes only */
 
-    /* ── Text — warm whites ── */
-    --cl-text-primary: #ede9e3;
-    --cl-text-secondary: #9a958e;
-    --cl-text-muted: #5c574f;
+    /* Translucent-white elevation steps */
+    --cl-bg-02: rgba(255, 255, 255, 0.02);
+    --cl-bg-03: rgba(255, 255, 255, 0.03);
+    --cl-bg-04: rgba(255, 255, 255, 0.04);
+    --cl-bg-05: rgba(255, 255, 255, 0.05);
+    --cl-bg-08: rgba(255, 255, 255, 0.08);
 
-    /* ── Accent — amber/gold ── */
-    --cl-accent: #d4a574;
-    --cl-accent-7: rgba(212, 165, 116, 0.07);
-    --cl-accent-15: rgba(212, 165, 116, 0.15);
+    /* Text ladder */
+    --cl-text-primary:   #f7f8f8;
+    --cl-text-secondary: #d0d6e0;
+    --cl-text-muted:     #8a8f98;
+    --cl-text-subdued:   #62666d;
 
-    /* ── Risk tiers ── */
-    --cl-risk-low: #4ade80;
-    --cl-risk-medium: #fbbf24;
-    --cl-risk-high: #f87171;
+    /* Borders — semi-transparent white (never colored/solid grey) */
+    --cl-border-subtle: rgba(255, 255, 255, 0.05);
+    --cl-border:        rgba(255, 255, 255, 0.08);
+    --cl-border-strong: rgba(255, 255, 255, 0.12);
+    --cl-line:          #141516;
+
+    /* Accent — Linear indigo-violet */
+    --cl-accent-bg:    #5e6ad2;                        /* primary CTA fill */
+    --cl-accent:       #7170ff;                        /* interactive / links / active */
+    --cl-accent-hover: #828fff;                        /* hover */
+    --cl-accent-tint:  rgba(113, 112, 255, 0.12);      /* subtle backgrounds */
+    --cl-accent-ring:  rgba(113, 112, 255, 0.35);      /* focus ring */
+
+    /* Semantic risk (unchanged values) */
+    --cl-risk-low:      #4ade80;
+    --cl-risk-medium:   #fbbf24;
+    --cl-risk-high:     #f87171;
     --cl-risk-critical: #ef4444;
 
-    /* ── Category colors ── */
+    /* Activity-category palette — still used by /activity and /agent/:id. The
+       homepage agent grid stops using these in Stage C (monochrome bars). */
     --cl-cat-exploring: #60a5fa;
-    --cl-cat-changes: #fbbf24;
-    --cl-cat-commands: #a78bfa;
-    --cl-cat-web: #22d3ee;
-    --cl-cat-comms: #4ade80;
-    --cl-cat-data: #fb923c;
+    --cl-cat-changes:   #fbbf24;
+    --cl-cat-commands:  #a78bfa;
+    --cl-cat-web:       #22d3ee;
+    --cl-cat-comms:     #4ade80;
+    --cl-cat-data:      #fb923c;
 
-    /* ── Timeline ── */
-    --cl-timeline-spine: color-mix(in srgb, var(--cl-accent) 12%, transparent);
-    --cl-lane-height: 40px;
-    --cl-lane-bar-radius: 2px;
+    /* Radii ladder */
+    --cl-r-xs:   2px;
+    --cl-r-sm:   4px;
+    --cl-r-md:   6px;
+    --cl-r-lg:   8px;
+    --cl-r-xl:   12px;
+    --cl-r-2xl:  22px;
+    --cl-r-pill: 9999px;
 
-    /* ── Shadows (Hex 5-layer) ── */
-    --cl-shadow-card:
-      inset 0 0 24px 0 rgba(0, 0, 0, 0.10),
-      inset 0 0.5px 0 0.5px rgba(255, 255, 255, 0.03),
-      0 1px 2px 0 rgba(0, 0, 0, 0.20),
-      0 4px 8px -2px rgba(0, 0, 0, 0.16),
-      0 16px 32px -4px rgba(0, 0, 0, 0.10);
+    /* Spacing (8-based with 7/11 micro-adjust) */
+    --cl-s-1:  4px;
+    --cl-s-2:  7px;
+    --cl-s-3:  8px;
+    --cl-s-4:  11px;
+    --cl-s-5:  12px;
+    --cl-s-6:  16px;
+    --cl-s-7:  20px;
+    --cl-s-8:  24px;
+    --cl-s-9:  32px;
+    --cl-s-10: 48px;
 
-    --cl-shadow-card-hover:
-      inset 0 0 30px 0 rgba(212, 165, 116, 0.03),
-      inset 0 0.5px 0 0.5px rgba(255, 255, 255, 0.05),
-      0 2px 4px 0 rgba(0, 0, 0, 0.24),
-      0 8px 16px -2px rgba(0, 0, 0, 0.20),
-      0 24px 48px -4px rgba(0, 0, 0, 0.14);
+    /* Depth — luminance stacking + optional ring, NO drop shadows on cards */
+    --cl-depth-0:     none;
+    --cl-depth-1:     rgba(0, 0, 0, 0.03) 0 1.2px 0 0;
+    --cl-depth-ring:  rgba(0, 0, 0, 0.2) 0 0 0 1px;
+    --cl-depth-inset: inset 0 0 12px 0 rgba(0, 0, 0, 0.2);
+    --cl-depth-pop:
+      rgba(0, 0, 0, 0.08) 0 0 1px,
+      rgba(0, 0, 0, 0.07) 0 1px 1px,
+      rgba(0, 0, 0, 0.04) 0 3px 2px,
+      rgba(0, 0, 0, 0.01) 0 5px 2px;
 
-    /* ── Spring easing (Hex-style 100+ waypoints) ── */
-    --cl-spring: linear(
-      0, 0.0007 0.36%, 0.0058 1.08%, 0.0217, 0.0454 3.23%,
-      0.086 4.66%, 0.1594 6.81%, 0.4654 15.05%, 0.5681 18.28%,
-      0.6468 21.15%, 0.7212, 0.782 27.6%, 0.8355, 0.8769 34.77%,
-      0.8968, 0.9137, 0.928 41.22%, 0.9419, 0.9531 46.24%,
-      0.9635 49.1%, 0.9786 55.2%, 0.9888 62.36%, 0.9949 70.97%,
-      0.9982 82.44%, 0.9997 100%
-    );
-    --cl-spring-duration: 0.747s;
-    --cl-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+    /* Motion — almost absent */
+    --cl-dur-fast: 80ms;
+    --cl-dur-med:  140ms;
+    --cl-ease:     cubic-bezier(0.4, 0, 0.2, 1);
 
-    /* ── Fluid type scale (Hex clamp pattern) ── */
-    --text-hero: clamp(36px, calc(36px + (56 - 36) * ((100vw - 450px) / (1250 - 450))), 56px);
-    --text-heading: clamp(22px, calc(22px + (32 - 22) * ((100vw - 450px) / (1250 - 450))), 32px);
-    --text-subhead: clamp(14px, calc(14px + (18 - 14) * ((100vw - 450px) / (1250 - 450))), 18px);
+    /* Type families */
+    --cl-font-sans: "Inter", "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --cl-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-    /* ── Homepage density grid (homepage-v3-layout-spec §3) ── */
+    /* Homepage density (kept — still useful) */
     --cl-section-gap: 20px;
     --cl-row-height: 32px;
     --cl-row-height-compact: 28px;
@@ -85,15 +108,37 @@
     --cl-card-padding: 10px 12px;
     --cl-card-padding-hero: 14px 16px;
 
-    /* ── Radius scale ── */
-    --cl-radius-sm: 6px;
-    --cl-radius-md: 8px;
-    --cl-radius-lg: 10px;
-
-    /* ── Z-scale ── */
+    /* Z-scale */
     --cl-z-nav: 50;
     --cl-z-tooltip: 80;
     --cl-z-modal: 100;
+
+    /* ── BRIDGE — remove after phase 2 stage D ─────────────────────
+       Legacy token names used by out-of-scope pages (/activity,
+       /agent/:id, /session/:sessionKey, /guardrails) and still-legacy
+       homepage components (FleetChart, AgentCardCompact, LiveFeed,
+       fleetheader subchip tooltips). Map the old names onto their new
+       equivalents so those surfaces keep rendering during the phase-2
+       migration. Stage C+D rip the last consumers; then we delete
+       these aliases. Do NOT add new call sites for the bridged names. */
+    --cl-border-default: var(--cl-border);
+    --cl-border-hover:   var(--cl-border-strong);
+    --cl-grid-line:      var(--cl-border-subtle);
+    --cl-glass:          rgba(15, 16, 17, 0.65);
+    --cl-accent-7:       var(--cl-accent-tint);
+    --cl-accent-15:      var(--cl-accent-ring);
+    --cl-shadow-card:       var(--cl-depth-0);
+    --cl-shadow-card-hover: var(--cl-depth-0);
+    --cl-timeline-spine:    var(--cl-border-subtle);
+    --cl-radius-sm:         var(--cl-r-md);
+    --cl-radius-md:         var(--cl-r-lg);
+    --cl-radius-lg:         var(--cl-r-xl);
+    --cl-spring:            var(--cl-ease);
+    --cl-spring-duration:   var(--cl-dur-med);
+    --text-hero:            48px;
+    --text-heading:         32px;
+    --text-subhead:         16px;
+    /* ── /BRIDGE ────────────────────────────────────────────────── */
   }
 
   *,
@@ -102,41 +147,192 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    font-feature-settings: "cv01", "ss03";
   }
 
-  html { background: var(--cl-bg); }
+  html,
+  body {
+    background: var(--cl-bg);
+    color: var(--cl-text-primary);
+    font-family: var(--cl-font-sans);
+    font-feature-settings: "cv01", "ss03";
+  }
 
   body {
-    color: var(--cl-text-secondary);
-    font-family: "DM Sans", sans-serif;
     font-size: 14px;
     line-height: 1.55;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
-
-    /* ── Subtle radial gradient — draws eye to stat grid ── */
-    background: radial-gradient(ellipse at 50% 0%, #141420 0%, var(--cl-bg) 60%);
-    background-color: var(--cl-bg);
   }
-
-
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--cl-border-default); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: var(--cl-border); border-radius: 2px; }
 }
 
-/* ══════════════════════════════════════════════
-   COMPONENT STYLES
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   TYPE SCALE (spec §A — Linear explicit scale, replaces fluid clamp)
+   ══════════════════════════════════════════════════════════════ */
 
-/* ── Page main container (homepage-v3-layout-spec §1) ── */
+.display-xl { font-size: 72px; font-weight: 510; line-height: 1.00; letter-spacing: -1.584px; }
+.display-lg { font-size: 64px; font-weight: 510; line-height: 1.00; letter-spacing: -1.408px; }
+.display    { font-size: 48px; font-weight: 510; line-height: 1.00; letter-spacing: -1.056px; }
+
+h1, .h1 { font-size: 32px; font-weight: 400; line-height: 1.13; letter-spacing: -0.704px; }
+h2, .h2 { font-size: 24px; font-weight: 400; line-height: 1.33; letter-spacing: -0.288px; }
+h3, .h3 { font-size: 20px; font-weight: 590; line-height: 1.33; letter-spacing: -0.24px; }
+
+.body-lg { font-size: 18px; font-weight: 400; line-height: 1.60; letter-spacing: -0.165px; }
+.body    { font-size: 16px; font-weight: 400; line-height: 1.50; }
+.body-med { font-size: 16px; font-weight: 510; line-height: 1.50; }
+
+.caption { font-size: 13px; font-weight: 400; line-height: 1.50; letter-spacing: -0.13px; color: var(--cl-text-muted); }
+.label   { font-size: 12px; font-weight: 510; line-height: 1.40; color: var(--cl-text-secondary); }
+.micro   { font-size: 11px; font-weight: 510; line-height: 1.40; color: var(--cl-text-muted); }
+
+.label-mono {
+  font-family: var(--cl-font-mono);
+  font-feature-settings: normal;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--cl-text-muted);
+}
+
+code, .code {
+  font-family: var(--cl-font-mono);
+  font-feature-settings: normal;
+  font-size: 13px;
+  color: var(--cl-text-secondary);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TIER BADGE UTILITY (spec §A)
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--cl-font-mono);
+  font-feature-settings: normal;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--cl-r-xs);
+  border: 1px solid currentColor;
+}
+.cl-tier-low  { color: var(--cl-risk-low);      background: color-mix(in srgb, var(--cl-risk-low) 10%, transparent); }
+.cl-tier-med  { color: var(--cl-risk-medium);   background: color-mix(in srgb, var(--cl-risk-medium) 10%, transparent); }
+.cl-tier-high { color: var(--cl-risk-high);     background: color-mix(in srgb, var(--cl-risk-high) 10%, transparent); }
+.cl-tier-crit { color: var(--cl-risk-critical); background: color-mix(in srgb, var(--cl-risk-critical) 14%, transparent); }
+
+/* ══════════════════════════════════════════════════════════════
+   CARD UTILITIES (spec §A)
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-card {
+  background: var(--cl-bg-02);
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-lg);
+}
+.cl-card-elev {
+  background: var(--cl-bg-04);
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-lg);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BUTTON UTILITIES (spec §A)
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--cl-font-sans);
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--cl-text-primary);
+  background: var(--cl-bg-02);
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-md);
+  cursor: pointer;
+  transition:
+    background var(--cl-dur-fast) var(--cl-ease),
+    border-color var(--cl-dur-fast) var(--cl-ease),
+    color var(--cl-dur-fast) var(--cl-ease);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.cl-btn:hover       { background: var(--cl-bg-05); border-color: var(--cl-border-strong); }
+.cl-btn:active      { background: var(--cl-bg-03); }
+.cl-btn:disabled    { opacity: 0.5; cursor: not-allowed; }
+
+.cl-btn-subtle {
+  background: transparent;
+  border-color: var(--cl-border-subtle);
+  color: var(--cl-text-secondary);
+}
+.cl-btn-subtle:hover {
+  background: var(--cl-bg-03);
+  border-color: var(--cl-border);
+  color: var(--cl-text-primary);
+}
+
+.cl-btn-primary {
+  background: var(--cl-accent-bg);
+  border-color: transparent;
+  color: #ffffff;
+}
+.cl-btn-primary:hover {
+  background: var(--cl-accent-hover);
+  border-color: transparent;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PILL / CHIP (mono tag-style — tags, kbd shortcuts, matched guardrail)
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--cl-font-mono);
+  font-feature-settings: normal;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 3px 6px;
+  color: var(--cl-text-muted);
+  background: var(--cl-bg-02);
+  border: 1px solid var(--cl-border-subtle);
+  border-radius: var(--cl-r-xs);
+  text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   NOW PULSE (motion primitive #1 — NOW marker + T1 attention pulse)
+   ══════════════════════════════════════════════════════════════ */
+
+@keyframes cl-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PAGE SHELL — container, narrow/wide toggles, divider
+   ══════════════════════════════════════════════════════════════ */
+
 .cl-page-main {
-  /* width: 100% is required so that when <main> is a flex child
-     (App.tsx wraps in `min-h-screen flex flex-col` to pin the footer),
-     horizontal `margin: auto` doesn't shrink the item to its content
-     width. Without this the page renders as a narrow ~500px strip
-     on 1440px viewports. */
   width: 100%;
   max-width: 1360px;
   margin-left: auto;
@@ -145,9 +341,7 @@
 }
 
 @media (min-width: 1600px) {
-  .cl-page-main {
-    max-width: 1460px;
-  }
+  .cl-page-main { max-width: 1460px; }
 }
 
 @media (max-width: 640px) {
@@ -157,7 +351,6 @@
   }
 }
 
-/* ── Narrow / wide visibility utilities (homepage-v3-layout-spec §8) ── */
 .cl-narrow-only { display: none; }
 .cl-wide-only { display: initial; }
 @media (max-width: 720px) {
@@ -165,93 +358,26 @@
   .cl-wide-only { display: none; }
 }
 
-/* ── Glass nav ── */
-.cl-glass-nav {
-  background: rgba(13, 15, 21, 0.7);
-  backdrop-filter: blur(24px) saturate(1.3);
-  -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  border-bottom: 1px solid var(--cl-grid-line);
-}
-
-/* ── Card with corner bracket accents (Hex signature) ── */
-.cl-card {
-  position: relative;
-  background: var(--cl-surface);
-  border: 1px solid var(--cl-border-default);
-  border-radius: 12px;
-  box-shadow: var(--cl-shadow-card);
-  overflow: visible;
-  transition:
-    transform var(--cl-spring-duration) var(--cl-spring),
-    box-shadow var(--cl-spring-duration) var(--cl-spring),
-    border-color 0.25s var(--cl-ease);
-}
-
-/* Warm gradient sheen overlay */
-.cl-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    170deg,
-    rgba(212, 165, 116, 0.018) 0%,
-    transparent 40%,
-    rgba(0, 0, 0, 0.08) 100%
-  );
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Corner bracket accents (top-right) — Hex signature detail */
-.cl-card::after {
-  content: "";
-  position: absolute;
-  top: -1px;
-  right: -1px;
-  width: 24px;
-  height: 24px;
-  border-top: 1px solid var(--cl-border-hover);
-  border-right: 1px solid var(--cl-border-hover);
-  border-radius: 0 12px 0 0;
-  pointer-events: none;
-  z-index: 2;
-  opacity: 0;
-  transition: opacity 0.3s var(--cl-ease);
-}
-
-.cl-card:hover {
-  transform: scale(1.025);
-  box-shadow: var(--cl-shadow-card-hover);
-  border-color: var(--cl-border-hover);
-}
-.cl-card:hover::after {
-  opacity: 1;
-}
-
-.cl-card > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* ── Gradient fade section divider (Hex-style) ── */
 .cl-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cl-grid-line), var(--cl-border-default), var(--cl-grid-line), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--cl-border-subtle),
+    var(--cl-border),
+    var(--cl-border-subtle),
+    transparent
+  );
 }
 
-/* ── Monospace label ── */
-.label-mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 400;
-}
+/* ══════════════════════════════════════════════════════════════
+   ENTRANCE + FLASH ANIMATIONS (preserved; used by attention inbox,
+   live feed, hex mesh, skeletons)
+   ══════════════════════════════════════════════════════════════ */
 
-/* ── Stagger cascade entrance (Hex-style) ── */
+/* Stagger cascade (used on the fleet-header stat row + elsewhere) */
 .stagger > * {
-  animation: cascade-in 0.6s var(--cl-spring) both;
+  animation: cascade-in 0.6s var(--cl-ease) both;
 }
 .stagger > *:nth-child(1) { animation-delay: 0.05s; }
 .stagger > *:nth-child(2) { animation-delay: 0.12s; }
@@ -261,35 +387,33 @@
 .stagger > *:nth-child(6) { animation-delay: 0.40s; }
 
 @keyframes cascade-in {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Timeline bar grow animation ── */
 @keyframes timeline-bar-grow {
   from { transform: scaleY(0); opacity: 0; }
-  to { transform: scaleY(1); opacity: 1; }
+  to   { transform: scaleY(1); opacity: 1; }
 }
 
-/* ── Entry flash for SSE ── */
+/* SSE new-entry flash — Stage D recolors this to --cl-accent-tint. */
 .entry-flash {
   animation: flash 1.5s ease-out;
 }
 @keyframes flash {
-  0% { background-color: rgba(212, 165, 116, 0.06); }
+  0%   { background-color: rgba(113, 112, 255, 0.10); }
   100% { background-color: transparent; }
 }
 
-/* ── Inbox row entry — attention-inbox §10 / followups §3 ── */
+/* Inbox row enter/leave (attention-inbox §10 / followups §3) */
 .cl-inbox-row-enter {
-  animation: inbox-row-enter 250ms var(--cl-spring) both;
+  animation: inbox-row-enter 220ms var(--cl-ease) both;
 }
 @keyframes inbox-row-enter {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Inbox row leave — optimistic ack removal ── */
 .cl-inbox-row-leave {
   animation: inbox-row-leave 200ms var(--cl-ease) forwards;
   pointer-events: none;
@@ -299,49 +423,49 @@
   to   { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
 }
 
-/* ── Numeric flash for stats total when SSE-driven refresh moves the number >2% ── */
+/* Numeric flash for stats total on big SSE-driven deltas. */
 .cl-total-flash {
   animation: total-flash 500ms var(--cl-ease);
 }
 @keyframes total-flash {
-  0%   { color: var(--cl-accent); text-shadow: 0 0 12px rgba(212, 165, 116, 0.6); }
-  60%  { color: var(--cl-text-primary); text-shadow: 0 0 6px rgba(212, 165, 116, 0.2); }
-  100% { color: var(--cl-text-primary); text-shadow: none; }
+  0%   { color: var(--cl-accent); }
+  60%  { color: var(--cl-text-primary); }
+  100% { color: var(--cl-text-primary); }
 }
 
-/* ── Slide-in for new SSE entries ── */
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Focus ring for filter selects ── */
-select:focus {
+/* Focus rings — indigo accent. */
+select:focus,
+input:focus-visible,
+button:focus-visible {
+  outline: none;
   border-color: var(--cl-accent) !important;
-  box-shadow: 0 0 0 2px rgba(212, 165, 116, 0.2);
+  box-shadow: 0 0 0 2px var(--cl-accent-ring);
 }
 
-/* ── Page entrance animation ── */
 .page-enter {
-  animation: page-fade-in 0.5s var(--cl-spring) both;
+  animation: page-fade-in 0.35s var(--cl-ease) both;
 }
 @keyframes page-fade-in {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Skeleton loading pulse ── */
+/* Skeleton loading */
 .skeleton {
   background: var(--cl-surface);
-  border-radius: 8px;
+  border-radius: var(--cl-r-lg);
   animation: skeleton-pulse 2s ease-in-out infinite;
 }
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+  50%      { opacity: 1; }
 }
 
-/* ── Skeleton arc (ring shape) ── */
 .skeleton-arc {
   border: 4px solid var(--cl-elevated);
   border-radius: 50%;
@@ -351,7 +475,7 @@ select:focus {
   animation: skeleton-pulse 2s ease-in-out infinite;
 }
 
-/* ── Wireframe draw-in (dynamic polygon — perimeter set via inline style) ── */
+/* Hex wireframe draw-in (agent-detail hero, etc.) */
 .hex-draw-in {
   stroke-dasharray: var(--perimeter, 2100);
   stroke-dashoffset: var(--perimeter, 2100);
@@ -361,7 +485,6 @@ select:focus {
   to { stroke-dashoffset: 0; }
 }
 
-/* ── Particle fade-in (delayed) ── */
 .particle-fade {
   opacity: 0;
   animation: particle-appear 0.6s ease-out 0.5s forwards;
@@ -370,7 +493,6 @@ select:focus {
   to { opacity: var(--particle-opacity, 0.1); }
 }
 
-/* ── Connection line fade-in ── */
 .conn-fade {
   opacity: 0;
   animation: conn-appear 0.5s ease-out 0.7s forwards;
@@ -379,17 +501,15 @@ select:focus {
   to { opacity: var(--conn-opacity, 0.15); }
 }
 
-/* ── Node glow entrance: pulse bright then settle ── */
 .node-glow-enter {
   animation: glow-pulse-settle 1.2s ease-out 0.8s both;
 }
 @keyframes glow-pulse-settle {
-  0% { opacity: 0; }
-  30% { opacity: 0.6; }
+  0%   { opacity: 0; }
+  30%  { opacity: 0.6; }
   100% { opacity: var(--glow-resting, 0.15); }
 }
 
-/* ── Hex node positioning ── */
 .hex-node {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -402,21 +522,22 @@ select:focus {
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  50%      { opacity: 0.35; }
 }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
 }
 
-/* ── Attention badge pulse ── */
+/* Legacy attention pulse — retained for any remaining consumers. Homepage
+   ApprovalCard switches to cl-pulse in Stage B. */
 .attention-pulse {
   animation: attention-glow 2s ease-in-out infinite;
 }
 @keyframes attention-glow {
-  0%, 100% { box-shadow: 0 0 6px rgba(251, 191, 36, 0.3); }
-  50% { box-shadow: 0 0 16px rgba(251, 191, 36, 0.7); }
+  0%, 100% { box-shadow: 0 0 6px rgba(248, 113, 113, 0.3); }
+  50%      { box-shadow: 0 0 16px rgba(248, 113, 113, 0.7); }
 }
 .attention-ping {
   animation: attention-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
@@ -434,63 +555,50 @@ select:focus {
 }
 
 @keyframes highlight-fade {
-  0% { background-color: var(--cl-accent-7); }
+  0%   { background-color: var(--cl-accent-tint); }
   100% { background-color: transparent; }
 }
 .highlight-flash {
   animation: highlight-fade 2s var(--cl-ease) forwards;
-  border-radius: 8px;
+  border-radius: var(--cl-r-lg);
 }
 
-/* ── Glow utilities ── */
+/* Risk glow utilities — used by a handful of detail-page visuals. */
 .cl-glow-low { filter: drop-shadow(0 0 6px rgba(74, 222, 128, 0.3)); }
 .cl-glow-medium { filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.3)); }
 .cl-glow-high { filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.35)); }
 .cl-glow-critical { filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.45)); }
 
-/* ── Activity entry hover ── */
 .entry-hover {
-  transition: background-color 0.2s var(--cl-ease);
+  transition: background-color var(--cl-dur-fast) var(--cl-ease);
 }
 .entry-hover:hover {
-  background-color: var(--cl-elevated);
+  background-color: var(--cl-bg-05);
 }
 .entry-hover:hover .entry-chevron {
   transform: translateX(2px);
 }
 
-/* ── Button active state ── */
 .btn-press:active {
   transform: scale(0.98);
-  transition: transform 0.1s ease;
+  transition: transform 0.08s ease;
 }
 
-/* ── Error retry card ── */
 .error-card {
   background: var(--cl-surface);
-  border: 1px solid var(--cl-border-default);
-  border-radius: 12px;
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-xl);
   padding: clamp(24px, 3vw, 40px);
   text-align: center;
 }
 
-/* ══════════════════════════════════════════════
-   FLEET HEADER (homepage-v3-stats-strip-spec §11)
-   ══════════════════════════════════════════════ */
-
-.cl-fleet-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
-  padding: var(--cl-card-padding-hero, 14px 16px);
-  min-height: var(--cl-row-height-hero, 56px);
-  background: var(--cl-surface);
-  border: 1px solid var(--cl-border-subtle);
-  border-radius: var(--cl-radius-md, 8px);
-  box-shadow: var(--cl-shadow-card);
-}
+/* ══════════════════════════════════════════════════════════════
+   FLEET HEADER RESPONSIVE RULES — retained so chip subcomponents
+   (DateChip, RangePillGroup, AgentsRunning, PendingChip, etc.)
+   that stay in other flows keep their responsive wrap behavior.
+   The rebuilt FleetHeader uses its own grid layout and does NOT
+   apply `.cl-fleet-header`.
+   ══════════════════════════════════════════════════════════════ */
 
 .cl-fh-left,
 .cl-fh-center,
@@ -500,71 +608,26 @@ select:focus {
   gap: 10px;
   flex-wrap: wrap;
 }
+.cl-fh-center { flex: 1 1 220px; justify-content: center; }
+.cl-fh-right  { justify-content: flex-end; }
 
-.cl-fh-center {
-  flex: 1 1 220px;
-  justify-content: center;
-}
-
-.cl-fh-right {
-  justify-content: flex-end;
-}
-
-/* ≥1200px — single row, all clusters inline. Default flex/wrap above. */
-
-/* 960..1199 — right cluster wraps to its own line under the left+center pair */
-@media (max-width: 1199px) {
-  .cl-fleet-header {
-    align-items: flex-start;
-  }
-  .cl-fh-right {
-    flex-basis: 100%;
-    justify-content: flex-start;
-  }
-}
-
-/* 720..959 — center stat sits below left, right cluster spans full width */
-@media (max-width: 959px) {
-  .cl-fh-center {
-    flex-basis: 100%;
-    justify-content: flex-start;
-  }
-}
-
-/* Range pill / dropdown swap at 720px. Both variants stay mounted; CSS
-   controls visibility so there's no JS breakpoint listener or hydration flash. */
 .cl-fh-range-group { display: inline-flex; align-items: center; }
 .cl-fh-range-pills { display: inline-flex; }
 .cl-fh-range-select-wrap { display: none; }
 
-/* <720 — collapse the pill group to a native dropdown; column-stack the header */
 @media (max-width: 719px) {
-  .cl-fleet-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .cl-fh-left,
-  .cl-fh-center,
-  .cl-fh-right {
-    width: 100%;
-    justify-content: flex-start;
-    flex-basis: auto;
-  }
   .cl-fh-range-pills { display: none; }
   .cl-fh-range-select-wrap { display: inline-flex; align-items: center; }
-  .cl-fh-actions {
-    justify-content: center;
-    width: 100%;
-  }
 }
 
-/* Past-day chip tint — slightly desaturated relative to TODAY */
 .cl-date-past {
-  border-color: var(--cl-border-default) !important;
+  border-color: var(--cl-border) !important;
 }
 
-/* Reduced motion */
+/* ══════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ══════════════════════════════════════════════════════════════ */
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
