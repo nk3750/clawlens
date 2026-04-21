@@ -114,27 +114,7 @@ export default function Agents() {
         <AttentionInbox data={attention} refetch={refetchAttention} />
       </div>
 
-      {/* Fleet Chart — range is driven by FleetHeader */}
-      <div data-cl-fleet-chart-anchor>
-        <FleetChart
-          isToday={isToday}
-          selectedDate={selectedDate}
-          range={range}
-          agents={agents}
-          pendingSessionKeys={
-            new Set(
-              (attention?.pending ?? [])
-                .map((p) => p.sessionKey)
-                .filter((k): k is string => Boolean(k)),
-            )
-          }
-        />
-      </div>
-
-      {/* Live Feed (today only) */}
-      {isToday && <LiveFeed />}
-
-      {/* Agent Rows */}
+      {/* Agent Rows — promoted above the fleet chart in Stage C */}
       <section data-cl-agents-anchor id="agents">
         {/* Loading */}
         {loading && !agents && (
@@ -174,8 +154,8 @@ export default function Agents() {
           <div
             className="grid"
             style={{
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: 8,
+              gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+              gap: 10,
             }}
           >
             {activeAgents.map((agent) => (
@@ -194,13 +174,17 @@ export default function Agents() {
             <button
               type="button"
               onClick={() => setShowIdle((prev) => !prev)}
-              className="flex items-center gap-1.5 mt-3 font-sans text-[11px] transition-colors"
+              className="flex items-center gap-1.5 mt-3"
               style={{
                 color: "var(--cl-text-muted)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
                 padding: "4px 0",
+                fontFamily: "var(--cl-font-sans)",
+                fontSize: 11,
+                fontWeight: 510,
+                transition: "color var(--cl-dur-fast) var(--cl-ease)",
               }}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLElement).style.color = "var(--cl-text-secondary)";
@@ -220,7 +204,7 @@ export default function Agents() {
                 strokeLinejoin="round"
                 style={{
                   transform: showIdle ? "rotate(90deg)" : "rotate(0deg)",
-                  transition: "transform 0.15s ease",
+                  transition: "transform var(--cl-dur-fast) var(--cl-ease)",
                 }}
               >
                 <polyline points="9 18 15 12 9 6" />
@@ -231,8 +215,8 @@ export default function Agents() {
               <div
                 className="grid mt-2"
                 style={{
-                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                  gap: 8,
+                  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                  gap: 10,
                 }}
               >
                 {idleAgents.map((agent) => (
@@ -247,6 +231,26 @@ export default function Agents() {
           </>
         )}
       </section>
+
+      {/* Fleet Chart — range is driven by FleetHeader */}
+      <div data-cl-fleet-chart-anchor>
+        <FleetChart
+          isToday={isToday}
+          selectedDate={selectedDate}
+          range={range}
+          agents={agents}
+          pendingSessionKeys={
+            new Set(
+              (attention?.pending ?? [])
+                .map((p) => p.sessionKey)
+                .filter((k): k is string => Boolean(k)),
+            )
+          }
+        />
+      </div>
+
+      {/* Live Feed (today only) */}
+      {isToday && <LiveFeed />}
     </div>
   );
 }

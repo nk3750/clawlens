@@ -4,6 +4,19 @@ import { render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// jsdom has no EventSource. FleetHeader wires useSSEStatus which constructs one
+// when stats data is present, so stub a minimal shim before the component mounts.
+class EventSourceShim {
+  onopen: ((e: Event) => void) | null = null;
+  onmessage: ((e: MessageEvent) => void) | null = null;
+  onerror: ((e: Event) => void) | null = null;
+  readyState = 0;
+  close() {}
+  addEventListener() {}
+  removeEventListener() {}
+}
+vi.stubGlobal("EventSource", EventSourceShim);
+
 /**
  * Mock useLiveApi so we can assert which paths Agents.tsx subscribes to and
  * exercise the attention filter predicate independently of the network/SSE
@@ -135,5 +148,120 @@ describe("Agents homepage — attention filter predicate", () => {
     expect(attentionFilter()(fakeEntry({ effectiveDecision: "allow", riskScore: undefined }))).toBe(
       false,
     );
+  });
+});
+
+// ── Stage C: IA reshuffle + 3-wide grid ───────────────────────────
+
+describe("Agents homepage — Stage C IA order + anchors", () => {
+  function renderWithEmpty() {
+    mockedUseLiveApi.mockImplementation(() => defaultLiveApiReturn());
+    return renderHome();
+  }
+
+  function domIndex(container: HTMLElement, selector: string): number {
+    const el = container.querySelector(selector);
+    if (!el) throw new Error(`selector not found: ${selector}`);
+    return Array.from(container.querySelectorAll("*")).indexOf(el);
+  }
+
+  it("places the AgentsGrid section immediately after the AttentionInbox wrapper and before the FleetChart", () => {
+    const { container } = renderWithEmpty();
+    const inboxIdx = domIndex(container, "[data-cl-inbox-pending-anchor]");
+    const agentsIdx = domIndex(container, "[data-cl-agents-anchor]");
+    const chartIdx = domIndex(container, "[data-cl-fleet-chart-anchor]");
+    expect(inboxIdx).toBeLessThan(agentsIdx);
+    expect(agentsIdx).toBeLessThan(chartIdx);
+  });
+
+  it("renders every expected Stage C anchor exactly once", () => {
+    const { container } = renderWithEmpty();
+    const countOf = (sel: string) => container.querySelectorAll(sel).length;
+    expect(countOf("[data-cl-fleet-chart-anchor]")).toBe(1);
+    expect(countOf("[data-cl-agents-anchor]")).toBe(1);
+    expect(countOf("#agents")).toBe(1);
+    expect(countOf("[data-cl-inbox-pending-anchor]")).toBe(1);
+    expect(countOf("[data-cl-inbox-blocked-anchor]")).toBe(1);
+  });
+});
+
+describe("Agents homepage — Stage C 3-wide grid columns", () => {
+  it("sets gridTemplateColumns to minmax(340px, 1fr) with gap 10 on the active-agents grid", () => {
+    const alpha = {
+      id: "alpha",
+      name: "alpha",
+      status: "active" as const,
+      todayToolCalls: 3,
+      avgRiskScore: 20,
+      peakRiskScore: 30,
+      lastActiveTimestamp: "2026-04-20T12:00:00Z",
+      mode: "interactive" as const,
+      riskPosture: "calm" as const,
+      activityBreakdown: { exploring: 2, changes: 0, commands: 1, web: 0, comms: 0, data: 0 },
+      todayActivityBreakdown: {
+        exploring: 2,
+        changes: 0,
+        commands: 1,
+        web: 0,
+        comms: 0,
+        data: 0,
+      },
+      needsAttention: false,
+      blockedCount: 0,
+      riskProfile: { low: 1, medium: 0, high: 0, critical: 0 },
+      hourlyActivity: Array.from({ length: 24 }, () => 0),
+    };
+
+    // Route each subscription path to sensible data; agents must be non-empty so
+    // the active grid renders.
+    mockedUseLiveApi.mockImplementation((path: string) => {
+      if (path.startsWith("api/agents")) {
+        return { data: [alpha], loading: false, error: null, refetch: vi.fn() };
+      }
+      if (path.startsWith("api/stats")) {
+        // isDormant returns true when total === 0 AND activeSessions === 0; use
+        // non-zero values so the page renders the main surfaces instead of the
+        // dormant panel.
+        return {
+          data: {
+            total: 5,
+            allowed: 5,
+            approved: 0,
+            blocked: 0,
+            timedOut: 0,
+            pending: 0,
+            riskBreakdown: { low: 5, medium: 0, high: 0, critical: 0 },
+            avgRiskScore: 10,
+            peakRiskScore: 15,
+            activeAgents: 1,
+            activeSessions: 1,
+            riskPosture: "calm",
+            historicDailyMax: 5,
+            yesterdayTotal: 3,
+            weekAverage: 2,
+            llmHealth: { recentAttempts: 0, recentFailures: 0, status: "ok" },
+          },
+          loading: false,
+          error: null,
+          refetch: vi.fn(),
+        };
+      }
+      return defaultLiveApiReturn();
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <Agents />
+      </MemoryRouter>,
+    );
+
+    const section = container.querySelector<HTMLElement>("[data-cl-agents-anchor]");
+    expect(section).not.toBeNull();
+    const grid = section?.querySelector<HTMLElement>("div.grid");
+    expect(grid).not.toBeNull();
+    // React serializes the camel-case style into the CSS `grid-template-columns`
+    // property on the element's `style` object.
+    expect(grid?.style.gridTemplateColumns).toBe("repeat(auto-fill, minmax(340px, 1fr))");
+    expect(grid?.style.gap).toBe("10px");
   });
 });
