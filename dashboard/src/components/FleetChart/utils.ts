@@ -13,6 +13,17 @@ import type { RangeOption } from "../fleetheader/utils";
 // ── Constants ────────────────────────────────────────────
 
 export const CLUSTER_PX = 8;
+/**
+ * Dot radii for the fleet chart.
+ *
+ * - `DOT_SIZES_NORMAL`: fullscreen layout or any narrow (<900px) viewport
+ *   where the chart already spans the full row.
+ * - `DOT_SIZES_TIGHT`: bumped radii for the side-by-side bottom row where
+ *   the chart shares width 50/50 with the LiveFeed. The extra 1px of radius
+ *   keeps the dots readable at the compressed scale.
+ */
+export const DOT_SIZES_NORMAL = { routine: 4, attention: 6, cluster: 8 } as const;
+export const DOT_SIZES_TIGHT = { routine: 5, attention: 7, cluster: 9 } as const;
 export const ROW_HEIGHT_COMPACT = 44;
 export const ROW_HEIGHT_EXPANDED = 56;
 export const IDENTITY_WIDTH = 220;

@@ -33,6 +33,8 @@ interface Props {
   /** Passed only to the first rendered row so the ▼ + NOW caption attaches
    *  inside that row's strip and inherits its correctly-measured width. */
   showNowCap?: boolean;
+  /** Side-by-side bottom-row layout flag — bumps dot radii from 4/6/8 → 5/7/9. */
+  tight?: boolean;
   onHoverRow: (agentId: string | null) => void;
   onHoverCluster: (
     c: Cluster | null,
@@ -83,6 +85,7 @@ export default function FleetChartRow({
   todayIso,
   isDimmed,
   showNowCap = false,
+  tight = false,
   onHoverRow,
   onHoverCluster,
   onClickCluster,
@@ -142,6 +145,7 @@ export default function FleetChartRow({
             isToday={isToday}
             height={rowHeight}
             showNowCap={showNowCap}
+            tight={tight}
             onHover={onHoverCluster}
             onClick={onClickCluster}
           />

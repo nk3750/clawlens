@@ -51,9 +51,22 @@ interface Props {
   agents: AgentInfo[] | null;
   /** Raw sessionKeys of attention-pending items. Used for pending crowns. */
   pendingSessionKeys: ReadonlySet<string>;
+  /**
+   * Stage D — fullscreen toggle state (driven by `?chart=full` URL param in
+   * `Agents.tsx`). When true the chart spans the full bottom-row width and
+   * reverts to the comfy 4/6/8 dot sizes. When false the chart shares width
+   * 50/50 with the LiveFeed and uses tight 5/7/9 dot sizes on desktop.
+   */
+  fullscreen?: boolean;
+  /** Invoked when the header maximize/minimize button is clicked. */
+  onToggleFullscreen?: () => void;
 }
 
 const MOBILE_MAX_WIDTH = 640;
+/** Threshold below which the chart gets full row width even at fullscreen=false
+ *  — the tight dot sizing is not needed and the header toggle becomes a no-op
+ *  from a layout standpoint. */
+const TIGHT_MIN_WIDTH = 900;
 
 function localTodayIso(ms: number): string {
   const d = new Date(ms);
@@ -80,6 +93,8 @@ export default function FleetChart({
   range,
   agents,
   pendingSessionKeys,
+  fullscreen = false,
+  onToggleFullscreen,
 }: Props) {
   const navigate = useNavigate();
 
@@ -248,6 +263,9 @@ export default function FleetChart({
   }, [isToday, liveEndTime, range, agents, liveSessions, nowMs]);
 
   const mobile = measuredWidth < MOBILE_MAX_WIDTH;
+  // Stage D §D4 — tight dot sizing triggers only in the side-by-side layout.
+  // Fullscreen and narrow viewports already hand the chart enough width.
+  const tight = !fullscreen && measuredWidth >= TIGHT_MIN_WIDTH;
   const identityW = mobile ? IDENTITY_WIDTH_MOBILE : IDENTITY_WIDTH;
   const totalsW = mobile ? TOTALS_WIDTH_MOBILE : TOTALS_WIDTH;
   const stripWidth = Math.max(measuredWidth - identityW - totalsW, 100);
@@ -555,13 +573,61 @@ export default function FleetChart({
       data-cl-fleet-chart
     >
       {/* Header */}
-      <div className="flex items-center mb-3">
+      <div className="flex items-center justify-between mb-3">
         <span
           className="font-display text-sm font-medium"
           style={{ color: "var(--cl-text-secondary)" }}
         >
           Fleet Activity
         </span>
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            className="cl-btn-subtle"
+            style={{ height: 24, padding: "0 8px" }}
+            aria-label={fullscreen ? "Exit fullscreen" : "Expand fleet chart"}
+            data-cl-chart-fullscreen-toggle
+          >
+            {fullscreen ? (
+              // Lucide minimize-2 — two inward arrows.
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            ) : (
+              // Lucide maximize-2 — two outward arrows.
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Chart body */}
@@ -639,6 +705,7 @@ export default function FleetChart({
             todayIso={todayIso}
             isDimmed={hoveredAgent !== null && hoveredAgent !== r.id}
             showNowCap={showNowCap && r.id === firstRenderedAgentId}
+            tight={tight}
             onHoverRow={setHoveredAgent}
             onHoverCluster={handleHoverCluster}
             onClickCluster={handleClickCluster}
@@ -698,6 +765,7 @@ export default function FleetChart({
               todayIso={todayIso}
               isDimmed={hoveredAgent !== null && hoveredAgent !== r.id}
               showNowCap={showNowCap && r.id === firstRenderedAgentId}
+              tight={tight}
               onHoverRow={setHoveredAgent}
               onHoverCluster={handleHoverCluster}
               onClickCluster={handleClickCluster}

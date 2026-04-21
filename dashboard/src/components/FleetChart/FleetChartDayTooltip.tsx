@@ -55,19 +55,17 @@ export default function FleetChartDayTooltip({
       role="tooltip"
       data-cl-fleet-day-tooltip
       data-cl-agent={agentId}
+      className="cl-card"
       style={{
         position: "absolute",
         left,
         top,
         transform,
         width: TOOLTIP_W,
-        background: "var(--cl-elevated)",
-        border: "1px solid var(--cl-border-subtle)",
-        borderRadius: 10,
         padding: "10px 14px",
         fontSize: 11,
         fontFamily: "var(--cl-font-mono, monospace)",
-        boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+        boxShadow: "var(--cl-depth-pop)",
         pointerEvents: "none",
         zIndex: 10,
       }}

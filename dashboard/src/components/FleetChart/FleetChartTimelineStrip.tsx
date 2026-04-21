@@ -4,6 +4,8 @@ import { riskColorRaw, riskTierFromScore } from "../../lib/utils";
 import type { RangeOption } from "../fleetheader/utils";
 import {
   cluster as clusterSessions,
+  DOT_SIZES_NORMAL,
+  DOT_SIZES_TIGHT,
   isAttentionSession,
   makeTimeToX,
   type Cluster,
@@ -29,6 +31,12 @@ interface Props {
    * right-edge of the rendered strip, not the parent body's stale width.
    */
   showNowCap?: boolean;
+  /**
+   * When true, swaps in the bumped tight dot sizes (5/7/9) used in the
+   * side-by-side bottom-row layout. False keeps the comfy 4/6/8 defaults
+   * (fullscreen + narrow viewports).
+   */
+  tight?: boolean;
   onHover: (
     c: Cluster | null,
     event: React.MouseEvent<SVGGElement> | null,
@@ -36,8 +44,6 @@ interface Props {
   onClick: (c: Cluster, event: React.MouseEvent<SVGGElement>) => void;
 }
 
-const DOT_ROUTINE_R = 4;
-const DOT_ATTENTION_R = 6;
 const HIT_R = 12;
 
 function hideGhost(range: RangeOption): boolean {
@@ -56,12 +62,14 @@ export default function FleetChartTimelineStrip({
   isToday,
   height,
   showNowCap = false,
+  tight = false,
   onHover,
   onClick,
 }: Props) {
   const navigate = useNavigate();
   const [stripRef, renderWidth] = useStripWidth();
 
+  const sizes = tight ? DOT_SIZES_TIGHT : DOT_SIZES_NORMAL;
   const timeToX = makeTimeToX(startMs, endMs, renderWidth);
   const cy = height / 2;
   const clusters = clusterSessions(agentSessions, timeToX, pendingSessionKeys);
@@ -138,7 +146,7 @@ export default function FleetChartTimelineStrip({
             <circle
               cx={timeToX(ghostNextRunMs)}
               cy={cy}
-              r={DOT_ROUTINE_R}
+              r={sizes.routine}
               fill="none"
               stroke="var(--cl-text-muted)"
               strokeWidth={1}
@@ -153,7 +161,11 @@ export default function FleetChartTimelineStrip({
           const hasAttention = c.isCluster
             ? c.peakRisk >= 65 || c.blockedCount > 0 || c.hasPending
             : isAttentionSession(c.sessions[0], pendingSessionKeys);
-          const r = hasAttention ? DOT_ATTENTION_R : DOT_ROUTINE_R;
+          const r = c.isCluster
+            ? sizes.cluster
+            : hasAttention
+              ? sizes.attention
+              : sizes.routine;
           const tier = riskTierFromScore(c.peakRisk);
           const color = riskColorRaw(tier);
           const key = c.sessions.map((s) => s.sessionKey).join("|");

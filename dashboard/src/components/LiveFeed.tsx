@@ -2,15 +2,41 @@ import { useState, useCallback, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
-import type { EntryResponse, ActivityCategory } from "../lib/types";
-import { CATEGORY_META, DEFAULT_AGENT_ID, riskColorRaw, riskTierFromScore, relTime } from "../lib/utils";
+import type { EntryResponse } from "../lib/types";
+import {
+  DEFAULT_AGENT_ID,
+  deriveTags,
+  relTime,
+  riskColorRaw,
+  riskLeftBorder,
+  riskTierFromScore,
+} from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
 import GradientAvatar from "./GradientAvatar";
 
 const MAX_ITEMS = 8;
 
+/** Tags that warrant the danger-color palette — everything else stays
+ *  muted-neutral. Keeps the chip row reading as a quiet annotation except
+ *  when something actually needs attention. */
+const DANGER_TAG_PATTERNS = [
+  /^destruct/i,
+  /^block/i,
+  /delete/i,
+  /^permission/i,
+  /credential/i,
+  /exfiltrat/i,
+  /^persistence/i,
+];
+
+function tagIsDanger(tag: string): boolean {
+  return DANGER_TAG_PATTERNS.some((re) => re.test(tag));
+}
+
 export default function LiveFeed() {
-  const { data: initialEntries } = useApi<EntryResponse[]>("api/entries?limit=8");
+  const { data: initialEntries } = useApi<EntryResponse[]>(
+    "api/entries?limit=8",
+  );
   const [sseEntries, setSseEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
@@ -22,12 +48,9 @@ export default function LiveFeed() {
       // Only decision rows belong in the action feed; everything else is a
       // post-fact annotation on a row already shown.
       if (!entry.decision) return;
-      setSseEntries((prev) => {
-        const next = [entry, ...prev].slice(0, MAX_ITEMS);
-        return next;
-      });
+      setSseEntries((prev) => [entry, ...prev].slice(0, MAX_ITEMS));
 
-      // Flash animation for new entry
+      // Flash animation for new entry — matches the .entry-flash timing (1.5s).
       const id = entry.toolCallId ?? entry.timestamp;
       setNewIds((prev) => new Set(prev).add(id));
       setTimeout(() => {
@@ -36,11 +59,11 @@ export default function LiveFeed() {
           next.delete(id);
           return next;
         });
-      }, 2000);
+      }, 1500);
     }, []),
   );
 
-  // Merge SSE entries (newest) with initial API entries (backfill), deduped
+  // Merge SSE entries (newest) with initial API entries (backfill), deduped.
   const entries = useMemo(() => {
     if (sseEntries.length === 0 && !initialEntries) return [];
     const seen = new Set<string>();
@@ -66,103 +89,146 @@ export default function LiveFeed() {
   if (entries.length === 0 && !initialEntries) return null;
 
   return (
-    <section>
+    <section data-cl-live-feed>
       <div className="flex items-center gap-2 mb-2">
-        <span
-          className="label-mono"
-          style={{ color: "var(--cl-text-muted)" }}
-        >
+        <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
           LIVE
         </span>
         <span
           className="inline-block w-1.5 h-1.5 rounded-full"
           style={{
             backgroundColor: "var(--cl-risk-low)",
-            boxShadow: "0 0 4px rgba(74, 222, 128, 0.5)",
-            animation: "pulse 2s ease-in-out infinite",
+            animation: "cl-pulse 2s ease-in-out infinite",
           }}
         />
+        <span
+          className="label-mono"
+          style={{ color: "var(--cl-text-muted)", marginLeft: "auto" }}
+        >
+          {entries.length} event{entries.length === 1 ? "" : "s"}
+        </span>
       </div>
       <div
         ref={listRef}
-        className="rounded-xl overflow-hidden"
-        style={{
-          border: "1px solid var(--cl-border-subtle)",
-          backgroundColor: "var(--cl-surface)",
-        }}
+        data-cl-live-feed-list
+        className="cl-card overflow-hidden"
+        style={{ padding: 0 }}
       >
         {entries.map((entry, i) => {
           const id = entry.toolCallId ?? entry.timestamp;
           const isNew = newIds.has(id);
           const agentId = entry.agentId || DEFAULT_AGENT_ID;
-          const category = (entry.category ?? "exploring") as ActivityCategory;
-          const meta = CATEGORY_META[category];
           const tier = riskTierFromScore(entry.riskScore ?? 0);
+          const tierColor = riskColorRaw(tier);
           const isLast = i === entries.length - 1;
+          const tags = deriveTags({
+            toolName: entry.toolName,
+            execCategory: entry.execCategory,
+            riskTags: entry.riskTags,
+          });
+          const shadow = riskLeftBorder(entry.riskScore);
 
           return (
             <Link
               key={`${id}-${i}`}
-              to={entry.sessionKey
-                ? `/session/${encodeURIComponent(entry.sessionKey)}`
-                : `/agent/${encodeURIComponent(agentId)}`}
-              className="flex items-center gap-2.5 px-3 py-2 transition-all"
+              to={
+                entry.sessionKey
+                  ? `/session/${encodeURIComponent(entry.sessionKey)}`
+                  : `/agent/${encodeURIComponent(agentId)}`
+              }
+              data-cl-live-feed-row={id}
+              className={`entry-hover ${isNew ? "entry-flash" : ""}`.trim()}
               style={{
-                borderBottom: isLast ? undefined : "1px solid var(--cl-border-subtle)",
+                display: "grid",
+                gridTemplateColumns:
+                  "auto auto auto minmax(0, 1fr) auto auto",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                borderBottom: isLast
+                  ? undefined
+                  : "1px solid var(--cl-border-subtle)",
                 textDecoration: "none",
-                backgroundColor: isNew ? "rgba(212, 165, 116, 0.06)" : "transparent",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = "var(--cl-elevated)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = isNew
-                  ? "rgba(212, 165, 116, 0.06)"
-                  : "transparent";
+                color: "var(--cl-text-primary)",
+                boxShadow: shadow,
               }}
             >
+              {/* Timestamp — mono 11 */}
+              <span
+                className="font-mono tabular-nums"
+                style={{
+                  fontSize: 11,
+                  color: "var(--cl-text-subdued)",
+                }}
+              >
+                {fmtTimeOfDay(entry.timestamp)}
+              </span>
+
+              {/* Tier dot */}
+              <span
+                className="inline-block rounded-full shrink-0"
+                style={{
+                  width: 6,
+                  height: 6,
+                  backgroundColor: tierColor,
+                }}
+                aria-hidden="true"
+              />
+
               {/* Agent avatar */}
               <GradientAvatar agentId={agentId} size="xs" />
 
-              {/* Category icon */}
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={meta.color}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="shrink-0"
-              >
-                <path d={meta.iconPath} />
-              </svg>
-
-              {/* Description */}
+              {/* Agent + tool description. `describeEntry` includes the tool
+                  args in-line so we don't need a separate column for them. */}
               <span
-                className="font-sans text-[11px] truncate flex-1 min-w-0"
-                style={{ color: "var(--cl-text-secondary)" }}
+                className="truncate flex items-baseline gap-1.5"
+                style={{
+                  color: "var(--cl-text-secondary)",
+                  fontFamily: "var(--cl-font-sans)",
+                  fontSize: 13,
+                  fontWeight: 510,
+                }}
               >
-                <span style={{ color: "var(--cl-text-primary)", fontWeight: 500 }}>
+                <span style={{ color: "var(--cl-text-primary)" }}>
                   {agentId}
                 </span>
-                {" "}
-                {describeEntry(entry)}
+                <span
+                  className="truncate"
+                  style={{
+                    fontFamily: "var(--cl-font-mono)",
+                    fontWeight: 400,
+                    fontSize: 12,
+                    color: "var(--cl-text-secondary)",
+                  }}
+                >
+                  {describeEntry(entry)}
+                </span>
               </span>
 
-              {/* Risk dot */}
-              {(entry.riskScore ?? 0) > 0 && (
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-                  style={{ backgroundColor: riskColorRaw(tier) }}
-                />
-              )}
+              {/* Tag chips */}
+              <span className="flex items-center gap-1 shrink-0">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="cl-pill"
+                    style={
+                      tagIsDanger(tag)
+                        ? { color: "var(--cl-risk-high)" }
+                        : undefined
+                    }
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </span>
 
-              {/* Timestamp */}
+              {/* Relative time — mono 11 */}
               <span
-                className="font-mono text-[10px] shrink-0"
-                style={{ color: "var(--cl-text-muted)" }}
+                className="font-mono tabular-nums shrink-0"
+                style={{
+                  fontSize: 11,
+                  color: "var(--cl-text-subdued)",
+                }}
               >
                 {relTime(entry.timestamp)}
               </span>
@@ -172,4 +238,12 @@ export default function LiveFeed() {
       </div>
     </section>
   );
+}
+
+function fmtTimeOfDay(iso: string): string {
+  const d = new Date(iso);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  const s = String(d.getSeconds()).padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }

@@ -75,18 +75,16 @@ export default function FleetChartClusterPopover({
       role="dialog"
       aria-label={`${cluster.sessions.length} sessions in cluster`}
       data-cl-fleet-cluster-popover
+      className="cl-card"
       style={{
         position: "absolute",
         left,
         top,
         transform,
         width: POPOVER_W,
-        background: "var(--cl-elevated)",
-        border: "1px solid var(--cl-border-subtle)",
-        borderRadius: 10,
         padding: "10px 12px",
         fontSize: 11,
-        boxShadow: "0 8px 28px rgba(0,0,0,0.45)",
+        boxShadow: "var(--cl-depth-pop)",
         zIndex: 20,
         animation: "cascade-in 0.15s ease-out both",
       }}
@@ -146,7 +144,7 @@ export default function FleetChartClusterPopover({
               data-cl-fleet-cluster-popover-row
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLElement).style.backgroundColor =
-                  "color-mix(in srgb, var(--cl-accent) 8%, transparent)";
+                  "var(--cl-bg-05)";
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLElement).style.backgroundColor =

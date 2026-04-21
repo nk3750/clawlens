@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useLiveApi } from "../hooks/useLiveApi";
 import type { AgentInfo, AttentionResponse, StatsResponse } from "../lib/types";
 import FleetHeader from "../components/FleetHeader";
@@ -19,10 +20,50 @@ function readInitialRange(): RangeOption {
   return isRangeOption(stored) ? stored : DEFAULT_RANGE;
 }
 
+/** Narrow viewports force single-column layout regardless of the `?chart=full`
+ *  param — the chart already gets the full row width there, and the LiveFeed
+ *  stacks below. Mirrors the FleetChart's TIGHT_MIN_WIDTH = 900px cutoff. */
+const NARROW_BREAKPOINT_QUERY = "(max-width: 899px)";
+
+function useIsNarrowViewport(): boolean {
+  const [isNarrow, setIsNarrow] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia(NARROW_BREAKPOINT_QUERY).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(NARROW_BREAKPOINT_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
+    // Initial sync in case the state closure missed a resize during mount.
+    setIsNarrow(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return isNarrow;
+}
+
 export default function Agents() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [range, setRangeState] = useState<RangeOption>(readInitialRange);
   const [showIdle, setShowIdle] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isNarrow = useIsNarrowViewport();
+  const chartFullscreenParam = searchParams.get("chart") === "full";
+  // Narrow viewports override the URL param — spec §D1.
+  const bottomRowSingleColumn = chartFullscreenParam || isNarrow;
+  const toggleFullscreen = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (next.get("chart") === "full") next.delete("chart");
+        else next.set("chart", "full");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
   const isToday = selectedDate === null;
   const dateParam = selectedDate ? `?date=${selectedDate}` : "";
 
@@ -232,25 +273,42 @@ export default function Agents() {
         )}
       </section>
 
-      {/* Fleet Chart — range is driven by FleetHeader */}
-      <div data-cl-fleet-chart-anchor>
-        <FleetChart
-          isToday={isToday}
-          selectedDate={selectedDate}
-          range={range}
-          agents={agents}
-          pendingSessionKeys={
-            new Set(
-              (attention?.pending ?? [])
-                .map((p) => p.sessionKey)
-                .filter((k): k is string => Boolean(k)),
-            )
-          }
-        />
-      </div>
-
-      {/* Live Feed (today only) */}
-      {isToday && <LiveFeed />}
+      {/* Bottom row — Fleet Chart + Live Feed side-by-side (spec §D1).
+          - default: two equal columns (1fr 1fr)
+          - ?chart=full in URL: single column (chart expands, feed stacks below)
+          - narrow viewports (< 900px): single column regardless of param */}
+      <section
+        data-cl-bottom-row
+        data-cl-chart-fullscreen={chartFullscreenParam ? "true" : undefined}
+        style={{
+          display: "grid",
+          gridTemplateColumns: bottomRowSingleColumn ? "1fr" : "1fr 1fr",
+          gap: 12,
+        }}
+      >
+        <div data-cl-fleet-chart-anchor>
+          <FleetChart
+            isToday={isToday}
+            selectedDate={selectedDate}
+            range={range}
+            agents={agents}
+            pendingSessionKeys={
+              new Set(
+                (attention?.pending ?? [])
+                  .map((p) => p.sessionKey)
+                  .filter((k): k is string => Boolean(k)),
+              )
+            }
+            fullscreen={chartFullscreenParam}
+            onToggleFullscreen={toggleFullscreen}
+          />
+        </div>
+        {isToday && (
+          <div data-cl-live-feed-anchor>
+            <LiveFeed />
+          </div>
+        )}
+      </section>
     </div>
   );
 }

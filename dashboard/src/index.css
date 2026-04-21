@@ -113,30 +113,33 @@
     --cl-z-tooltip: 80;
     --cl-z-modal: 100;
 
-    /* ── BRIDGE — remove after phase 2 stage D ─────────────────────
-       Legacy token names used by out-of-scope pages (/activity,
-       /agent/:id, /session/:sessionKey, /guardrails) and still-legacy
-       homepage components (FleetChart, AgentCardCompact, LiveFeed,
-       fleetheader subchip tooltips). Map the old names onto their new
-       equivalents so those surfaces keep rendering during the phase-2
-       migration. Stage C+D rip the last consumers; then we delete
-       these aliases. Do NOT add new call sites for the bridged names. */
+    /* ── BRIDGE — Phase 3 surfaces still consume these aliases ────
+       Stage D swept the in-scope homepage files (Agents bottom row,
+       FleetChart + its popovers/tooltips, LiveFeed). The remaining
+       aliases below are still referenced by out-of-scope Phase 3 pages
+       (/activity, /agent/:id, /session/:key, /guardrails) and the
+       fleetheader subchips. Phase 3 re-skins will rip them. Do NOT add
+       new call sites for these names. */
+    /* still used by DormantState, ErrorCard, FilterBar, fleetheader — Phase 3 */
     --cl-border-default: var(--cl-border);
-    --cl-border-hover:   var(--cl-border-strong);
-    --cl-grid-line:      var(--cl-border-subtle);
-    --cl-glass:          rgba(15, 16, 17, 0.65);
+    /* still used by AgentDetail, Activity, RiskDetail, TimelineGroup,
+       ActivityEntry, TimelineNode, DateChip, PendingChip — Phase 3 */
     --cl-accent-7:       var(--cl-accent-tint);
-    --cl-accent-15:      var(--cl-accent-ring);
-    --cl-shadow-card:       var(--cl-depth-0);
-    --cl-shadow-card-hover: var(--cl-depth-0);
-    --cl-timeline-spine:    var(--cl-border-subtle);
+    /* still used by DormantState + fleetheader chips — Phase 3 */
     --cl-radius-sm:         var(--cl-r-md);
     --cl-radius-md:         var(--cl-r-lg);
     --cl-radius-lg:         var(--cl-r-xl);
+    /* still used by AgentHeader, RiskDetail, RiskPanel, ActivityStream,
+       TimelineGroup, TimelineNode, ActivityEntry, Activity, DateChip,
+       GuardrailModal, OverflowMenu — Phase 3 */
     --cl-spring:            var(--cl-ease);
     --cl-spring-duration:   var(--cl-dur-med);
+    /* still used by RiskPulse — Phase 3 */
     --text-hero:            48px;
+    /* still used by Activity, SessionHeader, AgentHeader — Phase 3 */
     --text-heading:         32px;
+    /* still used by Activity, Agents empty-state, RiskDetail, DormantState,
+       ErrorCard — Phase 3 */
     --text-subhead:         16px;
     /* ── /BRIDGE ────────────────────────────────────────────────── */
   }
