@@ -628,6 +628,40 @@ button:focus-visible {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   FLEET-CHART FULLSCREEN MODAL (Stage D layout-fixes §2)
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-chart-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: calc(var(--cl-z-modal) - 1);
+  animation: page-fade-in 120ms var(--cl-ease) both;
+}
+
+.cl-chart-modal-host {
+  position: fixed;
+  inset: 5vh 5vw;
+  z-index: var(--cl-z-modal);
+  background: var(--cl-bg-04);
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-xl);
+  box-shadow: var(--cl-depth-pop);
+  padding: 20px;
+  overflow: auto;
+  animation: page-fade-in 140ms var(--cl-ease) both;
+}
+
+@media (max-width: 911px) {
+  .cl-chart-modal-host {
+    inset: 2vh 2vw;
+    padding: 12px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    REDUCED MOTION
    ══════════════════════════════════════════════════════════════ */
 

@@ -53,20 +53,22 @@ interface Props {
   pendingSessionKeys: ReadonlySet<string>;
   /**
    * Stage D — fullscreen toggle state (driven by `?chart=full` URL param in
-   * `Agents.tsx`). When true the chart spans the full bottom-row width and
-   * reverts to the comfy 4/6/8 dot sizes. When false the chart shares width
-   * 50/50 with the LiveFeed and uses tight 5/7/9 dot sizes on desktop.
+   * `Agents.tsx`). When true the chart renders as a modal overlay
+   * (`.cl-chart-modal-host`) and the toggle button flips to minimize-2.
    */
   fullscreen?: boolean;
+  /**
+   * Layout-fixes §3 — tight is now prop-driven. Agents.tsx computes it from
+   * the URL param + viewport breakpoint (`!chartFullscreenParam && !isNarrow`)
+   * and passes it down. FleetChart does NOT derive it from measuredWidth
+   * anymore — the modal overlay makes measuredWidth an unreliable signal.
+   */
+  tight: boolean;
   /** Invoked when the header maximize/minimize button is clicked. */
   onToggleFullscreen?: () => void;
 }
 
 const MOBILE_MAX_WIDTH = 640;
-/** Threshold below which the chart gets full row width even at fullscreen=false
- *  — the tight dot sizing is not needed and the header toggle becomes a no-op
- *  from a layout standpoint. */
-const TIGHT_MIN_WIDTH = 900;
 
 function localTodayIso(ms: number): string {
   const d = new Date(ms);
@@ -94,6 +96,7 @@ export default function FleetChart({
   agents,
   pendingSessionKeys,
   fullscreen = false,
+  tight,
   onToggleFullscreen,
 }: Props) {
   const navigate = useNavigate();
@@ -263,9 +266,6 @@ export default function FleetChart({
   }, [isToday, liveEndTime, range, agents, liveSessions, nowMs]);
 
   const mobile = measuredWidth < MOBILE_MAX_WIDTH;
-  // Stage D §D4 — tight dot sizing triggers only in the side-by-side layout.
-  // Fullscreen and narrow viewports already hand the chart enough width.
-  const tight = !fullscreen && measuredWidth >= TIGHT_MIN_WIDTH;
   const identityW = mobile ? IDENTITY_WIDTH_MOBILE : IDENTITY_WIDTH;
   const totalsW = mobile ? TOTALS_WIDTH_MOBILE : TOTALS_WIDTH;
   const stripWidth = Math.max(measuredWidth - identityW - totalsW, 100);

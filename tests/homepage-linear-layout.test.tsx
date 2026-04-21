@@ -268,12 +268,25 @@ describe("Agents homepage — bottom-row grid (§D1)", () => {
     expect(row?.querySelector("[data-cl-live-feed-anchor]")).not.toBeNull();
   });
 
-  it("default layout (no ?chart URL param) is two equal columns", () => {
+  it("default layout (no ?chart URL param) is a weighted 2fr/1fr split with min-widths (layout-fixes §1)", () => {
     const { container } = renderAt("/");
     const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
     expect(row).not.toBeNull();
-    expect(row?.style.gridTemplateColumns).toBe("1fr 1fr");
+    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
     expect(row?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
+  });
+
+  it("sets minWidth: 0 on BOTH cell anchors so 1fr/2fr can shrink below min-content (layout-fixes §1)", () => {
+    // Without minWidth: 0 on the cell child, Grid's auto floor is
+    // min-content — the chart's ~1100px min-content blows out any fr-based
+    // split. The inline style must set minWidth to 0 explicitly.
+    const { container } = renderAt("/");
+    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    const feed = container.querySelector<HTMLElement>("[data-cl-live-feed-anchor]");
+    expect(chart).not.toBeNull();
+    expect(feed).not.toBeNull();
+    expect(chart?.style.minWidth).toBe("0px");
+    expect(feed?.style.minWidth).toBe("0px");
   });
 
   it("collapses to a single column when ?chart=full is in the URL (§D2)", () => {
@@ -307,7 +320,7 @@ describe("Agents homepage — fullscreen toggle (§D3)", () => {
 
     // Pre-click state — two columns.
     let row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(row?.style.gridTemplateColumns).toBe("1fr 1fr");
+    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
 
     act(() => {
       fireEvent.click(btn);
@@ -324,13 +337,14 @@ describe("Agents homepage — fullscreen toggle (§D3)", () => {
     });
     row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
     expect(row?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
-    expect(row?.style.gridTemplateColumns).toBe("1fr 1fr");
+    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
   });
 });
 
-describe("Agents homepage — narrow-viewport collapse", () => {
-  it("forces single-column layout on viewports <900px regardless of URL param", () => {
-    // Narrow viewport overrides the URL — the two-column layout has no room.
+describe("Agents homepage — narrow-viewport collapse (layout-fixes §1 — 911px breakpoint)", () => {
+  it("forces single-column layout on viewports <= 911px regardless of URL param", () => {
+    // New breakpoint matches the 520 + 380 + 12 gap minimum from the 2fr/1fr
+    // split. Below that, the split would overflow, so the page stacks.
     stubViewportWidth(640);
     const { container } = renderAt("/");
     const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
@@ -338,10 +352,192 @@ describe("Agents homepage — narrow-viewport collapse", () => {
     expect(row?.style.gridTemplateColumns).toBe("1fr");
   });
 
+  it("still stacks at exactly 911px (boundary is inclusive)", () => {
+    stubViewportWidth(911);
+    const { container } = renderAt("/");
+    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    expect(row?.style.gridTemplateColumns).toBe("1fr");
+  });
+
+  it("shows the weighted split at exactly 912px (boundary is exclusive)", () => {
+    stubViewportWidth(912);
+    const { container } = renderAt("/");
+    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+  });
+
   it("keeps narrow viewports single-column even when ?chart=full is set", () => {
     stubViewportWidth(480);
     const { container } = renderAt("/?chart=full");
     const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
     expect(row?.style.gridTemplateColumns).toBe("1fr");
+  });
+});
+
+// ── Modal fullscreen overlay (layout-fixes §2) ────────────
+
+describe("Agents homepage — modal fullscreen overlay (layout-fixes §2)", () => {
+  it("applies .cl-chart-modal-host to the chart anchor when ?chart=full", () => {
+    const { container } = renderAt("/?chart=full");
+    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    expect(chart).not.toBeNull();
+    expect(chart?.className ?? "").toMatch(/\bcl-chart-modal-host\b/);
+    expect(chart?.getAttribute("role")).toBe("dialog");
+    expect(chart?.getAttribute("aria-modal")).toBe("true");
+    expect(chart?.getAttribute("aria-label")).toMatch(/fullscreen/i);
+  });
+
+  it("does NOT apply the modal host class at default (no URL param)", () => {
+    const { container } = renderAt("/");
+    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    expect(chart?.className ?? "").not.toMatch(/cl-chart-modal-host/);
+    expect(chart?.getAttribute("role")).toBeNull();
+  });
+
+  it("does NOT render a backdrop at default (no URL param)", () => {
+    const { container } = renderAt("/");
+    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+  });
+
+  it("renders the backdrop element while the modal is open", () => {
+    const { container } = renderAt("/?chart=full");
+    const backdrop = container.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
+    expect(backdrop).not.toBeNull();
+    expect(backdrop?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("backdrop unmounts when the toggle is clicked", () => {
+    const { container } = renderAt("/?chart=full");
+    expect(container.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+    const btn = container.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+    expect(btn).not.toBeNull();
+    if (!btn) return;
+    act(() => {
+      fireEvent.click(btn);
+    });
+    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+  });
+
+  it("backdrop click dismisses the modal (flips the URL param)", () => {
+    const { container } = renderAt("/?chart=full");
+    const backdrop = container.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
+    expect(backdrop).not.toBeNull();
+    if (!backdrop) return;
+    act(() => {
+      fireEvent.click(backdrop);
+    });
+    // Modal gone.
+    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    expect(chart?.className ?? "").not.toMatch(/cl-chart-modal-host/);
+  });
+
+  it("backdrop click is guarded — bubbled clicks from inside the modal don't dismiss", () => {
+    const { container } = renderAt("/?chart=full");
+    const backdrop = container.querySelector<HTMLElement>(".cl-chart-modal-backdrop");
+    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
+    expect(backdrop).not.toBeNull();
+    expect(chart).not.toBeNull();
+    if (!backdrop || !chart) return;
+    // A click whose target is the chart (bubbling up through backdrop —
+    // in practice from the fixed-position layering) must NOT close the
+    // modal. The guard is `e.target === e.currentTarget`.
+    act(() => {
+      fireEvent.click(backdrop, {
+        target: chart,
+      });
+    });
+    // Still open.
+    expect(container.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+  });
+
+  it("Esc keydown on window dismisses the modal", () => {
+    const { container } = renderAt("/?chart=full");
+    expect(container.querySelector(".cl-chart-modal-backdrop")).not.toBeNull();
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+  });
+
+  it("Esc keydown is a no-op when the modal is not open", () => {
+    const { container } = renderAt("/");
+    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    // Still side-by-side.
+    const after = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    expect(after?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+  });
+
+  it("locks body scroll while modal is open and restores prior overflow when toggled off", () => {
+    const prior = "auto";
+    document.body.style.overflow = prior;
+    const { container } = renderAt("/?chart=full");
+    expect(document.body.style.overflow).toBe("hidden");
+
+    // Toggle off by clicking the minimize button.
+    const btn = container.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+    expect(btn).not.toBeNull();
+    if (!btn) return;
+    act(() => {
+      fireEvent.click(btn);
+    });
+    // Body overflow restored to the prior value captured on open.
+    expect(document.body.style.overflow).toBe(prior);
+    // And the modal is actually gone.
+    expect(container.querySelector(".cl-chart-modal-backdrop")).toBeNull();
+  });
+
+  it("restores prior body overflow on unmount while modal still open", () => {
+    const prior = "scroll";
+    document.body.style.overflow = prior;
+    const { unmount } = renderAt("/?chart=full");
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe(prior);
+  });
+
+  it("focuses the minimize button on modal open", async () => {
+    const { container } = renderAt("/?chart=full");
+    const btn = container.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
+    expect(btn).not.toBeNull();
+    // Focus is deferred via rAF so FleetChart's own measurement-driven
+    // re-render can't reset activeElement to body before our effect lands.
+    // Await one rAF cycle for the deferred focus to flush.
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+    expect(document.activeElement).toBe(btn);
+  });
+});
+
+// ── Tight prop wiring (layout-fixes §3) ────────────────────
+
+describe("Agents homepage — tight prop threads from layout state (layout-fixes §3)", () => {
+  it("dot radius reflects tight=true at default (5px routine)", () => {
+    const { container } = renderAt("/");
+    const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
+    expect(dot).not.toBeNull();
+    expect(dot?.getAttribute("r")).toBe("5");
+  });
+
+  it("dot radius reflects tight=false at ?chart=full (4px routine — modal mode)", () => {
+    const { container } = renderAt("/?chart=full");
+    const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
+    expect(dot).not.toBeNull();
+    expect(dot?.getAttribute("r")).toBe("4");
+  });
+
+  it("dot radius reflects tight=false at narrow viewport (4px routine — stack mode)", () => {
+    stubViewportWidth(640);
+    const { container } = renderAt("/");
+    const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
+    expect(dot).not.toBeNull();
+    expect(dot?.getAttribute("r")).toBe("4");
   });
 });

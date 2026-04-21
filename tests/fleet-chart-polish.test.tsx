@@ -172,6 +172,10 @@ function renderChart(
     agents?: AgentInfo[];
     range?: "1h" | "3h" | "6h" | "12h" | "24h" | "7d";
     pending?: ReadonlySet<string>;
+    /** Layout-fixes §3 — tight is now prop-driven. Default false keeps
+     *  existing non-D4 tests on the comfy 4/6/8 radii. */
+    tight?: boolean;
+    fullscreen?: boolean;
   } = {},
 ) {
   const sessions = partial.sessions ?? [makeSession()];
@@ -186,6 +190,8 @@ function renderChart(
         range={range}
         agents={agents}
         pendingSessionKeys={partial.pending ?? new Set()}
+        tight={partial.tight ?? false}
+        fullscreen={partial.fullscreen}
       />
     </MemoryRouter>,
   );
@@ -577,14 +583,14 @@ describe("FleetChart §4 — unified top-N expander", () => {
   });
 });
 
-// ── §D4 — tight dot sizing (side-by-side fleet chart) ─────
+// ── §D4 — tight dot sizing (prop-driven post layout-fixes §3) ─
 //
-// In the Stage D bottom row FleetChart shares width 50/50 with the LiveFeed.
-// The dots are too small at that scale, so when fullscreen is false AND the
-// measured width is >= 900px we bump the radii: routine 4→5, attention 6→7,
-// cluster 8→9. At fullscreen=true the chart spans the full row and reverts
-// to the comfy 4/6/8 sizes. Narrow viewports (<900px) stay at 4/6/8 because
-// the chart already gets full width.
+// Tight is now a prop flowing from Agents.tsx: true in the weighted 2fr/1fr
+// split, false in the modal fullscreen view and in the narrow-viewport
+// stack. Caller is authoritative — FleetChart no longer derives tight from
+// its own measuredWidth. Tests pass tight explicitly; the strip component
+// consumes it to pick from DOT_SIZES_{NORMAL,TIGHT} (routine 4/5,
+// attention 6/7, cluster 8/9).
 
 function firstDotRadius(container: HTMLElement): number | null {
   const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
@@ -610,33 +616,35 @@ function firstClusterRadius(container: HTMLElement): number | null {
   return Number.parseFloat(r);
 }
 
-describe("FleetChart §D4 — tight dot sizing", () => {
-  it("defaults to TIGHT radii on desktop when fullscreen prop is omitted/false (routine=5)", () => {
+describe("FleetChart §D4 — tight dot sizing (prop-driven)", () => {
+  it("tight=true yields the 5px routine radius", () => {
     const { container } = renderChart({
+      tight: true,
       agents: [makeAgent({ id: "a1", name: "a1" })],
       sessions: [makeSession({ sessionKey: "agent:a1:main:s1", agentId: "a1" })],
     });
     expect(firstDotRadius(container)).toBe(5);
   });
 
-  it("uses TIGHT attention dot radius (7) on desktop at fullscreen=false", () => {
+  it("tight=true yields the 7px attention radius", () => {
     const { container } = renderChart({
+      tight: true,
       agents: [makeAgent({ id: "a1", name: "a1" })],
       sessions: [
         makeSession({
           sessionKey: "agent:a1:main:hi",
           agentId: "a1",
-          peakRisk: 80, // CRITICAL → attention radius bucket
+          peakRisk: 80,
         }),
       ],
     });
-    // With the tight toggle, attention core dots bump from 6 → 7.
     expect(firstAttentionRingRadius(container)).toBe(7);
   });
 
-  it("uses TIGHT cluster radius (9) on desktop at fullscreen=false", () => {
+  it("tight=true yields the 9px cluster radius", () => {
     const base = Date.parse(NOW_ISO) - 30 * 60_000;
     const { container } = renderChart({
+      tight: true,
       agents: [makeAgent({ id: "a1", name: "a1" })],
       sessions: [
         makeSession({
@@ -653,109 +661,60 @@ describe("FleetChart §D4 — tight dot sizing", () => {
         }),
       ],
     });
-    // The two sessions collapse into a single cluster marker.
     expect(firstClusterRadius(container)).toBe(9);
   });
 
-  it("reverts to NORMAL radii (routine=4) when fullscreen=true", () => {
-    mockApiReturn(response([makeSession({ sessionKey: "agent:a1:main:s1", agentId: "a1" })], "3h"));
-    const { container } = render(
-      <MemoryRouter>
-        <FleetChart
-          isToday
-          selectedDate={null}
-          range="3h"
-          agents={[makeAgent({ id: "a1", name: "a1" })]}
-          pendingSessionKeys={new Set()}
-          fullscreen
-          onToggleFullscreen={() => {}}
-        />
-      </MemoryRouter>,
-    );
+  it("tight=false yields NORMAL 4px routine radius", () => {
+    const { container } = renderChart({
+      tight: false,
+      agents: [makeAgent({ id: "a1", name: "a1" })],
+      sessions: [makeSession({ sessionKey: "agent:a1:main:s1", agentId: "a1" })],
+    });
     expect(firstDotRadius(container)).toBe(4);
   });
 
-  it("reverts to NORMAL attention radius (6) when fullscreen=true", () => {
-    mockApiReturn(
-      response(
-        [
-          makeSession({
-            sessionKey: "agent:a1:main:hi",
-            agentId: "a1",
-            peakRisk: 80,
-          }),
-        ],
-        "3h",
-      ),
-    );
-    const { container } = render(
-      <MemoryRouter>
-        <FleetChart
-          isToday
-          selectedDate={null}
-          range="3h"
-          agents={[makeAgent({ id: "a1", name: "a1" })]}
-          pendingSessionKeys={new Set()}
-          fullscreen
-          onToggleFullscreen={() => {}}
-        />
-      </MemoryRouter>,
-    );
+  it("tight=false yields NORMAL 6px attention radius", () => {
+    const { container } = renderChart({
+      tight: false,
+      agents: [makeAgent({ id: "a1", name: "a1" })],
+      sessions: [
+        makeSession({
+          sessionKey: "agent:a1:main:hi",
+          agentId: "a1",
+          peakRisk: 80,
+        }),
+      ],
+    });
     expect(firstAttentionRingRadius(container)).toBe(6);
   });
 
-  it("reverts to NORMAL cluster radius (8) when fullscreen=true", () => {
+  it("tight=false yields NORMAL 8px cluster radius", () => {
     const base = Date.parse(NOW_ISO) - 30 * 60_000;
-    mockApiReturn(
-      response(
-        [
-          makeSession({
-            sessionKey: "agent:a1:main:s1",
-            agentId: "a1",
-            startTime: new Date(base).toISOString(),
-            endTime: new Date(base + 500).toISOString(),
-          }),
-          makeSession({
-            sessionKey: "agent:a1:main:s2",
-            agentId: "a1",
-            startTime: new Date(base + 1000).toISOString(),
-            endTime: new Date(base + 1500).toISOString(),
-          }),
-        ],
-        "3h",
-      ),
-    );
-    const { container } = render(
-      <MemoryRouter>
-        <FleetChart
-          isToday
-          selectedDate={null}
-          range="3h"
-          agents={[makeAgent({ id: "a1", name: "a1" })]}
-          pendingSessionKeys={new Set()}
-          fullscreen
-          onToggleFullscreen={() => {}}
-        />
-      </MemoryRouter>,
-    );
+    const { container } = renderChart({
+      tight: false,
+      agents: [makeAgent({ id: "a1", name: "a1" })],
+      sessions: [
+        makeSession({
+          sessionKey: "agent:a1:main:s1",
+          agentId: "a1",
+          startTime: new Date(base).toISOString(),
+          endTime: new Date(base + 500).toISOString(),
+        }),
+        makeSession({
+          sessionKey: "agent:a1:main:s2",
+          agentId: "a1",
+          startTime: new Date(base + 1000).toISOString(),
+          endTime: new Date(base + 1500).toISOString(),
+        }),
+      ],
+    });
     expect(firstClusterRadius(container)).toBe(8);
   });
 
-  it("stays at NORMAL radii on narrow viewports regardless of fullscreen (the chart already gets full width)", () => {
-    // Stub a narrow viewport (< 900px). Tight is false → radii are 4/6/8.
-    Element.prototype.getBoundingClientRect = (): DOMRect =>
-      ({
-        x: 0,
-        y: 0,
-        top: 0,
-        left: 0,
-        right: 640,
-        bottom: 56,
-        width: 640,
-        height: 56,
-        toJSON: () => ({}),
-      }) as DOMRect;
+  it("tight=false at fullscreen=true still yields NORMAL radii (the modal gives the chart full width)", () => {
     const { container } = renderChart({
+      tight: false,
+      fullscreen: true,
       agents: [makeAgent({ id: "a1", name: "a1" })],
       sessions: [makeSession({ sessionKey: "agent:a1:main:s1", agentId: "a1" })],
     });
@@ -778,6 +737,7 @@ describe("FleetChart §D4 — tight dot sizing", () => {
           agents={null}
           pendingSessionKeys={new Set()}
           fullscreen={false}
+          tight={false}
           onToggleFullscreen={() => {}}
         />
       </MemoryRouter>,
@@ -802,6 +762,7 @@ describe("FleetChart §D4 — tight dot sizing", () => {
           agents={[]}
           pendingSessionKeys={new Set()}
           fullscreen={false}
+          tight={false}
           onToggleFullscreen={() => {}}
         />
       </MemoryRouter>,
