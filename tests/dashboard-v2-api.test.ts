@@ -1077,7 +1077,8 @@ describe("getAgents — new fields", () => {
     const agents = getAgents(entries);
     const bot = agents[0];
     expect(bot.activityBreakdown.exploring).toBe(67);
-    expect(bot.activityBreakdown.commands).toBe(33);
+    // bare exec (no params.command) → scripts fallback under the new taxonomy
+    expect(bot.activityBreakdown.scripts).toBe(33);
   });
 
   it("computes latestAction", () => {
@@ -1187,7 +1188,7 @@ describe("SessionInfo — new fields", () => {
     const session = result.sessions[0];
     expect(session.activityBreakdown).toBeDefined();
     expect(session.activityBreakdown.exploring).toBe(50);
-    expect(session.activityBreakdown.commands).toBe(50);
+    expect(session.activityBreakdown.scripts).toBe(50);
   });
 
   it("includes blockedCount", () => {
@@ -1245,7 +1246,8 @@ describe("EntryResponse — category field", () => {
       }),
     ];
     const result = getRecentEntries(entries, 10, 0);
-    expect(result[0].category).toBe("commands"); // exec, most recent first
+    // exec without params.command → scripts fallback (newest first).
+    expect(result[0].category).toBe("scripts");
     expect(result[1].category).toBe("exploring"); // read
   });
 
@@ -1492,12 +1494,14 @@ describe("AgentInfo — todayActivityBreakdown", () => {
     const agents = getAgents(entries);
     const bot = agents.find((a) => a.id === "bot-1")!;
 
-    // activityBreakdown is from current session only (exec = 100%)
-    expect(bot.activityBreakdown.commands).toBe(100);
+    // activityBreakdown is from current session only (exec = 100%).
+    // Bare exec (no params.command) buckets into `scripts` under the new
+    // taxonomy — the generic fallback for exec-without-sub-category.
+    expect(bot.activityBreakdown.scripts).toBe(100);
 
     // todayActivityBreakdown reflects the full day
     expect(bot.todayActivityBreakdown.exploring).toBe(67);
-    expect(bot.todayActivityBreakdown.commands).toBe(33);
+    expect(bot.todayActivityBreakdown.scripts).toBe(33);
 
     vi.useRealTimers();
   });
@@ -1540,7 +1544,9 @@ describe("SessionInfo — toolSummary", () => {
     // exec should be first (highest count)
     expect(session.toolSummary[0].toolName).toBe("exec");
     expect(session.toolSummary[0].count).toBe(7);
-    expect(session.toolSummary[0].category).toBe("commands");
+    // Tool summary uses the generic tool-level category (no sub-category
+    // context per individual call), so bare `exec` falls into `scripts`.
+    expect(session.toolSummary[0].category).toBe("scripts");
     // read second
     expect(session.toolSummary[1].toolName).toBe("read");
     expect(session.toolSummary[1].count).toBe(3);

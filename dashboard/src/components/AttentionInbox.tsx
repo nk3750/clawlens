@@ -320,7 +320,7 @@ export default function AttentionInbox({ data, refetch }: Props) {
             riskScore: guardrailDraft.riskScore,
             params: {},
             effectiveDecision: "allow",
-            category: "commands",
+            category: "scripts",
           }}
           description={guardrailDraft.description}
           onClose={() => setGuardrailDraft(null)}

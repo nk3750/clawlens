@@ -39,7 +39,8 @@ describe("buildSessionSegments", () => {
     const segments = buildSessionSegments(entries);
     expect(segments).toHaveLength(3);
     expect(segments[0].category).toBe("exploring");
-    expect(segments[1].category).toBe("commands");
+    // bare exec (no params.command) buckets into `scripts` fallback.
+    expect(segments[1].category).toBe("scripts");
     expect(segments[2].category).toBe("changes");
   });
 
@@ -52,11 +53,11 @@ describe("buildSessionSegments", () => {
       entry({ toolName: "search", timestamp: "2026-04-12T09:12:00Z", decision: "allow" }),
     ];
     const segments = buildSessionSegments(entries);
-    // exploring(read,grep) → commands(exec) → exploring(read,search)
+    // exploring(read,grep) → scripts(exec) → exploring(read,search)
     expect(segments).toHaveLength(3);
     expect(segments[0].category).toBe("exploring");
     expect(segments[0].endTime).toBe("2026-04-12T09:02:00Z");
-    expect(segments[1].category).toBe("commands");
+    expect(segments[1].category).toBe("scripts");
     expect(segments[2].category).toBe("exploring");
     expect(segments[2].startTime).toBe("2026-04-12T09:10:00Z");
   });
@@ -77,9 +78,9 @@ describe("buildSessionSegments", () => {
       entry({ toolName: "write", timestamp: "2026-04-12T09:02:00Z", decision: "allow" }),
     ];
     const segments = buildSessionSegments(entries);
-    // Only 2 decision entries: exec(commands) → write(changes)
+    // Only 2 decision entries: exec(scripts) → write(changes)
     expect(segments).toHaveLength(2);
-    expect(segments[0].category).toBe("commands");
+    expect(segments[0].category).toBe("scripts");
     expect(segments[1].category).toBe("changes");
   });
 
@@ -267,10 +268,10 @@ describe("getSessionTimeline", () => {
 
     const result = getSessionTimeline(entries);
     const session = result.sessions[0];
-    // read + grep = exploring, then exec = commands
+    // read + grep = exploring, then bare exec = scripts (new taxonomy)
     expect(session.segments).toHaveLength(2);
     expect(session.segments[0].category).toBe("exploring");
-    expect(session.segments[1].category).toBe("commands");
+    expect(session.segments[1].category).toBe("scripts");
   });
 
   it("detects active sessions", () => {

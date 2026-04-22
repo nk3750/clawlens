@@ -20,25 +20,27 @@ function makeAgent(partial: Partial<AgentInfo> = {}): AgentInfo {
     lastActiveTimestamp: NOW_ISO,
     mode: "interactive",
     riskPosture: "calm",
+    // New taxonomy: six pure-domain buckets (exploring/changes/git/scripts/web/comms).
     activityBreakdown: {
       exploring: 5,
       changes: 3,
-      commands: 2,
+      git: 1,
+      scripts: 2,
       web: 1,
-      comms: 1,
-      data: 0,
+      comms: 0,
     },
     todayActivityBreakdown: {
       exploring: 5,
       changes: 3,
-      commands: 2,
+      git: 1,
+      scripts: 2,
       web: 1,
-      comms: 1,
-      data: 0,
+      comms: 0,
     },
     needsAttention: false,
     blockedCount: 0,
     riskProfile: { low: 0, medium: 1, high: 0, critical: 0 },
+    todayRiskMix: { low: 10, medium: 2, high: 0, critical: 0 },
     hourlyActivity: Array.from({ length: 24 }, () => 0),
     ...partial,
   };
@@ -70,10 +72,10 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
       todayActivityBreakdown: {
         exploring: 4,
         changes: 3,
-        commands: 2,
+        git: 2,
+        scripts: 2,
         web: 2,
         comms: 1,
-        data: 1,
       },
     });
     const { container } = renderCard(agent);
@@ -98,10 +100,10 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
       todayActivityBreakdown: {
         exploring: 4,
         changes: 3,
-        commands: 2,
-        web: 2,
+        git: 2,
+        scripts: 2,
+        web: 0,
         comms: 0,
-        data: 0,
       },
     });
     const { container } = renderCard(agent);
@@ -123,10 +125,10 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
       todayActivityBreakdown: {
         exploring: 4,
         changes: 3,
-        commands: 2,
-        web: 1,
+        git: 2,
+        scripts: 1,
+        web: 0,
         comms: 0,
-        data: 0,
       },
     });
     const { container } = renderCard(agent);
@@ -139,10 +141,10 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
       todayActivityBreakdown: {
         exploring: 5,
         changes: 4,
-        commands: 3,
-        web: 2,
+        git: 3,
+        scripts: 2,
+        web: 1,
         comms: 1,
-        data: 1,
       },
     });
     const { container } = renderCard(agent);
@@ -155,10 +157,10 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
       todayActivityBreakdown: {
         exploring: 5,
         changes: 4,
-        commands: 3,
-        web: 2,
+        git: 3,
+        scripts: 2,
+        web: 1,
         comms: 1,
-        data: 1,
       },
     });
     const { container } = renderCard(agent);
@@ -242,5 +244,66 @@ describe("AgentCardCompact — Linear-adjacent chrome (Stage C skin)", () => {
       el.style.background?.includes("linear-gradient"),
     );
     expect(withGradient).toBeDefined();
+  });
+});
+
+describe("AgentCardCompact — risk-mix microbar (domain × risk axis split)", () => {
+  it("renders the microbar when the agent has activity today", () => {
+    const { container } = renderCard(makeAgent());
+    const bar = container.querySelector("[data-cl-risk-mix-microbar]");
+    expect(bar).not.toBeNull();
+  });
+
+  it("hides the microbar for idle agents (todayToolCalls === 0)", () => {
+    // Matches the activity-strip hide rule — no ink, no wasted row.
+    const idle = makeAgent({
+      todayToolCalls: 0,
+      status: "idle",
+      todayRiskMix: { low: 0, medium: 0, high: 0, critical: 0 },
+    });
+    const { container } = renderCard(idle);
+    expect(container.querySelector("[data-cl-risk-mix-microbar]")).toBeNull();
+  });
+
+  it("passes todayToolCalls as the microbar denominator (keeps width honest vs unscored entries)", () => {
+    // 10 scored low + 2 scored medium = 12 scored. todayToolCalls = 20 → the
+    // low segment should be 50% wide (10/20), not 83% (10/12). This is the
+    // regression guard for "scoring gaps don't lie about distribution."
+    const agent = makeAgent({
+      todayToolCalls: 20,
+      todayRiskMix: { low: 10, medium: 2, high: 0, critical: 0 },
+    });
+    const { container } = renderCard(agent);
+    const segs = container.querySelectorAll<HTMLElement>("[data-cl-risk-mix-seg]");
+    expect(segs).toHaveLength(2);
+    expect(segs[0].style.width).toBe("50%");
+    expect(segs[1].style.width).toBe("10%");
+  });
+
+  it("renders a single full-width low segment for all-low agents", () => {
+    const agent = makeAgent({
+      todayToolCalls: 234,
+      todayRiskMix: { low: 234, medium: 0, high: 0, critical: 0 },
+    });
+    const { container } = renderCard(agent);
+    const segs = container.querySelectorAll<HTMLElement>("[data-cl-risk-mix-seg]");
+    expect(segs).toHaveLength(1);
+    expect(segs[0].getAttribute("data-cl-risk-mix-seg")).toBe("low");
+    expect(segs[0].style.width).toBe("100%");
+  });
+
+  it("places the microbar between the identity row and the activity strip", () => {
+    // Structural guard: the microbar sits full-width above the breakdown bars
+    // and below the avatar/name/tier row. Regression guard if someone moves
+    // the row into the header and breaks the two-axis layout.
+    const { container } = renderCard(makeAgent());
+    const bar = container.querySelector<HTMLElement>("[data-cl-risk-mix-microbar]");
+    const firstCatRow = container.querySelector<HTMLElement>("[data-cl-cat-row]");
+    expect(bar).not.toBeNull();
+    expect(firstCatRow).not.toBeNull();
+    // Microbar must come first in document order.
+    const pos = bar!.compareDocumentPosition(firstCatRow!);
+    // Node.DOCUMENT_POSITION_FOLLOWING = 4
+    expect(pos & 4).toBe(4);
   });
 });

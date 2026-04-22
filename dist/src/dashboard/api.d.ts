@@ -161,7 +161,14 @@ export interface AgentInfo {
     needsAttention: boolean;
     attentionReason?: string;
     blockedCount: number;
+    /** All-time tier distribution across every scored entry for this agent. */
     riskProfile: Record<string, number>;
+    /**
+     * Today-scoped tier distribution — same thresholds as `riskProfile` but
+     * limited to decisions in the current local day (or the target day when
+     * viewing history). Drives the per-card risk-mix microbar.
+     */
+    todayRiskMix: Record<string, number>;
     topRisk?: {
         description: string;
         score: number;

@@ -161,7 +161,9 @@ describe("SSE /api/stream — payload contract", () => {
 
     const payload = parseSSEData(out.body);
     expect(payload.effectiveDecision).toBe("allow");
-    expect(payload.category).toBe("commands");
+    // `ls` is read-only exec → `exploring` bucket, not the old generic
+    // `commands` bucket. Proves SSE honors exec sub-category routing.
+    expect(payload.category).toBe("exploring");
   });
 
   it("populates execCategory for exec tool calls", async () => {

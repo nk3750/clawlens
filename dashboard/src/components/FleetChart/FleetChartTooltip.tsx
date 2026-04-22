@@ -34,22 +34,27 @@ function fmtDuration(startIso: string, endIso: string): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+// Duplicates CATEGORY_META in utils.ts by design — the fleet chart tooltip
+// is a separate visual surface with its own tiny label style. Keep in sync
+// with CATEGORY_META when adding/renaming buckets.
 const CATEGORY_LABEL: Record<ActivityCategory, string> = {
   exploring: "exploring",
-  commands: "commands",
+  changes: "changes",
+  git: "git",
+  scripts: "scripts",
   web: "web",
   comms: "comms",
-  changes: "changes",
-  data: "data",
 };
 
 const CATEGORY_COLOR: Record<ActivityCategory, string> = {
   exploring: "var(--cl-cat-exploring)",
   changes: "var(--cl-cat-changes)",
-  commands: "var(--cl-cat-commands)",
+  // git reuses --cl-cat-commands; scripts reuses --cl-cat-data
+  // (tokens repurposed, not deleted — see index.css).
+  git: "var(--cl-cat-commands)",
+  scripts: "var(--cl-cat-data)",
   web: "var(--cl-cat-web)",
   comms: "var(--cl-cat-comms)",
-  data: "var(--cl-cat-data)",
 };
 
 function runSuffix(sessionKey: string): string | null {

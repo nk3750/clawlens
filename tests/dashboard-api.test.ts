@@ -244,20 +244,21 @@ describe("checkHealth", () => {
 // ── categories.ts tests ────────────────────────────
 
 describe("getCategory", () => {
-  it("maps known tools to their categories", () => {
+  it("maps known tools to their new domain buckets", () => {
     expect(getCategory("read")).toBe("exploring");
     expect(getCategory("search")).toBe("exploring");
     expect(getCategory("glob")).toBe("exploring");
     expect(getCategory("grep")).toBe("exploring");
     expect(getCategory("write")).toBe("changes");
     expect(getCategory("edit")).toBe("changes");
-    expect(getCategory("exec")).toBe("commands");
+    // bare `exec` (no sub-category arg) falls through to the scripts fallback
+    expect(getCategory("exec")).toBe("scripts");
     expect(getCategory("fetch_url")).toBe("web");
     expect(getCategory("message")).toBe("comms");
   });
 
-  it("defaults unknown tools to commands", () => {
-    expect(getCategory("some_custom_tool")).toBe("commands");
+  it("defaults unknown tools to scripts", () => {
+    expect(getCategory("some_custom_tool")).toBe("scripts");
   });
 });
 
@@ -268,12 +269,12 @@ describe("computeBreakdown", () => {
       { toolName: "read" },
       { toolName: "read" },
       { toolName: "write" },
-      { toolName: "exec" },
+      { toolName: "exec", execCategory: "scripting" },
     ];
     const breakdown = computeBreakdown(entries);
     expect(breakdown.exploring).toBe(60);
     expect(breakdown.changes).toBe(20);
-    expect(breakdown.commands).toBe(20);
+    expect(breakdown.scripts).toBe(20);
     const sum = Object.values(breakdown).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
   });
@@ -395,14 +396,24 @@ describe("computeEnhancedStats", () => {
 });
 
 describe("getRecentEntries — category field", () => {
-  it("includes category on each entry", () => {
+  it("includes category on each entry; exec routes by sub-category", () => {
     const entries: AuditEntry[] = [
       entry({ timestamp: "2026-03-29T10:00:00Z", toolName: "read", decision: "allow" }),
-      entry({ timestamp: "2026-03-29T10:01:00Z", toolName: "exec", decision: "allow" }),
+      // exec with a git command should bucket into `git`, not a generic bucket.
+      entry({
+        timestamp: "2026-03-29T10:01:00Z",
+        toolName: "exec",
+        decision: "allow",
+        params: { command: "git status" },
+      }),
+      // exec without a command falls through to scripts.
+      entry({ timestamp: "2026-03-29T10:02:00Z", toolName: "exec", decision: "allow" }),
     ];
     const result = getRecentEntries(entries, 50, 0);
-    expect(result[0].category).toBe("commands");
-    expect(result[1].category).toBe("exploring");
+    // Newest first.
+    expect(result[0].category).toBe("scripts");
+    expect(result[1].category).toBe("git");
+    expect(result[2].category).toBe("exploring");
   });
 });
 
@@ -487,6 +498,173 @@ describe("getAgents — new fields", () => {
     const agents = getAgents(entries);
     const sum = Object.values(agents[0].activityBreakdown).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
+  });
+});
+
+describe("getAgents — todayRiskMix aggregation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("bins today's decisions into tiers using the same thresholds as riskTierFromScore", () => {
+    // Boundaries: >75 critical, >50 high, >25 medium, else low.
+    // 26 is lowest medium (>25), 51 lowest high (>50), 76 lowest critical (>75).
+    // 25 is the highest `low` value — regression guard for off-by-one.
+    const scores: Array<{ score: number; tier: "low" | "medium" | "high" | "critical" }> = [
+      { score: 10, tier: "low" },
+      { score: 25, tier: "low" },
+      { score: 26, tier: "medium" },
+      { score: 50, tier: "medium" },
+      { score: 51, tier: "high" },
+      { score: 75, tier: "high" },
+      { score: 76, tier: "critical" },
+      { score: 95, tier: "critical" },
+    ];
+    const entries: AuditEntry[] = scores.map((s, i) =>
+      entry({
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+        toolName: "read",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        riskScore: s.score,
+      }),
+    );
+
+    const agents = getAgents(entries);
+    expect(agents).toHaveLength(1);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 2,
+      medium: 2,
+      high: 2,
+      critical: 2,
+    });
+  });
+
+  it("counts only today's decisions — prior-day entries are excluded", () => {
+    // Today is 2026-03-29. One medium entry today, one high entry yesterday.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "read",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        riskScore: 40,
+      }),
+      entry({
+        timestamp: "2026-03-28T22:00:00Z",
+        toolName: "exec",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        riskScore: 60,
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 1,
+      high: 0,
+      critical: 0,
+    });
+  });
+
+  it("ignores entries with no risk score (pre-scoring timeouts, heartbeats, etc.)", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "read",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        riskScore: 10,
+      }),
+      entry({
+        timestamp: "2026-03-29T10:01:00Z",
+        toolName: "exec",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        // no riskScore
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 1,
+      medium: 0,
+      high: 0,
+      critical: 0,
+    });
+  });
+
+  it("prefers LLM-adjusted score over raw riskScore for tier binning", () => {
+    // Tier 1 scored at 40 (medium); LLM eval bumps it to 85 (critical). The
+    // todayRiskMix bucket must reflect the final adjusted score, matching how
+    // the rest of the dashboard surfaces risk.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "exec",
+        toolCallId: "tc-1",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        riskScore: 40,
+      }),
+      entry({
+        timestamp: "2026-03-29T10:00:01Z",
+        toolName: "__llm_evaluation__",
+        agentId: "bot",
+        refToolCallId: "tc-1",
+        llmEvaluation: {
+          adjustedScore: 85,
+          reasoning: "actually destructive",
+          tags: [],
+          confidence: "high",
+          patterns: [],
+        },
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 1,
+    });
+  });
+
+  it("returns all-zero mix for agents with no today decisions", () => {
+    // Only a prior-day entry; no decisions today. The mix should still be
+    // present on AgentInfo so the frontend can safely destructure, just zeroed.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-27T10:00:00Z",
+        toolName: "read",
+        decision: "allow",
+        agentId: "bot",
+        sessionKey: "agent:bot:main",
+        riskScore: 10,
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents).toHaveLength(1);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 0,
+    });
   });
 });
 

@@ -7,23 +7,24 @@ import {
   riskPosture,
 } from "../src/dashboard/categories";
 
-describe("getCategory", () => {
-  it("maps read tools to exploring", () => {
+describe("getCategory — non-exec tools", () => {
+  it("maps read-family tools to exploring", () => {
     expect(getCategory("read")).toBe("exploring");
     expect(getCategory("glob")).toBe("exploring");
     expect(getCategory("grep")).toBe("exploring");
     expect(getCategory("search")).toBe("exploring");
     expect(getCategory("memory_search")).toBe("exploring");
+    expect(getCategory("memory_get")).toBe("exploring");
   });
 
-  it("maps write/edit to changes", () => {
+  it("maps mutating tools (write/edit/process/cron) to changes", () => {
+    // cron is the scheduling TOOL (rare). Routed to changes because installing
+    // a schedule mutates system state. cron *channel* is handled separately in
+    // parseSessionContext and never appears as a tool name here.
     expect(getCategory("write")).toBe("changes");
     expect(getCategory("edit")).toBe("changes");
-  });
-
-  it("maps exec to commands", () => {
-    expect(getCategory("exec")).toBe("commands");
-    expect(getCategory("process")).toBe("commands");
+    expect(getCategory("process")).toBe("changes");
+    expect(getCategory("cron")).toBe("changes");
   });
 
   it("maps web tools to web", () => {
@@ -38,13 +39,66 @@ describe("getCategory", () => {
     expect(getCategory("sessions_spawn")).toBe("comms");
   });
 
-  it("maps cron to data", () => {
-    expect(getCategory("cron")).toBe("data");
+  it("falls back to scripts for unknown tool names", () => {
+    expect(getCategory("unknown_tool")).toBe("scripts");
+    expect(getCategory("custom_action")).toBe("scripts");
   });
 
-  it("defaults unknown tools to commands", () => {
-    expect(getCategory("unknown_tool")).toBe("commands");
-    expect(getCategory("custom_action")).toBe("commands");
+  it("falls back to scripts for bare exec without sub-category", () => {
+    // No execCategory arg → `exec` has no entry in TOOL_TO_CATEGORY, falls
+    // through to the scripts fallback rather than to a dead `commands` bucket.
+    expect(getCategory("exec")).toBe("scripts");
+  });
+
+  it("ignores execCategory for non-exec tools", () => {
+    // Non-exec routing is purely toolName-driven; passing execCategory should
+    // have no effect. Guards against accidental over-routing if an upstream
+    // stamps an arbitrary sub-category on a non-exec entry.
+    expect(getCategory("read", "destructive")).toBe("exploring");
+    expect(getCategory("web_fetch", "git-write")).toBe("web");
+    expect(getCategory("message", "scripting")).toBe("comms");
+  });
+});
+
+describe("getCategory — exec sub-categories (all 15 ExecCategory values)", () => {
+  it("routes read-only / search / system-info to exploring", () => {
+    expect(getCategory("exec", "read-only")).toBe("exploring");
+    expect(getCategory("exec", "search")).toBe("exploring");
+    expect(getCategory("exec", "system-info")).toBe("exploring");
+  });
+
+  it("routes destructive / permissions / persistence to changes", () => {
+    // These were the observability gap that motivated the split: chmod, crontab,
+    // rm -rf all sit in the filesystem/system-state mutation lane alongside
+    // write/edit. Risk severity is now shown by the per-card microbar.
+    expect(getCategory("exec", "destructive")).toBe("changes");
+    expect(getCategory("exec", "permissions")).toBe("changes");
+    expect(getCategory("exec", "persistence")).toBe("changes");
+  });
+
+  it("routes git-read / git-write to git", () => {
+    expect(getCategory("exec", "git-read")).toBe("git");
+    expect(getCategory("exec", "git-write")).toBe("git");
+  });
+
+  it("routes scripting / package-mgmt / echo / unknown-exec to scripts", () => {
+    expect(getCategory("exec", "scripting")).toBe("scripts");
+    expect(getCategory("exec", "package-mgmt")).toBe("scripts");
+    expect(getCategory("exec", "echo")).toBe("scripts");
+    expect(getCategory("exec", "unknown-exec")).toBe("scripts");
+  });
+
+  it("routes network-read / network-write / remote to web", () => {
+    // remote (ssh/scp/rsync) is network activity — reviewer's mental bucket
+    // for `web` on the card includes "talking to other machines."
+    expect(getCategory("exec", "network-read")).toBe("web");
+    expect(getCategory("exec", "network-write")).toBe("web");
+    expect(getCategory("exec", "remote")).toBe("web");
+  });
+
+  it("falls back to scripts for unknown exec sub-category", () => {
+    expect(getCategory("exec", "not-a-real-category")).toBe("scripts");
+    expect(getCategory("exec", "")).toBe("scripts");
   });
 });
 
@@ -54,43 +108,80 @@ describe("computeBreakdown", () => {
     expect(result).toEqual({
       exploring: 0,
       changes: 0,
-      commands: 0,
+      git: 0,
+      scripts: 0,
       web: 0,
       comms: 0,
-      data: 0,
     });
   });
 
-  it("computes correct percentages", () => {
+  it("buckets exec entries by explicit execCategory", () => {
     const entries = [
-      { toolName: "read" },
-      { toolName: "read" },
-      { toolName: "read" },
-      { toolName: "exec" },
+      { toolName: "exec", execCategory: "git-write" },
+      { toolName: "exec", execCategory: "git-read" },
+      { toolName: "exec", execCategory: "destructive" },
+      { toolName: "exec", execCategory: "network-read" },
     ];
     const result = computeBreakdown(entries);
-    expect(result.exploring).toBe(75);
-    expect(result.commands).toBe(25);
-    expect(result.changes).toBe(0);
+    expect(result.git).toBe(50);
+    expect(result.changes).toBe(25);
+    expect(result.web).toBe(25);
+    expect(result.scripts).toBe(0);
   });
 
-  it("percentages sum to 100", () => {
-    const entries = [{ toolName: "read" }, { toolName: "write" }, { toolName: "exec" }];
+  it("derives execCategory from params.command when not supplied", () => {
+    // AuditEntry shape (no execCategory field) must still route correctly.
+    const entries = [
+      { toolName: "exec", params: { command: "git status" } },
+      { toolName: "exec", params: { command: "rm -rf tmp" } },
+    ];
+    const result = computeBreakdown(entries);
+    expect(result.git).toBe(50);
+    expect(result.changes).toBe(50);
+  });
+
+  it("routes non-exec tools by toolName", () => {
+    const entries = [
+      { toolName: "read" },
+      { toolName: "write" },
+      { toolName: "cron" },
+      { toolName: "web_fetch" },
+    ];
+    const result = computeBreakdown(entries);
+    expect(result.exploring).toBe(25);
+    expect(result.changes).toBe(50); // write + cron (both mutation)
+    expect(result.web).toBe(25);
+  });
+
+  it("percentages sum to 100 across mixed entries", () => {
+    const entries = [
+      { toolName: "read" },
+      { toolName: "write" },
+      { toolName: "exec", execCategory: "git-read" },
+    ];
     const result = computeBreakdown(entries);
     const sum = Object.values(result).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
   });
 
-  it("handles single entry", () => {
-    const result = computeBreakdown([{ toolName: "exec" }]);
-    expect(result.commands).toBe(100);
+  it("handles single entry (exec routed via sub-category)", () => {
+    const result = computeBreakdown([{ toolName: "exec", execCategory: "scripting" }]);
+    expect(result.scripts).toBe(100);
     const sum = Object.values(result).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
   });
 
-  it("handles rounding edge cases", () => {
-    // 3 entries across 3 categories = 33.33% each
-    const entries = [{ toolName: "read" }, { toolName: "write" }, { toolName: "exec" }];
+  it("unknown tool falls into scripts bucket", () => {
+    const result = computeBreakdown([{ toolName: "never_seen_before" }]);
+    expect(result.scripts).toBe(100);
+  });
+
+  it("handles rounding edge cases (33/33/33 → sums to 100)", () => {
+    const entries = [
+      { toolName: "read" },
+      { toolName: "write" },
+      { toolName: "exec", execCategory: "scripting" },
+    ];
     const result = computeBreakdown(entries);
     const sum = Object.values(result).reduce((a, b) => a + b, 0);
     expect(sum).toBe(100);
@@ -127,8 +218,6 @@ describe("parseSessionContext", () => {
   });
 
   it("surfaces 'Unknown' for OpenClaw's explicit unknown channel", () => {
-    // Per channel-catalog spec, `unknown` is a documented OpenClaw fallback
-    // and should render its catalog label rather than disappear.
     expect(parseSessionContext("agent:main:unknown")).toBe("Unknown");
   });
 

@@ -87,22 +87,23 @@ function makeAgent(): AgentInfo {
     activityBreakdown: {
       exploring: 1,
       changes: 0,
-      commands: 2,
+      git: 0,
+      scripts: 2,
       web: 0,
       comms: 0,
-      data: 0,
     },
     todayActivityBreakdown: {
       exploring: 1,
       changes: 0,
-      commands: 2,
+      git: 0,
+      scripts: 2,
       web: 0,
       comms: 0,
-      data: 0,
     },
     needsAttention: false,
     blockedCount: 0,
     riskProfile: { low: 3, medium: 0, high: 0, critical: 0 },
+    todayRiskMix: { low: 3, medium: 0, high: 0, critical: 0 },
     hourlyActivity: Array.from({ length: 24 }, () => 0),
   };
 }

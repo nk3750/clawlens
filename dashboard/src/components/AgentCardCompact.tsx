@@ -3,14 +3,15 @@ import type { AgentInfo, ActivityCategory, RiskTier } from "../lib/types";
 import { CATEGORY_META, relTime, riskTierFromScore } from "../lib/utils";
 import { useSessionSummary } from "../hooks/useSessionSummary";
 import GradientAvatar from "./GradientAvatar";
+import RiskMixMicrobar from "./RiskMixMicrobar";
 
 const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   exploring: "exploring",
   changes: "changes",
-  commands: "commands",
+  git: "git",
+  scripts: "scripts",
   web: "web",
   comms: "comms",
-  data: "data",
 };
 
 const TIER_SHORT: Record<RiskTier, "low" | "med" | "high" | "crit"> = {
@@ -108,6 +109,15 @@ export default function AgentCard({ agent, needsAttention }: Props) {
           </span>
         )}
       </div>
+
+      {/* Risk-mix microbar — full-width 4px stacked bar between identity and
+          activity. Pass todayToolCalls as denominator so width stays honest
+          against the footer's action count even when some entries lack a score. */}
+      {hasActivity && (
+        <div className="mt-2">
+          <RiskMixMicrobar mix={agent.todayRiskMix} total={agent.todayToolCalls} />
+        </div>
+      )}
 
       {/* Category breakdown bars — Stage C monochrome (no --cl-cat-* tokens) */}
       {hasActivity && (

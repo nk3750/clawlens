@@ -17,10 +17,10 @@ interface Props {
 const CATEGORIES: { value: ActivityCategory; label: string }[] = [
   { value: "exploring", label: "Exploring" },
   { value: "changes", label: "Making changes" },
-  { value: "commands", label: "Running commands" },
+  { value: "git", label: "Git" },
+  { value: "scripts", label: "Scripts" },
   { value: "web", label: "Web & APIs" },
   { value: "comms", label: "Communicating" },
-  { value: "data", label: "Data & Storage" },
 ];
 
 const RISK_TIERS: { value: RiskTier; label: string }[] = [

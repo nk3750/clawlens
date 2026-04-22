@@ -929,22 +929,23 @@ function fallbackAgent(id: string): AgentInfo {
     activityBreakdown: {
       exploring: 0,
       changes: 0,
-      commands: 0,
+      git: 0,
+      scripts: 0,
       web: 0,
       comms: 0,
-      data: 0,
     },
     todayActivityBreakdown: {
       exploring: 0,
       changes: 0,
-      commands: 0,
+      git: 0,
+      scripts: 0,
       web: 0,
       comms: 0,
-      data: 0,
     },
     needsAttention: false,
     blockedCount: 0,
     riskProfile: { low: 0, medium: 0, high: 0, critical: 0 },
+    todayRiskMix: { low: 0, medium: 0, high: 0, critical: 0 },
     hourlyActivity: Array.from({ length: 24 }, () => 0),
   };
 }

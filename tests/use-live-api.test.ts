@@ -34,7 +34,8 @@ function fakeEntry(overrides: Partial<EntryResponse> = {}): EntryResponse {
     effectiveDecision: "allow",
     decision: "allow",
     riskScore: 30,
-    category: "commands",
+    // bare exec (no params.command) routes to the scripts fallback.
+    category: "scripts",
     ...overrides,
   };
 }

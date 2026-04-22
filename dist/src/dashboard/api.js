@@ -3,7 +3,7 @@ import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import { parseExecCommand } from "../risk/exec-parser";
 import { deriveScheduleLabel, extractCronRunStarts } from "./cadence";
-import { computeBreakdown, describeAction, getCategory, parseSessionContext, riskPosture, } from "./categories";
+import { computeBreakdown, describeAction, getCategory, getCategoryFromEntry, parseSessionContext, riskPosture, } from "./categories";
 /** Fallback agent ID when audit entries have no agentId. */
 export const DEFAULT_AGENT_ID = "default";
 // ── Internal helpers ────────────────────────────────────
@@ -77,6 +77,9 @@ export function mapEntry(entry, evalIndex, guardrailStore) {
             guardrailMatch = { id: matched.id, action: matched.action };
         }
     }
+    const execCategory = entry.toolName === "exec" && typeof entry.params.command === "string"
+        ? parseExecCommand(entry.params.command).category
+        : undefined;
     return {
         timestamp: entry.timestamp,
         toolName: entry.toolName,
@@ -96,10 +99,8 @@ export function mapEntry(entry, evalIndex, guardrailStore) {
         llmEvaluation: llmEval,
         agentId: entry.agentId,
         sessionKey: entry.sessionKey,
-        category: getCategory(entry.toolName),
-        execCategory: entry.toolName === "exec" && typeof entry.params.command === "string"
-            ? parseExecCommand(entry.params.command).category
-            : undefined,
+        category: getCategory(entry.toolName, execCategory),
+        execCategory,
         guardrailMatch,
     };
 }
@@ -203,7 +204,10 @@ function buildSessionInfo(sessionKey, entries, evalIdx) {
         if (eff === "block" || eff === "denied")
             blockedCount++;
     }
-    // Tool summary: count by toolName, top 5
+    // Tool summary: count by toolName, top 5. The category here is the generic
+    // bucket for the tool name itself — individual exec sub-categories are
+    // summarized at the entry level, not the tool level, so bare "exec" falls
+    // through to the `scripts` fallback by design.
     const toolCounts = new Map();
     for (const e of decisions) {
         toolCounts.set(e.toolName, (toolCounts.get(e.toolName) || 0) + 1);
@@ -727,7 +731,7 @@ export function getRecentEntries(entries, limit, offset, filters, guardrailStore
         }
         if (filters.category) {
             const cat = filters.category;
-            filtered = filtered.filter((e) => getCategory(e.toolName) === cat);
+            filtered = filtered.filter((e) => getCategoryFromEntry(e) === cat);
         }
         if (filters.riskTier) {
             const tier = filters.riskTier;
@@ -1030,6 +1034,23 @@ export function getAgents(entries, date) {
                     riskProfile.low++;
             }
         }
+        // Today-scoped tier mix for the per-card risk microbar. Same thresholds as
+        // riskProfile above; also mirrors `riskTierFromScore` in utils.ts — if
+        // those boundaries ever move, update all three in lockstep.
+        const todayRiskMix = { low: 0, medium: 0, high: 0, critical: 0 };
+        for (const e of todayDecisions) {
+            const score = getEffectiveScore(e, evalIdx);
+            if (score === undefined)
+                continue;
+            if (score > 75)
+                todayRiskMix.critical++;
+            else if (score > 50)
+                todayRiskMix.high++;
+            else if (score > 25)
+                todayRiskMix.medium++;
+            else
+                todayRiskMix.low++;
+        }
         let currentSession;
         let currentSessionKey;
         const withSession = agentEntries
@@ -1160,6 +1181,7 @@ export function getAgents(entries, date) {
             attentionReason,
             blockedCount,
             riskProfile,
+            todayRiskMix,
             topRisk,
             hourlyActivity,
             lastSessionKey: currentSessionKey,
@@ -1343,14 +1365,14 @@ export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
         const ts = new Date(entry.timestamp).getTime();
         const bucketStart = Math.floor(ts / bucketMs) * bucketMs;
         const key = `${agentId}:${bucketStart}`;
-        const category = getCategory(entry.toolName);
+        const category = getCategoryFromEntry(entry);
         const risk = entry.riskScore ?? 0;
         let bucket = bucketMap.get(key);
         if (!bucket) {
             bucket = {
                 start: new Date(bucketStart).toISOString(),
                 agentId,
-                counts: { exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0 },
+                counts: { exploring: 0, changes: 0, git: 0, scripts: 0, web: 0, comms: 0 },
                 total: 0,
                 peakRisk: 0,
                 sessions: [],
@@ -1416,12 +1438,12 @@ export function buildSessionSegments(entries) {
     if (sorted.length === 0)
         return [];
     const segments = [];
-    let currentCat = getCategory(sorted[0].toolName);
+    let currentCat = getCategoryFromEntry(sorted[0]);
     let segStart = sorted[0].timestamp;
     let segEnd = sorted[0].timestamp;
     let segCount = 1;
     for (let i = 1; i < sorted.length; i++) {
-        const cat = getCategory(sorted[i].toolName);
+        const cat = getCategoryFromEntry(sorted[i]);
         if (cat === currentCat) {
             segEnd = sorted[i].timestamp;
             segCount++;

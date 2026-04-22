@@ -82,7 +82,7 @@ describe("reduceSSEEntry — split-session matcher (§6a)", () => {
     const next = reduceSSEEntry(prev, {
       agentId: "a1",
       sessionKey: "agent:a1:cron:job",
-      category: "commands",
+      category: "scripts",
       risk: 40,
       timestamp: "2026-04-19T11:05:00.000Z",
       isBlocked: false,
@@ -284,7 +284,7 @@ describe("FleetChart — visibility-return refetch (§6b)", () => {
         params: {},
         effectiveDecision: "allow",
         decision: "allow",
-        category: "commands",
+        category: "scripts",
         agentId: "a1",
         sessionKey: "agent:a1:main",
         riskScore: 15,

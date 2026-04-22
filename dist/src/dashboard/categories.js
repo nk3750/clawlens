@@ -15,43 +15,94 @@ const TOOL_TO_CATEGORY = {
     memory_get: "exploring",
     write: "changes",
     edit: "changes",
-    exec: "commands",
-    process: "commands",
+    // `cron` here is the scheduling TOOL, not the session channel — rare but
+    // mutating (installs a schedule), so it sits alongside write/edit.
+    cron: "changes",
+    process: "changes",
     fetch_url: "web",
     web_fetch: "web",
     web_search: "web",
     browser: "web",
     message: "comms",
     sessions_spawn: "comms",
-    cron: "data",
+    // exec → routed by sub-category in EXEC_CATEGORY_TO_CATEGORY. No entry here.
 };
-export function getCategory(toolName) {
-    return TOOL_TO_CATEGORY[toolName] ?? "commands";
+/** Exec sub-category → activity bucket. Covers all 15 ExecCategory values. */
+const EXEC_CATEGORY_TO_CATEGORY = {
+    "read-only": "exploring",
+    search: "exploring",
+    "system-info": "exploring",
+    echo: "scripts",
+    "git-read": "git",
+    "git-write": "git",
+    "network-read": "web",
+    "network-write": "web",
+    // ssh/scp/rsync — talking to other machines over the network, reviewer's
+    // `web` mental bucket. Low volume in practice.
+    remote: "web",
+    scripting: "scripts",
+    "package-mgmt": "scripts",
+    // destructive / permissions / persistence are filesystem or system-state
+    // mutations. Card reading `changes X%` with a red microbar slice signals
+    // "some of those changes were high-tier" — the two axes compose cleanly.
+    destructive: "changes",
+    permissions: "changes",
+    persistence: "changes",
+    "unknown-exec": "scripts",
+};
+export function getCategory(toolName, execCategory) {
+    if (toolName === "exec" && execCategory) {
+        return EXEC_CATEGORY_TO_CATEGORY[execCategory] ?? "scripts";
+    }
+    return TOOL_TO_CATEGORY[toolName] ?? "scripts";
+}
+/**
+ * Route a full AuditEntry-shaped record to its activity bucket, deriving the
+ * exec sub-category from `params.command` for exec calls. Call sites that
+ * carry the full entry should prefer this over `getCategory(toolName)` so
+ * exec calls are bucketed by domain (git / changes / web / exploring) rather
+ * than always falling into the scripts fallback.
+ */
+export function getCategoryFromEntry(entry) {
+    let ec = entry.execCategory;
+    if (!ec && entry.toolName === "exec" && typeof entry.params?.command === "string") {
+        ec = parseExecCommand(entry.params.command).category;
+    }
+    return getCategory(entry.toolName, ec);
 }
 // ── Category breakdown ───────────────────────────────────
 const ALL_CATEGORIES = [
     "exploring",
     "changes",
-    "commands",
+    "git",
+    "scripts",
     "web",
     "comms",
-    "data",
 ];
 /**
  * Compute percentage breakdown from a set of entries.
  * Returns percentages that sum to 100 (or all 0 if empty).
+ *
+ * `exec` entries route by `execCategory` when supplied. If only `params`
+ * is provided (AuditEntry shape) we derive the sub-category from
+ * `params.command`, so call sites can pass raw AuditEntry arrays without
+ * pre-parsing.
  */
 export function computeBreakdown(entries) {
     const counts = {
         exploring: 0,
         changes: 0,
-        commands: 0,
+        git: 0,
+        scripts: 0,
         web: 0,
         comms: 0,
-        data: 0,
     };
     for (const e of entries) {
-        counts[getCategory(e.toolName)]++;
+        let ec = e.execCategory;
+        if (!ec && e.toolName === "exec" && typeof e.params?.command === "string") {
+            ec = parseExecCommand(e.params.command).category;
+        }
+        counts[getCategory(e.toolName, ec)]++;
     }
     const total = entries.length;
     if (total === 0)
@@ -60,10 +111,10 @@ export function computeBreakdown(entries) {
     const result = {
         exploring: 0,
         changes: 0,
-        commands: 0,
+        git: 0,
+        scripts: 0,
         web: 0,
         comms: 0,
-        data: 0,
     };
     let assigned = 0;
     let largestCat = "exploring";

@@ -56,7 +56,8 @@ function fakeEntry(overrides: Partial<EntryResponse> = {}): EntryResponse {
     effectiveDecision: "allow",
     decision: "allow",
     riskScore: 30,
-    category: "commands",
+    // bare exec (no params.command) routes to the scripts fallback.
+    category: "scripts",
     ...overrides,
   };
 }
@@ -197,18 +198,19 @@ describe("Agents homepage — Stage C 3-wide grid columns", () => {
       lastActiveTimestamp: "2026-04-20T12:00:00Z",
       mode: "interactive" as const,
       riskPosture: "calm" as const,
-      activityBreakdown: { exploring: 2, changes: 0, commands: 1, web: 0, comms: 0, data: 0 },
+      activityBreakdown: { exploring: 2, changes: 0, git: 0, scripts: 1, web: 0, comms: 0 },
       todayActivityBreakdown: {
         exploring: 2,
         changes: 0,
-        commands: 1,
+        git: 0,
+        scripts: 1,
         web: 0,
         comms: 0,
-        data: 0,
       },
       needsAttention: false,
       blockedCount: 0,
       riskProfile: { low: 1, medium: 0, high: 0, critical: 0 },
+      todayRiskMix: { low: 1, medium: 0, high: 0, critical: 0 },
       hourlyActivity: Array.from({ length: 24 }, () => 0),
     };
 

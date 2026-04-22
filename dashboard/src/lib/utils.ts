@@ -196,6 +196,9 @@ export function postureLabel(posture: RiskPosture): string {
 
 // ── Category metadata with SVG icon paths ──
 
+// NOTE: `--cl-cat-commands` and `--cl-cat-data` CSS tokens are intentionally
+// retained in index.css — they're repurposed here by `git` and `scripts`, not
+// deleted. Removing them would break the color lookup.
 export const CATEGORY_META: Record<
   ActivityCategory,
   { label: string; color: string; iconPath: string }
@@ -212,11 +215,21 @@ export const CATEGORY_META: Record<
     // Pencil icon
     iconPath: "M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z",
   },
-  commands: {
-    label: "Running commands",
+  git: {
+    label: "Git",
+    // Reuse the existing commands hue — git sits in the same visual lane.
     color: "var(--cl-cat-commands)",
-    // Terminal icon
-    iconPath: "M4 17l6-5-6-5 M12 19h8",
+    // Git-branch icon (Lucide) — shared with `EXTRA_ICON_PATHS.git` below so
+    // the card strip and LiveFeed entry icon pipeline stay in sync.
+    iconPath:
+      "M15 22v-4a4.8 4.8 0 00-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 004 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4",
+  },
+  scripts: {
+    label: "Scripts",
+    // Reuse the existing data hue — freed up by dropping the `data` bucket.
+    color: "var(--cl-cat-data)",
+    // Code-braces icon (Lucide) — shared with `EXTRA_ICON_PATHS.code`.
+    iconPath: "M16 18l6-6-6-6 M8 6l-6 6 6 6",
   },
   web: {
     label: "Web & APIs",
@@ -229,12 +242,6 @@ export const CATEGORY_META: Record<
     color: "var(--cl-cat-comms)",
     // MessageSquare icon
     iconPath: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
-  },
-  data: {
-    label: "Data & Storage",
-    color: "var(--cl-cat-data)",
-    // Database icon
-    iconPath: "M12 2C6.48 2 2 3.79 2 6v12c0 2.21 4.48 4 10 4s10-1.79 10-4V6c0-2.21-4.48-4-10-4z M2 6c0 2.21 4.48 4 10 4s10-1.79 10-4 M2 12c0 2.21 4.48 4 10 4s10-1.79 10-4",
   },
 };
 
@@ -351,7 +358,9 @@ const EXEC_ICON_OVERRIDES: Record<string, { path: string; color: string } | unde
   remote: { path: EXTRA_ICON_PATHS.server, color: "var(--cl-cat-web)" },
   scripting: { path: EXTRA_ICON_PATHS.code, color: "var(--cl-cat-commands)" },
   "package-mgmt": { path: EXTRA_ICON_PATHS.package, color: "var(--cl-cat-commands)" },
-  // These use the default category icon (terminal for commands):
+  // These fall back to the default category icon/color:
+  //   system-info → exploring (eye)
+  //   echo / unknown-exec → scripts (code-braces)
   "system-info": undefined,
   echo: undefined,
   "unknown-exec": undefined,

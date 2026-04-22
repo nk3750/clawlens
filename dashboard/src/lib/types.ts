@@ -1,10 +1,10 @@
 export type ActivityCategory =
   | "exploring"
   | "changes"
-  | "commands"
+  | "git"
+  | "scripts"
   | "web"
-  | "comms"
-  | "data";
+  | "comms";
 
 export type RiskTier = "low" | "medium" | "high" | "critical";
 export type RiskPosture = "calm" | "elevated" | "high" | "critical";
@@ -168,7 +168,13 @@ export interface AgentInfo {
   needsAttention: boolean;
   attentionReason?: string;
   blockedCount: number;
+  /** All-time tier distribution across every scored entry for this agent. */
   riskProfile: Record<RiskTier, number>;
+  /**
+   * Today-scoped tier distribution — drives the per-card risk-mix microbar.
+   * Same thresholds as riskProfile (>75 crit, >50 high, >25 med, else low).
+   */
+  todayRiskMix: Record<RiskTier, number>;
   topRisk?: {
     description: string;
     score: number;
