@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { render } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, fireEvent, render } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AgentCardCompact from "../dashboard/src/components/AgentCardCompact";
@@ -305,5 +305,85 @@ describe("AgentCardCompact — risk-mix microbar (domain × risk axis split)", (
     const pos = bar!.compareDocumentPosition(firstCatRow!);
     // Node.DOCUMENT_POSITION_FOLLOWING = 4
     expect(pos & 4).toBe(4);
+  });
+});
+
+describe("AgentCardCompact — microbar popover wiring", () => {
+  // These tests fake setTimeout so the 120ms show / 300ms hide delays can be
+  // advanced deterministically without any real wall-clock waiting.
+  //
+  // Reset-then-fake pattern: the file-level beforeEach installs Date-only
+  // fake timers; nesting a bare `vi.useFakeTimers()` doesn't cleanly swap
+  // the config — advanceTimersByTime silently no-ops. Explicit reset fixes it.
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("opens the popover on microbar hover and closes on Esc", () => {
+    const { container } = renderCard(makeAgent({ id: "seo-growth" }));
+    const wrap = container.querySelector<HTMLElement>("[data-cl-risk-mix-wrapper]");
+    expect(wrap).not.toBeNull();
+    fireEvent.mouseEnter(wrap!);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(container.querySelector("[data-cl-risk-mix-popover]")).not.toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(container.querySelector("[data-cl-risk-mix-popover]")).toBeNull();
+  });
+
+  it("threads agentId into the popover so the click-through link targets the right agent", () => {
+    // Regression guard: if AgentCardCompact forgets to pass agentId, the
+    // popover renders without a Link target and the drill-through silently
+    // breaks. Assert the href explicitly.
+    const { container } = renderCard(makeAgent({ id: "seo-growth" }));
+    const wrap = container.querySelector<HTMLElement>("[data-cl-risk-mix-wrapper]")!;
+    fireEvent.mouseEnter(wrap);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    const link = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]");
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href") ?? "").toContain("agent=seo-growth");
+  });
+
+  it("clicking the popover link navigates to /activity, not to the card's /agent/:id", () => {
+    // User-observable test: whichever Link handles the click determines the
+    // destination. Without stopPropagation on the inner popover link, React
+    // Router's outer card Link also fires and the outer navigation wins — the
+    // user ends up on /agent/:id instead of /activity?tier=... (silent drill-
+    // through failure). This verifies the guard via the actual route.
+    const observed: { pathname: string; search: string } = { pathname: "", search: "" };
+    function LocationProbe() {
+      const loc = useLocation();
+      observed.pathname = loc.pathname;
+      observed.search = loc.search;
+      return null;
+    }
+    const agent = makeAgent({ id: "seo-growth" });
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={agent} />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    const wrap = container.querySelector<HTMLElement>("[data-cl-risk-mix-wrapper]")!;
+    fireEvent.mouseEnter(wrap);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    const popLink = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]")!;
+    fireEvent.click(popLink);
+
+    expect(observed.pathname).toBe("/activity");
+    expect(observed.search).toContain("agent=seo-growth");
+    // Guard against the silent-failure case where the outer Link "wins":
+    expect(observed.pathname).not.toBe("/agent/seo-growth");
   });
 });

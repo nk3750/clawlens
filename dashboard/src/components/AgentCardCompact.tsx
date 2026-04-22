@@ -110,12 +110,17 @@ export default function AgentCard({ agent, needsAttention }: Props) {
         )}
       </div>
 
-      {/* Risk-mix microbar — full-width 4px stacked bar between identity and
+      {/* Risk-mix microbar — full-width stacked bar between identity and
           activity. Pass todayToolCalls as denominator so width stays honest
-          against the footer's action count even when some entries lack a score. */}
+          against the footer's action count even when some entries lack a score.
+          agentId powers the popover's click-through /activity?agent=...&tier=... */}
       {hasActivity && (
         <div className="mt-2">
-          <RiskMixMicrobar mix={agent.todayRiskMix} total={agent.todayToolCalls} />
+          <RiskMixMicrobar
+            mix={agent.todayRiskMix}
+            total={agent.todayToolCalls}
+            agentId={agent.id}
+          />
         </div>
       )}
 
