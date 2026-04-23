@@ -879,6 +879,132 @@ describe("FleetChart — NOW cap coord system (bug #1 follow-up)", () => {
 
 // ── Regression: ghost markers render when predictable (§2f) ─
 
+// ── Range pill group lives in the chart header (issue #16) ─
+
+describe("FleetChart — range pill group in header (issue #16)", () => {
+  it("renders a radiogroup labeled 'Time range' inside the chart header when onRangeChange is provided", () => {
+    mockApiReturn(response([makeSession()]));
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="3h"
+          agents={[makeAgent()]}
+          pendingSessionKeys={new Set()}
+          tight={false}
+          onRangeChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const radiogroup = container.querySelector('[role="radiogroup"][aria-label="Time range"]');
+    expect(radiogroup).not.toBeNull();
+  });
+
+  it("fires onRangeChange with the clicked pill value", () => {
+    const onRangeChange = vi.fn();
+    mockApiReturn(response([makeSession()]));
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="3h"
+          agents={[makeAgent()]}
+          pendingSessionKeys={new Set()}
+          tight={false}
+          onRangeChange={onRangeChange}
+        />
+      </MemoryRouter>,
+    );
+    const pills = [...container.querySelectorAll('[role="radio"]')];
+    const oneHour = pills.find((el) => el.textContent?.trim() === "1h");
+    expect(oneHour).toBeDefined();
+    if (!oneHour) return;
+    act(() => {
+      fireEvent.click(oneHour);
+    });
+    expect(onRangeChange).toHaveBeenCalledWith("1h");
+  });
+
+  it("sets aria-checked=true on the pill matching the current range", () => {
+    mockApiReturn(response([makeSession()]));
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="6h"
+          agents={[makeAgent()]}
+          pendingSessionKeys={new Set()}
+          tight={false}
+          onRangeChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const checked = container.querySelector('[role="radio"][aria-checked="true"]');
+    expect(checked?.textContent?.trim()).toBe("6h");
+  });
+
+  it("does NOT render the radiogroup in the loading branch", () => {
+    mockedUseApi.mockReturnValue({
+      data: null,
+      loading: true,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="3h"
+          agents={null}
+          pendingSessionKeys={new Set()}
+          tight={false}
+          onRangeChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector('[role="radiogroup"][aria-label="Time range"]')).toBeNull();
+  });
+
+  it("does NOT render the radiogroup in the empty-state branch", () => {
+    mockApiReturn(response([]));
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="6h"
+          agents={[]}
+          pendingSessionKeys={new Set()}
+          tight={false}
+          onRangeChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector('[role="radiogroup"][aria-label="Time range"]')).toBeNull();
+  });
+
+  it("does NOT render the radiogroup when onRangeChange is omitted", () => {
+    mockApiReturn(response([makeSession()]));
+    const { container } = render(
+      <MemoryRouter>
+        <FleetChart
+          isToday
+          selectedDate={null}
+          range="3h"
+          agents={[makeAgent()]}
+          pendingSessionKeys={new Set()}
+          tight={false}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector('[role="radiogroup"][aria-label="Time range"]')).toBeNull();
+  });
+});
+
 describe("FleetChart — ghost next-run markers (§2f)", () => {
   it("renders a ghost dot for a scheduled agent with a predictable cadence", () => {
     const now = Date.parse(NOW_ISO);

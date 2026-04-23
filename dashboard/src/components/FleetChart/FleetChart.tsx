@@ -17,6 +17,7 @@ import type {
   TimelineSession,
 } from "../../lib/types";
 import { DEFAULT_AGENT_ID, deriveScheduleLabel } from "../../lib/utils";
+import RangePillGroup from "../fleetheader/RangePillGroup";
 import type { RangeOption } from "../fleetheader/utils";
 import FleetChartRow from "./FleetChartRow";
 import FleetChartTooltip from "./FleetChartTooltip";
@@ -66,6 +67,12 @@ interface Props {
   tight: boolean;
   /** Invoked when the header maximize/minimize button is clicked. */
   onToggleFullscreen?: () => void;
+  /** When provided, a `RangePillGroup` renders inside the chart header and
+   *  clicks propagate to the owner. Issue #16 moved this control out of the
+   *  page-level FleetHeader so range selection lives with the chart it
+   *  affects. Optional so FleetChart still renders in contexts that do not
+   *  host pills. */
+  onRangeChange?: (range: RangeOption) => void;
 }
 
 const MOBILE_MAX_WIDTH = 640;
@@ -98,6 +105,7 @@ export default function FleetChart({
   fullscreen = false,
   tight,
   onToggleFullscreen,
+  onRangeChange,
 }: Props) {
   const navigate = useNavigate();
 
@@ -572,20 +580,29 @@ export default function FleetChart({
       style={{ position: "relative" }}
       data-cl-fleet-chart
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      {/* Header — title + range pills + fullscreen toggle. flex-wrap lets
+          pills reflow below the title in the middle viewport band without
+          pushing the toggle off-screen; marginLeft: auto on the toggle keeps
+          it right-aligned whether it lands in row 1 or wraps to row 2. */}
+      <div
+        className="flex items-center mb-3"
+        style={{ gap: 8, flexWrap: "wrap" }}
+      >
         <span
           className="font-display text-sm font-medium"
           style={{ color: "var(--cl-text-secondary)" }}
         >
           Fleet Activity
         </span>
+        {onRangeChange && (
+          <RangePillGroup value={range} onChange={onRangeChange} />
+        )}
         {onToggleFullscreen && (
           <button
             type="button"
             onClick={onToggleFullscreen}
             className="cl-btn-subtle"
-            style={{ height: 24, padding: "0 8px" }}
+            style={{ height: 24, padding: "0 8px", marginLeft: "auto" }}
             aria-label={fullscreen ? "Exit fullscreen" : "Expand fleet chart"}
             data-cl-chart-fullscreen-toggle
             // biome-ignore lint/a11y/noAutofocus: modal dialog pattern — on

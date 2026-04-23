@@ -520,6 +520,39 @@ describe("Agents homepage — modal fullscreen overlay (layout-fixes §2, portal
 
 // ── Tight prop wiring (layout-fixes §3) ────────────────────
 
+// ── Range pill group placement (issue #16) ─────────────────
+
+describe("Agents homepage — range pill placement (issue #16)", () => {
+  it("renders exactly one 'Time range' radiogroup, inside the fleet-chart anchor", () => {
+    const { container } = renderAt("/");
+    const radiogroups = container.querySelectorAll('[role="radiogroup"][aria-label="Time range"]');
+    expect(radiogroups).toHaveLength(1);
+    const chartAnchor = container.querySelector("[data-cl-fleet-chart-anchor]");
+    expect(chartAnchor).not.toBeNull();
+    expect(chartAnchor?.contains(radiogroups[0])).toBe(true);
+  });
+
+  it("does NOT render a range radiogroup inside the fleet-header top strip", () => {
+    const { container } = renderAt("/");
+    const fleetHeader = container.querySelector("[data-cl-fleet-header]");
+    expect(fleetHeader).not.toBeNull();
+    expect(fleetHeader?.querySelector('[role="radiogroup"][aria-label="Time range"]')).toBeNull();
+  });
+
+  it("clicking a pill in the chart header updates the visually-checked pill", () => {
+    const { container } = renderAt("/");
+    const pills = [...container.querySelectorAll('[role="radio"]')];
+    const oneHour = pills.find((el) => el.textContent?.trim() === "1h");
+    expect(oneHour).toBeDefined();
+    if (!oneHour) return;
+    act(() => {
+      fireEvent.click(oneHour);
+    });
+    const checked = container.querySelector('[role="radio"][aria-checked="true"]');
+    expect(checked?.textContent?.trim()).toBe("1h");
+  });
+});
+
 describe("Agents homepage — tight prop threads from layout state (layout-fixes §3)", () => {
   it("dot radius reflects tight=true at default (5px routine)", () => {
     const { container } = renderAt("/");

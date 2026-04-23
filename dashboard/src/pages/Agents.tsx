@@ -185,6 +185,7 @@ export default function Agents() {
       fullscreen={chartFullscreenParam}
       tight={!chartFullscreenParam && !isNarrow}
       onToggleFullscreen={toggleFullscreen}
+      onRangeChange={onRangeChange}
     />
   );
 
@@ -199,7 +200,6 @@ export default function Agents() {
           pendingAgentNames={pendingAgentNames}
           selectedDate={selectedDate}
           onDateChange={setSelectedDate}
-          range={range}
           onRangeChange={onRangeChange}
         />
       )}

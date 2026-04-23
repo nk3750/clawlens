@@ -3,7 +3,6 @@ import { useTotalFlash } from "../hooks/useTotalFlash";
 import { useSSEStatus } from "../hooks/useSSEStatus";
 import type { StatsResponse } from "../lib/types";
 import DateChip from "./fleetheader/DateChip";
-import RangePillGroup from "./fleetheader/RangePillGroup";
 import RiskMixDonut from "./fleetheader/RiskMixDonut";
 import {
   computeHealthState,
@@ -23,7 +22,9 @@ interface Props {
   pendingAgentNames?: string[];
   selectedDate: string | null;
   onDateChange: (date: string | null) => void;
-  range: RangeOption;
+  /** Still needed for DateChip's "Last 7 days" span shortcut, which sets the
+   *  range + date together. The range pill group itself moved to the chart
+   *  header (issue #16). */
   onRangeChange: (range: RangeOption) => void;
   /** Optional retention string (e.g. "30d") from /api/config — clamps the calendar. */
   retention?: string | null;
@@ -31,13 +32,14 @@ interface Props {
 
 /**
  * Linear-adjacent fleet header — two stacked strips.
- *   Top:    TODAY chip + range pills + "last updated Ns ago"
+ *   Top:    TODAY chip + "last updated Ns ago"
  *   Bottom: 4-card stat grid — ACTIONS / AGENTS RUNNING / PENDING APPROVAL / RISK MIX · 24H
  *
- * Keeps all temporal chrome + stats data pathways. Drops the old dense
- * single-row layout, BlockedChip, PostureChip, OverflowMenu, and
- * HealthIndicator's pill variant — health surfaces in the top strip's
- * "last updated" label (reconnecting state tinted medium).
+ * Keeps all temporal chrome + stats data pathways. Range-pill selection lives
+ * on the FleetChart header (issue #16). Drops the old dense single-row
+ * layout, BlockedChip, PostureChip, OverflowMenu, and HealthIndicator's pill
+ * variant — health surfaces in the top strip's "last updated" label
+ * (reconnecting state tinted medium).
  */
 export default function FleetHeader({
   stats,
@@ -46,7 +48,6 @@ export default function FleetHeader({
   pendingAgentNames,
   selectedDate,
   onDateChange,
-  range,
   onRangeChange,
   retention,
 }: Props) {
@@ -55,7 +56,6 @@ export default function FleetHeader({
       <RangeChromeStrip
         selectedDate={selectedDate}
         onDateChange={onDateChange}
-        range={range}
         onRangeChange={onRangeChange}
         retention={retention}
         lastEntryIso={stats.lastEntryTimestamp ?? null}
@@ -91,7 +91,6 @@ export default function FleetHeader({
 interface RangeChromeProps {
   selectedDate: string | null;
   onDateChange: (date: string | null) => void;
-  range: RangeOption;
   onRangeChange: (range: RangeOption) => void;
   retention?: string | null;
   lastEntryIso: string | null;
@@ -101,7 +100,6 @@ interface RangeChromeProps {
 function RangeChromeStrip({
   selectedDate,
   onDateChange,
-  range,
   onRangeChange,
   retention,
   lastEntryIso,
@@ -123,7 +121,6 @@ function RangeChromeStrip({
         onRangeChange={onRangeChange}
         retention={retention ?? null}
       />
-      <RangePillGroup value={range} onChange={onRangeChange} />
       <div style={{ marginLeft: "auto" }}>
         <LastUpdatedLabel lastEntryIso={lastEntryIso} llmStatus={llmStatus} />
       </div>
