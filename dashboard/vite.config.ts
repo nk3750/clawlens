@@ -9,6 +9,8 @@ import {
   generateMockStats,
   generateMockSessions,
   generateRiskTrend,
+  generateMockAttention,
+  generateMockGuardrails,
 } from "./mock-data";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -184,6 +186,39 @@ function mockApiPlugin(): Plugin {
               sessionKey: e.sessionKey,
             }));
           res.end(JSON.stringify(interventions));
+          return;
+        }
+
+        // GET /api/attention
+        if (apiPath === "attention") {
+          res.end(JSON.stringify(generateMockAttention()));
+          return;
+        }
+
+        // POST /api/attention/ack — simulate successful persistence
+        if (apiPath === "attention/ack") {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        // POST /api/attention/resolve — simulate successful approval resolution
+        if (apiPath === "attention/resolve") {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        // GET /api/guardrails
+        if (apiPath === "guardrails") {
+          res.end(JSON.stringify({ guardrails: generateMockGuardrails() }));
+          return;
+        }
+
+        // POST /api/guardrails — simulate successful creation
+        if (apiPath === "guardrails" || apiPath.startsWith("guardrails/")) {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true }));
           return;
         }
 

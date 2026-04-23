@@ -18,6 +18,9 @@ import type {
   ActivityCategory,
   ActivityTimelineResponse,
   ActivityTimelineBucket,
+  AttentionResponse,
+  AttentionItem,
+  AttentionAgent,
   Guardrail,
 } from "./src/lib/types";
 
@@ -40,12 +43,21 @@ const TOOL_TO_CATEGORY: Record<string, ActivityCategory> = {
   grep: "exploring",
   write: "changes",
   edit: "changes",
-  exec: "commands",
   fetch_url: "web",
+  web_fetch: "web",
+  web_search: "web",
+  browser: "web",
   message: "comms",
 };
-function getCategory(tool: string): ActivityCategory {
-  return TOOL_TO_CATEGORY[tool] ?? "commands";
+function getCategory(tool: string, params?: Record<string, unknown>): ActivityCategory {
+  if (tool === "exec") {
+    const cmd = typeof params?.command === "string" ? params.command.toLowerCase().trim() : "";
+    if (cmd.startsWith("git ") || cmd === "git") return "git";
+    if (/^(curl|wget|ssh|scp|rsync)\b/.test(cmd) || cmd.includes("://")) return "web";
+    if (/^(rm|rmdir|chmod|chown|mv)\b/.test(cmd) || /\bkubectl\s+delete\b/.test(cmd)) return "changes";
+    return "scripts";
+  }
+  return TOOL_TO_CATEGORY[tool] ?? "scripts";
 }
 
 function pick<T>(arr: T[]): T {
@@ -125,7 +137,7 @@ function buildEntry(spec: MockEntrySpec): EntryResponse {
     sessionKey: spec.sessionKey,
     executionResult: decision !== "block" ? "success" : undefined,
     durationMs: Math.floor(Math.random() * 2000) + 50,
-    category: getCategory(spec.toolName),
+    category: getCategory(spec.toolName, spec.params),
     llmEvaluation: llmEval,
     userResponse: spec.userResponse,
   };
@@ -347,14 +359,14 @@ export function generateMockEntries(): EntryResponse[] {
 
 function computeBreakdown(entries: EntryResponse[]): Record<ActivityCategory, number> {
   const counts: Record<ActivityCategory, number> = {
-    exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0,
+    exploring: 0, changes: 0, git: 0, scripts: 0, web: 0, comms: 0,
   };
   for (const e of entries) counts[e.category]++;
   const total = entries.length || 1;
   const result: Record<ActivityCategory, number> = {
-    exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0,
+    exploring: 0, changes: 0, git: 0, scripts: 0, web: 0, comms: 0,
   };
-  const cats: ActivityCategory[] = ["exploring", "changes", "commands", "web", "comms", "data"];
+  const cats: ActivityCategory[] = ["exploring", "changes", "git", "scripts", "web", "comms"];
   const sorted = cats
     .map((c) => ({ c, pct: Math.round((counts[c] / total) * 100) }))
     .sort((a, b) => b.pct - a.pct);
@@ -432,6 +444,16 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
     const todayCutoff = new Date();
     todayCutoff.setUTCHours(0, 0, 0, 0);
     const todayEntries = ae.filter((e) => new Date(e.timestamp) >= todayCutoff && e.decision);
+
+    const todayRiskMix: Record<"low" | "medium" | "high" | "critical", number> = { low: 0, medium: 0, high: 0, critical: 0 };
+    for (const e of todayEntries) {
+      const s = e.riskScore;
+      if (s == null) continue;
+      if (s > 75) todayRiskMix.critical++;
+      else if (s > 50) todayRiskMix.high++;
+      else if (s > 25) todayRiskMix.medium++;
+      else todayRiskMix.low++;
+    }
 
     const isScheduled = ae.some((e) => e.sessionKey?.includes(":cron:"));
     const sessionKey = latest.sessionKey ?? "";
@@ -525,6 +547,7 @@ export function generateMockAgents(entries: EntryResponse[]): AgentInfo[] {
       attentionReason,
       blockedCount,
       riskProfile: riskProfileData,
+      todayRiskMix,
       topRisk,
       hourlyActivity: buildHourlyActivity(ae),
     });
@@ -619,6 +642,13 @@ export function generateMockStats(entries: EntryResponse[]): StatsResponse {
     riskPosture: posture,
     historicDailyMax,
     yesterdayTotal,
+    weekAverage: Math.round((historicDailyMax || 50) * 0.6),
+    lastEntryTimestamp: entries[0]?.timestamp,
+    llmHealth: {
+      recentAttempts: 42,
+      recentFailures: 0,
+      status: "ok",
+    },
   };
 }
 
@@ -763,7 +793,7 @@ export function generateMockTimeline(
   for (const [key, bEntries] of bucketMap) {
     const [agentId, start] = key.split("|");
     const counts: Record<ActivityCategory, number> = {
-      exploring: 0, changes: 0, commands: 0, web: 0, comms: 0, data: 0,
+      exploring: 0, changes: 0, git: 0, scripts: 0, web: 0, comms: 0,
     };
     let peakRisk = 0;
     for (const e of bEntries) {
@@ -864,4 +894,123 @@ export function generateMockGuardrails(): Guardrail[] {
       riskScore: 88,
     },
   ];
+}
+
+/**
+ * Generate mock attention inbox data for local dev.
+ *
+ * Includes one T1 pending with `guardrailMatch` (user-defined guardrail caused
+ * it) and one T1 pending without (simulates an OpenClaw built-in approval), so
+ * the ApprovalCard's "matched guardrail:" cause-line can be exercised in both
+ * states. Also seeds T2 blocked + T3 high-risk items and an agent-cluster row.
+ */
+export function generateMockAttention(): AttentionResponse {
+  const pending: AttentionItem[] = [
+    {
+      kind: "pending",
+      toolCallId: "tc_pending_guardrail",
+      timestamp: new Date(now - 45_000).toISOString(),
+      agentId: "deploy-bot",
+      agentName: "deploy-bot",
+      toolName: "exec",
+      description: "Run `rm -rf /opt/critical-data`",
+      riskScore: 92,
+      riskTier: "critical",
+      sessionKey: "agent:deploy-bot:web:ci-pipeline:run-480",
+      timeoutMs: 255_000,
+      guardrailMatch: { id: "gr_002", identityKey: "rm -rf" },
+    },
+    {
+      kind: "pending",
+      toolCallId: "tc_pending_builtin",
+      timestamp: new Date(now - 90_000).toISOString(),
+      agentId: "code-reviewer",
+      agentName: "code-reviewer",
+      toolName: "exec",
+      description: "Run `kubectl apply -f deploy/prod.yaml`",
+      riskScore: 72,
+      riskTier: "high",
+      sessionKey: "agent:code-reviewer:telegram:pr-review:pr-200",
+      timeoutMs: 210_000,
+    },
+  ];
+
+  const blocked: AttentionItem[] = [
+    {
+      kind: "blocked",
+      toolCallId: "tc_blocked_1",
+      timestamp: new Date(now - 4 * min).toISOString(),
+      agentId: "nightly-scan",
+      agentName: "nightly-scan",
+      toolName: "fetch_url",
+      description: "Fetch https://pastebin.com/raw/x7k2",
+      riskScore: 88,
+      riskTier: "critical",
+      sessionKey: "agent:nightly-scan:cron:security-audit",
+    },
+    {
+      kind: "timeout",
+      toolCallId: "tc_timeout_1",
+      timestamp: new Date(now - 12 * min).toISOString(),
+      agentId: "deploy-bot",
+      agentName: "deploy-bot",
+      toolName: "exec",
+      description: "Run `kubectl delete deployment/api`",
+      riskScore: 85,
+      riskTier: "critical",
+      sessionKey: "agent:deploy-bot:web:ci-pipeline:run-479",
+    },
+  ];
+
+  const highRisk: AttentionItem[] = [
+    {
+      kind: "high_risk",
+      toolCallId: "tc_high_1",
+      timestamp: new Date(now - 3 * min).toISOString(),
+      agentId: "incident-responder",
+      agentName: "incident-responder",
+      toolName: "exec",
+      description: "Run `psql -c 'DELETE FROM sessions WHERE user_id=42'`",
+      riskScore: 81,
+      riskTier: "critical",
+      sessionKey: "agent:incident-responder:web:incident:INC-892",
+      guardrailHint: "no matching guardrail",
+      identityKey: "psql -c 'DELETE FROM sessions WHERE user_id=42'",
+    },
+    {
+      kind: "high_risk",
+      toolCallId: "tc_high_2",
+      timestamp: new Date(now - 8 * min).toISOString(),
+      agentId: "api-tester",
+      agentName: "api-tester",
+      toolName: "fetch_url",
+      description: "Fetch https://webhook.site/callback-secret",
+      riskScore: 74,
+      riskTier: "high",
+      sessionKey: "agent:api-tester:cron:regression:nightly",
+      guardrailHint: "no matching guardrail",
+      identityKey: "https://webhook.site/callback-secret",
+    },
+  ];
+
+  const agentAttention: AttentionAgent[] = [
+    {
+      agentId: "db-migrator",
+      agentName: "db-migrator",
+      triggerAt: new Date(now - 7 * min).toISOString(),
+      reason: "high_risk_cluster",
+      description: "3 high-risk actions in 10 min",
+      triggerCount: 3,
+      peakTier: "critical",
+      lastSessionKey: "agent:db-migrator:web:schema-update:v3.2",
+    },
+  ];
+
+  return {
+    pending,
+    blocked,
+    agentAttention,
+    highRisk,
+    generatedAt: new Date(now).toISOString(),
+  };
 }
