@@ -260,16 +260,22 @@ describe("FleetActivityChart — clustering", () => {
 });
 
 describe("FleetActivityChart — risk halos", () => {
-  it("renders a halo ring for high-risk entries", () => {
+  it("renders a halo ring for high-risk entries (subtle — stroke-width 1, stroke-opacity 0.5)", () => {
     const entries = [mkEntry({ category: "changes", riskTier: "high", toolCallId: "high" })];
     const { container } = renderChart({ entries });
-    expect(container.querySelector("[data-cl-swarm-halo]")).not.toBeNull();
+    const halo = container.querySelector("[data-cl-swarm-halo]");
+    expect(halo).not.toBeNull();
+    expect(halo?.getAttribute("stroke-width")).toBe("1");
+    expect(halo?.getAttribute("stroke-opacity")).toBe("0.5");
   });
 
-  it("renders a halo ring for critical-risk entries", () => {
+  it("renders a halo ring for critical-risk entries (slightly bolder — stroke-width 1.5, stroke-opacity 0.65)", () => {
     const entries = [mkEntry({ category: "changes", riskTier: "critical", toolCallId: "crit" })];
     const { container } = renderChart({ entries });
-    expect(container.querySelector("[data-cl-swarm-halo]")).not.toBeNull();
+    const halo = container.querySelector("[data-cl-swarm-halo]");
+    expect(halo).not.toBeNull();
+    expect(halo?.getAttribute("stroke-width")).toBe("1.5");
+    expect(halo?.getAttribute("stroke-opacity")).toBe("0.65");
   });
 
   it("does NOT render a halo for low-risk entries", () => {
@@ -509,6 +515,31 @@ describe("FleetActivityChart — legend", () => {
     expect(chips.length).toBe(6);
     const ids = [...chips].map((el) => el.getAttribute("data-cl-swarm-legend-chip"));
     expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+  });
+
+  it("renders two risk-key chips (high + critical) after the category chips", () => {
+    const { container } = renderChart();
+    const riskChips = [...container.querySelectorAll("[data-cl-swarm-legend-risk-chip]")];
+    const tiers = riskChips.map((el) => el.getAttribute("data-cl-swarm-legend-risk-chip"));
+    expect(tiers).toEqual(["high", "critical"]);
+  });
+
+  it("matches the high-risk chip's ring to the chart halo (stroke-opacity 0.5, stroke-width 1)", () => {
+    const { container } = renderChart();
+    const chip = container.querySelector('[data-cl-swarm-legend-risk-chip="high"]');
+    const circle = chip?.querySelector("circle");
+    expect(circle?.getAttribute("stroke")).toBe("var(--cl-risk-high)");
+    expect(circle?.getAttribute("stroke-opacity")).toBe("0.5");
+    expect(circle?.getAttribute("stroke-width")).toBe("1");
+  });
+
+  it("matches the critical-risk chip's ring to the chart halo (stroke-opacity 0.65, stroke-width 1.5)", () => {
+    const { container } = renderChart();
+    const chip = container.querySelector('[data-cl-swarm-legend-risk-chip="critical"]');
+    const circle = chip?.querySelector("circle");
+    expect(circle?.getAttribute("stroke")).toBe("var(--cl-risk-critical)");
+    expect(circle?.getAttribute("stroke-opacity")).toBe("0.65");
+    expect(circle?.getAttribute("stroke-width")).toBe("1.5");
   });
 });
 

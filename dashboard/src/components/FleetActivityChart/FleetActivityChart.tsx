@@ -529,13 +529,13 @@ export default function FleetActivityChart({
                           ? "var(--cl-risk-critical)"
                           : "var(--cl-risk-high)"
                       }
-                      strokeWidth={tier === "critical" ? 2 : 1}
-                      opacity={0.85}
+                      strokeWidth={tier === "critical" ? 1.5 : 1}
+                      strokeOpacity={tier === "critical" ? 0.65 : 0.5}
                     >
                       {tier === "critical" && !reducedMotion && (
                         <animate
                           attributeName="r"
-                          values={`${r + halo};${r + halo + 2};${r + halo}`}
+                          values={`${r + halo};${r + halo + 1};${r + halo}`}
                           dur="2s"
                           repeatCount="indefinite"
                         />
@@ -700,6 +700,57 @@ export default function FleetActivityChart({
             </span>
           );
         })}
+        {/* Risk-key chips — their ring visuals must stay in lockstep with
+            the halo rendering above. If strokeWidth/strokeOpacity drifts,
+            the legend lies. */}
+        <span
+          className="inline-flex items-center"
+          style={{ gap: 6 }}
+          data-cl-swarm-legend-risk-chip="high"
+        >
+          <svg width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true">
+            <circle
+              r="6"
+              fill="none"
+              stroke="var(--cl-risk-high)"
+              strokeWidth="1"
+              strokeOpacity="0.5"
+            />
+          </svg>
+          <span
+            style={{
+              color: "var(--cl-text-muted)",
+              fontSize: 11,
+              fontFamily: "var(--cl-font-mono)",
+            }}
+          >
+            high-risk
+          </span>
+        </span>
+        <span
+          className="inline-flex items-center"
+          style={{ gap: 6 }}
+          data-cl-swarm-legend-risk-chip="critical"
+        >
+          <svg width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true">
+            <circle
+              r="6"
+              fill="none"
+              stroke="var(--cl-risk-critical)"
+              strokeWidth="1.5"
+              strokeOpacity="0.65"
+            />
+          </svg>
+          <span
+            style={{
+              color: "var(--cl-text-muted)",
+              fontSize: 11,
+              fontFamily: "var(--cl-font-mono)",
+            }}
+          >
+            critical
+          </span>
+        </span>
       </div>
 
       {popover && (
