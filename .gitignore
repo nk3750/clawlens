@@ -22,3 +22,6 @@ venv/
 # Claude Code local settings (contains tokens)
 .claude/settings.local.json
 .mcp.json
+
+# Orchestrator scratch (design bundles, render probes) — never commit
+.scratch/
