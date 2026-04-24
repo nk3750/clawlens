@@ -55,7 +55,7 @@ export default function RiskMixPopover({ mix, total, agentId }: Props) {
         padding: "10px 12px",
         borderRadius: "var(--cl-r-md)",
         boxShadow: "var(--cl-depth-pop)",
-        backgroundColor: "var(--cl-bg-card, var(--cl-bg-0))",
+        backgroundColor: "var(--cl-bg-card, var(--cl-bg))",
         border: "1px solid var(--cl-border)",
         zIndex: "var(--cl-z-tooltip)" as unknown as number,
         animation: "page-fade-in 120ms var(--cl-ease) both",

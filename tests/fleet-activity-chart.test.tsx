@@ -574,6 +574,12 @@ describe("FleetActivityChart — now-line visibility", () => {
     expect(arrow?.getAttribute("fill")).toBe("var(--cl-accent)");
   });
 
+  it("right-aligns the NOW caption so it cannot clip past the chart's right edge", () => {
+    const { container } = renderChart();
+    const caption = container.querySelector("[data-cl-swarm-now-caption]");
+    expect(caption?.getAttribute("text-anchor")).toBe("end");
+  });
+
   it("does NOT render the caption/arrow on past-date views", () => {
     const { container } = renderChart({ selectedDate: "2026-04-15" });
     expect(container.querySelector("[data-cl-swarm-now-caption]")).toBeNull();
@@ -591,6 +597,16 @@ describe("FleetActivityChart — dot icons", () => {
     expect(dot?.querySelector("path")).not.toBeNull();
   });
 
+  it("strokes the dot-icon with var(--cl-bg) — the defined page-canvas token", () => {
+    const entries = [mkEntry({ category: "git", toolCallId: "solo" })];
+    const { container } = renderChart({ entries });
+    const iconSvg = container.querySelector(
+      '[data-cl-swarm-dot][data-cl-swarm-cluster="false"] svg',
+    );
+    expect(iconSvg).not.toBeNull();
+    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-bg)");
+  });
+
   it("does NOT overlay an icon on cluster dots (circle + text, no path)", () => {
     const base = Date.parse(NOW) - 30 * 60_000;
     const entries: EntryResponse[] = [
@@ -603,6 +619,26 @@ describe("FleetActivityChart — dot icons", () => {
     expect(cluster?.querySelector("circle")).not.toBeNull();
     expect(cluster?.querySelector("[data-cl-swarm-cluster-count]")).not.toBeNull();
     expect(cluster?.querySelector("path")).toBeNull();
+  });
+});
+
+describe("FleetActivityChart — overflow guards (unclip cluster labels)", () => {
+  it("main chart svg has overflow=visible so cluster '+N' labels above y=0 aren't clipped", () => {
+    const { container } = renderChart();
+    const svgs = [...container.querySelectorAll("svg")];
+    // Find the main chart svg — it has a <title>Fleet activity swarm chart</title>.
+    const main = svgs.find(
+      (svg) => svg.querySelector("title")?.textContent === "Fleet activity swarm chart",
+    );
+    expect(main).toBeDefined();
+    expect(main?.getAttribute("overflow")).toBe("visible");
+  });
+
+  it("reserves top space on the chart body so the overflowing label does not overlap the header", () => {
+    const { container } = renderChart();
+    const body = container.querySelector("[data-cl-swarm-body]") as HTMLElement | null;
+    expect(body).not.toBeNull();
+    expect(body?.style.marginTop).toBe("14px");
   });
 });
 

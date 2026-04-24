@@ -361,10 +361,12 @@ export default function FleetActivityChart({
 
       {/* Chart body — split into a fixed-width lane-label gutter on the left
           and a flex-1 swarm SVG on the right so lane labels stay visible even
-          when all six lanes are empty. */}
+          when all six lanes are empty. marginTop reserves room for cluster
+          '+N' labels that draw above the top lane (y < 0) once the main SVG
+          is given overflow="visible" below. */}
       <div
         ref={setContainerEl}
-        style={{ position: "relative", height: chartH, display: "flex" }}
+        style={{ position: "relative", height: chartH, display: "flex", marginTop: 14 }}
         data-cl-swarm-body
       >
         {/* Lane-label gutter — icon + text per category. Mirrors the
@@ -420,6 +422,7 @@ export default function FleetActivityChart({
           width={chartWidth}
           height={chartH}
           viewBox={`0 0 ${chartWidth} ${chartH}`}
+          overflow="visible"
           style={{ display: "block", flex: 1 }}
         >
           <title>Fleet activity swarm chart</title>
@@ -454,7 +457,7 @@ export default function FleetActivityChart({
                 data-cl-swarm-now-caption
                 x={nowX}
                 y={11}
-                textAnchor="middle"
+                textAnchor="end"
                 style={{
                   fill: "var(--cl-accent)",
                   fontFamily: "var(--cl-font-mono)",
@@ -553,7 +556,7 @@ export default function FleetActivityChart({
                       height={DOT_ICON_SIZE}
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke="var(--cl-bg-0)"
+                      stroke="var(--cl-bg)"
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
