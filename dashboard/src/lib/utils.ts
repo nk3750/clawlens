@@ -204,19 +204,19 @@ export const CATEGORY_META: Record<
   { label: string; color: string; iconPath: string }
 > = {
   exploring: {
-    label: "Exploring",
+    label: "exploring",
     color: "var(--cl-cat-exploring)",
     // Eye icon (Lucide)
     iconPath: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 9a3 3 0 100 6 3 3 0 000-6z",
   },
   changes: {
-    label: "Making changes",
+    label: "changes",
     color: "var(--cl-cat-changes)",
     // Pencil icon
     iconPath: "M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z",
   },
   git: {
-    label: "Git",
+    label: "git",
     // Reuse the existing commands hue — git sits in the same visual lane.
     color: "var(--cl-cat-commands)",
     // Git-branch icon (Lucide) — shared with `EXTRA_ICON_PATHS.git` below so
@@ -225,20 +225,20 @@ export const CATEGORY_META: Record<
       "M15 22v-4a4.8 4.8 0 00-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 004 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4",
   },
   scripts: {
-    label: "Scripts",
+    label: "scripts",
     // Reuse the existing data hue — freed up by dropping the `data` bucket.
     color: "var(--cl-cat-data)",
     // Code-braces icon (Lucide) — shared with `EXTRA_ICON_PATHS.code`.
     iconPath: "M16 18l6-6-6-6 M8 6l-6 6 6 6",
   },
   web: {
-    label: "Web & APIs",
+    label: "web",
     color: "var(--cl-cat-web)",
     // Globe icon
     iconPath: "M12 2a10 10 0 100 20 10 10 0 000-20z M2 12h20 M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z",
   },
   comms: {
-    label: "Communicating",
+    label: "comms",
     color: "var(--cl-cat-comms)",
     // MessageSquare icon
     iconPath: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",

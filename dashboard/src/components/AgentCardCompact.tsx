@@ -1,18 +1,9 @@
 import { Link } from "react-router-dom";
-import type { AgentInfo, ActivityCategory, RiskTier } from "../lib/types";
+import type { ActivityCategory, AgentInfo, RiskTier } from "../lib/types";
 import { CATEGORY_META, relTime, riskTierFromScore } from "../lib/utils";
 import { useSessionSummary } from "../hooks/useSessionSummary";
 import GradientAvatar from "./GradientAvatar";
 import RiskMixMicrobar from "./RiskMixMicrobar";
-
-const CATEGORY_LABELS: Record<ActivityCategory, string> = {
-  exploring: "exploring",
-  changes: "changes",
-  git: "git",
-  scripts: "scripts",
-  web: "web",
-  comms: "comms",
-};
 
 const TIER_SHORT: Record<RiskTier, "low" | "med" | "high" | "crit"> = {
   low: "low",
@@ -288,7 +279,7 @@ function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, 
                 minWidth: 64,
               }}
             >
-              {CATEGORY_LABELS[cat]}
+              {CATEGORY_META[cat].label}
             </span>
             <div
               className="flex-1"

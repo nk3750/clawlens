@@ -1,4 +1,5 @@
 import type { AgentInfo, ActivityCategory, RiskTier } from "../lib/types";
+import { CATEGORY_META } from "../lib/utils";
 
 export interface FilterState {
   agent: string;
@@ -14,14 +15,17 @@ interface Props {
   agents?: AgentInfo[];
 }
 
-const CATEGORIES: { value: ActivityCategory; label: string }[] = [
-  { value: "exploring", label: "Exploring" },
-  { value: "changes", label: "Making changes" },
-  { value: "git", label: "Git" },
-  { value: "scripts", label: "Scripts" },
-  { value: "web", label: "Web & APIs" },
-  { value: "comms", label: "Communicating" },
+const CATEGORY_ORDER: ActivityCategory[] = [
+  "exploring",
+  "changes",
+  "git",
+  "scripts",
+  "web",
+  "comms",
 ];
+const CATEGORIES: { value: ActivityCategory; label: string }[] = CATEGORY_ORDER.map(
+  (value) => ({ value, label: CATEGORY_META[value].label }),
+);
 
 const RISK_TIERS: { value: RiskTier; label: string }[] = [
   { value: "low", label: "Low" },
