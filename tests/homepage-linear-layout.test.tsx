@@ -284,13 +284,15 @@ describe("Agents homepage — bottom-row grid (homepage-bottom-row-spec §8)", (
     expect(row?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
   });
 
-  it("bounds the insights-row grid track at 580px in the wide 2fr/1fr layout (polish-2 §3)", () => {
+  it("bounds the insights-row grid track at 464px in the wide 2fr/1fr layout (polish-3 cleanup)", () => {
     // Without gridAutoRows, the grid track auto-stretches to the tallest
     // child — LiveFeed's content would blow the row out. Fixing the track
-    // height makes both cells agree on 580, so the tile + feed line up.
+    // height makes both cells agree at the shared natural content height
+    // (header 36 + 8 rows × ~48 + footer 40 ≈ 460), so the tile + feed
+    // line up with no empty slack.
     const { container } = renderAt("/");
     const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
-    expect(row?.style.gridAutoRows).toBe("580px");
+    expect(row?.style.gridAutoRows).toBe("464px");
   });
 
   it("sets minWidth: 0 on BOTH insights-row cell anchors so 2fr/1fr can shrink below min-content", () => {
@@ -314,7 +316,7 @@ describe("Agents homepage — bottom-row grid (homepage-bottom-row-spec §8)", (
   });
 
   it("reverts gridAutoRows to 'auto' in single-column mode (narrow or ?chart=full) (polish-2 §3.5)", () => {
-    // Narrow viewport: stacked single column must NOT be locked to 580 — each
+    // Narrow viewport: stacked single column must NOT be locked to 464 — each
     // child sizes to natural content height. Same for fullscreen chart mode.
     stubViewportWidth(640);
     const { container } = renderAt("/");

@@ -623,7 +623,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
             color: TEXT_SUBDUED,
           }}
         >
-          {hero.totalElevated} · 24h
+          {hero.totalElevated} · today
         </span>
       </div>
     </section>

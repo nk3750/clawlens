@@ -630,7 +630,7 @@ describe("FleetRiskTile legend footer", () => {
     expect(text.toLowerCase()).toContain("high");
     expect(text.toLowerCase()).toContain("critical");
     expect(text).toContain("5");
-    expect(text).toContain("24h");
+    expect(text).toContain("today");
   });
 });
 

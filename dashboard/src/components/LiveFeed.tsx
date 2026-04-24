@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
@@ -54,7 +54,6 @@ export default function LiveFeed() {
   );
   const [sseEntries, setSseEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
-  const listRef = useRef<HTMLDivElement>(null);
 
   const loadMore = useCallback(() => {
     setPageSize((prev) => Math.min(prev + PAGE_STEP, CAP));
@@ -114,7 +113,6 @@ export default function LiveFeed() {
       }}
     >
       <div
-        ref={listRef}
         data-cl-live-feed-list
         className="cl-card"
         style={{
