@@ -325,9 +325,8 @@ export interface FleetActivityResponse {
 }
 /**
  * Individual decisions in a time window, sorted ascending by timestamp. Unlike
- * getActivityTimeline (bucketed) and getSessionTimeline (per-session), this
- * returns every per-action entry so the fleet swarm chart can render one dot
- * per action.
+ * getActivityTimeline (which buckets by time), this returns every per-action
+ * entry so the fleet swarm chart can render one dot per action.
  *
  * Window semantics:
  *  - `date` given  → full local calendar day; `range` ignored (matches
