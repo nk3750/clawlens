@@ -1,4 +1,5 @@
-import type { EntryResponse, ActivityCategory, RiskTier } from "./types";
+import { formatEventTarget, toolNamespace, verbFor } from "./eventFormat";
+import type { ActivityCategory, EntryResponse, RiskTier } from "./types";
 import { riskTierFromScore } from "./utils";
 
 export interface EntryGroup {
@@ -15,92 +16,25 @@ export interface EntryGroup {
   duration: number; // ms
 }
 
-/** Describe an entry in plain language */
+/**
+ * One-line human-readable description for a single entry. Thin adapter over
+ * eventFormat primitives (spec \u00a77). The legacy one-liner format is preserved
+ * for the 7 callers that still render this string directly (LiveFeed-specific
+ * two-line rendering goes through verbFor/formatEventTarget directly, not here).
+ */
 export function describeEntry(e: EntryResponse): string {
-  const p = e.params;
-  switch (e.toolName) {
-    case "read": return p.path ? `Read ${p.path}` : "Read file";
-    case "write": return p.path ? `Wrote ${p.path}` : "Wrote file";
-    case "edit": return p.path ? `Edited ${p.path}` : "Edited file";
-    case "exec": return describeExecEntry(e);
-    case "message": return p.subject ? `Sent "${p.subject}"` : "Sent message";
-    case "fetch_url":
-    case "web_fetch": {
-      const url = typeof p.url === "string" ? p.url : "";
-      if (!url) return "Web fetch";
-      return `Fetch: ${domainFromUrl(url)}`;
-    }
-    case "grep": return p.pattern ? `Searched for "${p.pattern}"` : "Searched";
-    case "glob": return p.pattern ? `Scanned ${p.pattern}` : "Scanned files";
-    case "memory_get": return "Memory: retrieve";
-    case "memory_search": return "Memory: search";
-    case "sessions_spawn": {
-      const name = typeof p.agent === "string" ? String(p.agent) : "";
-      return name ? `Spawn: ${name}` : "Spawn sub-agent";
-    }
-    case "process": {
-      const action = typeof p.action === "string" ? String(p.action) : "";
-      return action ? `Process: ${action}` : "Process operation";
-    }
-    default: return e.toolName;
+  const verb = verbFor(e);
+  const target = formatEventTarget(e);
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  if (e.toolName === "exec") {
+    const ns = toolNamespace(e);
+    const primary = ns.startsWith("shell.") ? ns.slice(6) : ns;
+    return target
+      ? `${cap(verb)} \`${primary} ${target.slice(0, 40)}\``
+      : `${cap(verb)} command`;
   }
-}
-
-const EXEC_LABELS: Record<string, string> = {
-  "network-read": "Network", "network-write": "Network",
-  "read-only": "Read", "search": "Search", "system-info": "System",
-  "git-read": "Git", "git-write": "Git",
-  "destructive": "Destructive", "scripting": "Script", "package-mgmt": "Package",
-};
-
-function describeExecEntry(e: EntryResponse): string {
-  const cmd = typeof e.params.command === "string" ? String(e.params.command) : "";
-  if (!cmd) return "Executed command";
-
-  const label = e.execCategory ? EXEC_LABELS[e.execCategory] : undefined;
-  if (!label) {
-    const trunc = cmd.length > 40 ? `${cmd.slice(0, 39)}\u2026` : cmd;
-    return `Ran \`${trunc}\``;
-  }
-
-  const primary = extractPrimary(cmd);
-
-  if (e.execCategory === "network-read" || e.execCategory === "network-write") {
-    const m = cmd.match(/https?:\/\/([^\s/'":]+)|(localhost(?::\d+)?)/);
-    const domain = m?.[1] || m?.[2] || "";
-    return domain ? `${label}: ${primary} ${domain}` : `${label}: ${primary}`;
-  }
-
-  if (e.execCategory === "git-read" || e.execCategory === "git-write") {
-    const idx = cmd.indexOf("git");
-    const rest = idx >= 0 ? cmd.slice(idx + 3).trim() : "";
-    return `Git: ${rest.slice(0, 35) || "command"}`;
-  }
-
-  return `${label}: ${primary}`;
-}
-
-const SKIP = new Set(["cd", "source", ".", "sudo", "env", "nohup", "time", "nice", "set", "export"]);
-
-function extractPrimary(cmd: string): string {
-  const first = cmd.split(/[;&]+/)[0].trim();
-  for (const t of first.split(/\s+/)) {
-    if (/^[A-Z_]\w*=/.test(t)) continue;
-    const base = t.includes("/") ? t.split("/").pop()! : t;
-    if (!SKIP.has(base)) return base;
-  }
-  return cmd.split(/\s+/)[0] || "command";
-}
-
-function domainFromUrl(url: string): string {
-  const local = url.match(/^(localhost|127\.\d+\.\d+\.\d+)(:\d+)?/);
-  if (local) return local[0];
-  try {
-    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return u.hostname.length > 30 ? `${u.hostname.slice(0, 29)}\u2026` : u.hostname;
-  } catch {
-    return url.slice(0, 30);
-  }
+  return target ? `${cap(verb)} ${target}` : cap(verb);
 }
 
 /** Verb + noun for grouped descriptions */
