@@ -50,8 +50,8 @@ describe("computeFleetRiskIndex — empty log (fresh deploy)", () => {
   });
 });
 
-describe("computeFleetRiskIndex — current (last 15 min max)", () => {
-  it("returns max riskScore in the last 15 minutes", () => {
+describe("computeFleetRiskIndex — current (last 1 hour max)", () => {
+  it("returns max riskScore in the last 1 hour", () => {
     const out = computeFleetRiskIndex([
       entry({
         timestamp: new Date(NOW.getTime() - 5 * 60_000).toISOString(),
@@ -68,10 +68,19 @@ describe("computeFleetRiskIndex — current (last 15 min max)", () => {
     ]);
     expect(out.current).toBe(72);
   });
-  it("excludes entries older than 15 minutes", () => {
+  it("INCLUDES entries at age 50 minutes (inside the 1h window)", () => {
     const out = computeFleetRiskIndex([
       entry({
-        timestamp: new Date(NOW.getTime() - 16 * 60_000).toISOString(),
+        timestamp: new Date(NOW.getTime() - 50 * 60_000).toISOString(),
+        riskScore: 82,
+      }),
+    ]);
+    expect(out.current).toBe(82);
+  });
+  it("excludes entries older than 1 hour", () => {
+    const out = computeFleetRiskIndex([
+      entry({
+        timestamp: new Date(NOW.getTime() - 70 * 60_000).toISOString(),
         riskScore: 90,
       }),
     ]);

@@ -168,7 +168,7 @@ describe("FleetRiskTile hero", () => {
     const delta = container.querySelector<HTMLElement>("[data-cl-fleet-risk-delta]");
     expect(delta?.style.color).toMatch(/cl-risk-high/);
   });
-  it('renders "0 vs 24h baseline" (no "+") when delta is exactly zero', () => {
+  it('renders "0 vs 7d baseline" (no "+") when delta is exactly zero', () => {
     mockApis(fleetActivity([]), {
       current: 40,
       baselineP50: 40,
@@ -179,7 +179,21 @@ describe("FleetRiskTile hero", () => {
     });
     const { container } = renderTile();
     const delta = container.querySelector<HTMLElement>("[data-cl-fleet-risk-delta]");
-    expect(delta?.textContent).toBe("0 vs 24h baseline");
+    expect(delta?.textContent).toBe("0 vs 7d baseline");
+  });
+  it("delta label refers to the 7d baseline, not 24h (polish §2.3)", () => {
+    mockApis(fleetActivity([]), {
+      current: 80,
+      baselineP50: 40,
+      delta: 40,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const text = container.querySelector("[data-cl-fleet-risk-hero]")?.textContent ?? "";
+    expect(text).toContain("7d baseline");
+    expect(text).not.toContain("24h baseline");
   });
   it("uses text-secondary color for delta when delta <= 0", () => {
     mockApis(fleetActivity([]), {
@@ -200,19 +214,80 @@ describe("FleetRiskTile hero", () => {
 // Sparkline (spec §6.3)
 // ─────────────────────────────────────────────────────────────
 
-describe("FleetRiskTile sparkline", () => {
-  it("renders a stepped area path split into two tier clips (low + crit)", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 80 })]), {
-      current: 80,
+describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish §3)", () => {
+  it("renders three stepped paths — one per band (below-baseline, between, above-crit)", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
       baselineP50: 40,
-      delta: 40,
-      critCount: 1,
-      highCount: 0,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
       totalElevated: 1,
     });
     const { container } = renderTile();
     const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
+    expect(paths.length).toBe(3);
+  });
+  it("each band references its own clipPath", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    expect(container.querySelector("clipPath#cl-frt-below-baseline-clip")).not.toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-between-clip")).not.toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-above-crit-clip")).not.toBeNull();
+  });
+  it("skips the amber middle band when baselineP50 ≈ 75 (degenerate)", () => {
+    mockApis(fleetActivity([]), {
+      current: 80,
+      baselineP50: 75,
+      delta: 5,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
+    // baseline coincides with crit threshold → amber band collapses → 2 paths.
     expect(paths.length).toBe(2);
+  });
+  it("skips the green below-baseline band when baselineP50 = 0 (fresh deploy)", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
+    // baseline clamps to score-floor (30) → yForScore(0) = plotHeight →
+    // green band has zero height → 2 paths (amber + red).
+    expect(paths.length).toBe(2);
+  });
+  it("uses a 1.5px stroke + 0.08 fillOpacity (line-dominant, faint backdrop)", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    const paths = Array.from(
+      container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline]"),
+    );
+    for (const p of paths) {
+      expect(p.getAttribute("stroke-width")).toBe("1.5");
+      expect(p.getAttribute("fill-opacity")).toBe("0.08");
+    }
   });
   it("renders critical threshold line + baseline line", () => {
     mockApis(fleetActivity([]), {
@@ -226,6 +301,53 @@ describe("FleetRiskTile sparkline", () => {
     const { container } = renderTile();
     expect(container.querySelector("[data-cl-fleet-risk-threshold-line]")).not.toBeNull();
     expect(container.querySelector("[data-cl-fleet-risk-baseline-line]")).not.toBeNull();
+  });
+  it("does NOT render the '75' threshold text label (polish §4)", () => {
+    mockApis(fleetActivity([]), {
+      current: 80,
+      baselineP50: 40,
+      delta: 40,
+      critCount: 1,
+      highCount: 0,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    const texts = Array.from(container.querySelectorAll("svg text")).map(
+      (t) => t.textContent?.trim() ?? "",
+    );
+    expect(texts).not.toContain("75");
+  });
+  it("renders the baseline text label for typical baselineP50", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 42,
+      delta: -42,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const texts = Array.from(container.querySelectorAll("svg text")).map(
+      (t) => t.textContent?.trim() ?? "",
+    );
+    expect(texts).toContain("42");
+  });
+  it("skips the baseline text label when baselineP50 < 5 (polish §4 guard)", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const texts = Array.from(container.querySelectorAll("svg text")).map(
+      (t) => t.textContent?.trim() ?? "",
+    );
+    // Baseline label must NOT appear — a "0" label outside the viewBox would
+    // clip and read as noise.
+    expect(texts).not.toContain("0");
   });
 });
 
@@ -300,11 +422,78 @@ describe("FleetRiskTile tape", () => {
     fireEvent.mouseEnter(dot as Element);
     const tooltip = container.querySelector("[data-cl-risk-tooltip]");
     expect(tooltip).not.toBeNull();
-    // §6.6 — tooltip format: {agent} · {namespace} · {score} · {time}
+    // Polish §5 — tooltip format: {agent} · {namespace} on line 1, score + time on line 2.
     const text = tooltip?.textContent ?? "";
     expect(text).toContain("shell.git");
     expect(text).toContain("alpha");
     expect(text).toContain("80");
+  });
+  it("tooltip is a <foreignObject> with pointer-events: none (polish §5.4)", () => {
+    mockApis(
+      fleetActivity([
+        mkEntry({
+          toolName: "exec",
+          params: { command: "git status" },
+          riskScore: 80,
+          toolCallId: "tc-fo",
+          agentId: "alpha",
+        }),
+      ]),
+      {
+        current: 80,
+        baselineP50: 40,
+        delta: 40,
+        critCount: 1,
+        highCount: 0,
+        totalElevated: 1,
+      },
+    );
+    const { container } = renderTile();
+    fireEvent.mouseEnter(
+      container.querySelector('[data-cl-fleet-risk-tape-dot="tc-fo"]') as Element,
+    );
+    const tooltip = container.querySelector("[data-cl-risk-tooltip]");
+    expect(tooltip).not.toBeNull();
+    // Must be a foreignObject — SVG element namespace, tag lowercase in DOM.
+    expect(tooltip?.tagName.toLowerCase()).toBe("foreignobject");
+    // pointer-events: none, to avoid hover-flicker when the tooltip overlaps
+    // the dot beneath it.
+    const pe = (tooltip as SVGElement).style.pointerEvents;
+    expect(pe).toBe("none");
+  });
+  it("tooltip x-coordinate clamps when the dot is near the right edge (no clipping at NOW)", () => {
+    // Entry timestamp extremely close to NOW so the tape dot lands at the
+    // right edge of the plot. clampTooltipX must pull the tooltip back so
+    // its left edge stays inside the SVG.
+    mockApis(
+      fleetActivity([
+        mkEntry({
+          timestamp: new Date(NOW_MS - 1_000).toISOString(),
+          riskScore: 80,
+          toolCallId: "tc-edge",
+        }),
+      ]),
+      {
+        current: 80,
+        baselineP50: 40,
+        delta: 40,
+        critCount: 1,
+        highCount: 0,
+        totalElevated: 1,
+      },
+    );
+    const { container } = renderTile();
+    fireEvent.mouseEnter(
+      container.querySelector('[data-cl-fleet-risk-tape-dot="tc-edge"]') as Element,
+    );
+    const tooltip = container.querySelector<SVGForeignObjectElement>("[data-cl-risk-tooltip]");
+    expect(tooltip).not.toBeNull();
+    const xAttr = Number(tooltip?.getAttribute("x"));
+    const widthAttr = Number(tooltip?.getAttribute("width"));
+    // x must be inside the SVG even though the dot is near the right edge.
+    expect(xAttr).toBeGreaterThanOrEqual(0);
+    // x + width must not exceed the SVG viewBox width (420 per polish spec §6.5).
+    expect(xAttr + widthAttr).toBeLessThanOrEqual(420);
   });
 });
 

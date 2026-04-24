@@ -345,7 +345,7 @@ export default function Agents() {
             gap: 12,
           }}
         >
-          <div data-cl-live-feed-anchor style={{ minWidth: 0 }}>
+          <div data-cl-live-feed-anchor style={{ minWidth: 0, height: "100%" }}>
             <LiveFeed />
           </div>
           <div data-cl-fleet-risk-tile-anchor style={{ minWidth: 0, height: "100%" }}>

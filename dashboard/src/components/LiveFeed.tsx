@@ -17,7 +17,7 @@ import {
   riskTierFromScore,
 } from "../lib/utils";
 
-const MAX_ITEMS = 8;
+const MAX_ITEMS = 25;
 
 /** Tags that warrant the danger-color palette — everything else stays
  *  muted-neutral. Keeps the chip row reading as a quiet annotation except
@@ -42,7 +42,7 @@ function tagIsDanger(tag: string): boolean {
 }
 
 export default function LiveFeed() {
-  const { data: initialEntries } = useApi<EntryResponse[]>("api/entries?limit=8");
+  const { data: initialEntries } = useApi<EntryResponse[]>("api/entries?limit=25");
   const [sseEntries, setSseEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
@@ -90,7 +90,15 @@ export default function LiveFeed() {
   }, [sseEntries, initialEntries]);
 
   return (
-    <section data-cl-live-feed>
+    <section
+      data-cl-live-feed
+      style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+      }}
+    >
       <div className="flex items-center gap-2 mb-2">
         <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
           LIVE
@@ -102,35 +110,39 @@ export default function LiveFeed() {
             animation: "cl-pulse 2s ease-in-out infinite",
           }}
         />
-        <span
-          className="label-mono"
-          style={{ color: "var(--cl-text-muted)", marginLeft: "auto" }}
-        >
-          {entries.length} event{entries.length === 1 ? "" : "s"}
-        </span>
       </div>
       <div
         ref={listRef}
         data-cl-live-feed-list
-        className="cl-card overflow-hidden"
-        style={{ padding: 0 }}
+        className="cl-card"
+        style={{
+          padding: 0,
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
-        {entries.length === 0 ? (
-          <div
-            data-cl-live-feed-empty
-            className="flex items-center justify-center"
-            style={{
-              padding: "24px 14px",
-              minHeight: 80,
-              color: "var(--cl-text-muted)",
-              fontFamily: "var(--cl-font-sans)",
-              fontSize: 12,
-            }}
-          >
-            No recent activity
-          </div>
-        ) : (
-          entries.map((entry, i) => {
+        <div
+          data-cl-live-feed-scroll
+          style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
+        >
+          {entries.length === 0 ? (
+            <div
+              data-cl-live-feed-empty
+              className="flex items-center justify-center"
+              style={{
+                padding: "24px 14px",
+                minHeight: 80,
+                color: "var(--cl-text-muted)",
+                fontFamily: "var(--cl-font-sans)",
+                fontSize: 12,
+              }}
+            >
+              No recent activity
+            </div>
+          ) : (
+            entries.map((entry, i) => {
             const id = entry.toolCallId ?? entry.timestamp;
             const isNew = newIds.has(id);
             const agentId = entry.agentId || DEFAULT_AGENT_ID;
@@ -266,6 +278,27 @@ export default function LiveFeed() {
               </Link>
             );
           })
+          )}
+        </div>
+        {entries.length > 0 && (
+          <Link
+            data-cl-live-feed-viewall
+            to="/activity"
+            className="flex items-center justify-center"
+            style={{
+              padding: "10px 14px",
+              fontFamily: "var(--cl-font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--cl-text-muted)",
+              textDecoration: "none",
+              borderTop: "1px solid var(--cl-border-subtle)",
+              background: "var(--cl-surface)",
+            }}
+          >
+            View all in Activity →
+          </Link>
         )}
       </div>
     </section>

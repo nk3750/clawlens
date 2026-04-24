@@ -10,6 +10,7 @@ import type {
 import type { RangeOption } from "../fleetheader/utils";
 import {
   bucketEntriesByHour,
+  clampTooltipX,
   CRIT_THRESHOLD,
   makeTimeToX,
   steppedAreaPath,
@@ -36,10 +37,13 @@ const CRIT_LANE_Y = 32; // inside tape-g
 const HIGH_LANE_Y = 72;
 const TAPE_G_OFFSET = SPARK_H + SPARK_GAP; // 120
 const NOW_LINE_INSET = 4;
+const TOOLTIP_W = 220;
 
 // ── Tier color tokens ────────────────────────────────────────
 const CRIT_COLOR = "var(--cl-risk-critical)";
 const HIGH_COLOR = "var(--cl-risk-high)";
+const LOW_COLOR = "var(--cl-risk-low)";
+const MEDIUM_COLOR = "var(--cl-risk-medium)";
 const ACCENT = "var(--cl-accent)";
 const TEXT_MUTED = "var(--cl-text-muted)";
 const TEXT_SUBDUED = "var(--cl-text-subdued)";
@@ -268,7 +272,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
               color: hero.delta > 0 ? HIGH_COLOR : TEXT_SECONDARY,
             }}
           >
-            {hero.delta > 0 ? `+${hero.delta}` : hero.delta} vs 24h baseline
+            {hero.delta > 0 ? `+${hero.delta}` : hero.delta} vs 7d baseline
           </span>
           <span
             style={{
@@ -308,38 +312,73 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
         style={{ overflow: "visible" }}
       >
         <defs>
-          <clipPath id="cl-frt-low-clip">
-            <rect x={PLOT_LEFT} y={critY} width={PLOT_WIDTH} height={SPARK_H - critY} />
+          {/* Three bands, baseline-relative (polish §3.2).
+              - below-baseline: y ∈ [baselineY, SPARK_H] — green
+              - between baseline and crit: y ∈ [min(critY,baselineY), max(critY,baselineY)]
+                → amber; degenerate when baselineP50 ≈ 75 (band collapses)
+              - above-crit: y ∈ [0, critY] — red */}
+          <clipPath id="cl-frt-below-baseline-clip">
+            <rect
+              x={PLOT_LEFT}
+              y={baselineY}
+              width={PLOT_WIDTH}
+              height={Math.max(0, SPARK_H - baselineY)}
+            />
           </clipPath>
-          <clipPath id="cl-frt-crit-clip">
+          <clipPath id="cl-frt-between-clip">
+            <rect
+              x={PLOT_LEFT}
+              y={Math.min(critY, baselineY)}
+              width={PLOT_WIDTH}
+              height={Math.max(0, Math.abs(critY - baselineY))}
+            />
+          </clipPath>
+          <clipPath id="cl-frt-above-crit-clip">
             <rect x={PLOT_LEFT} y={0} width={PLOT_WIDTH} height={critY} />
           </clipPath>
         </defs>
 
         {/* Sparkline layer ── y in [0, 100] */}
         <g>
-          {/* Low-tier area (below y=75) */}
+          {/* Below baseline — green (skipped when baseline clamps to floor →
+              zero-height band) */}
+          {SPARK_H - baselineY > 0.5 && (
+            <path
+              data-cl-fleet-risk-sparkline="below-baseline"
+              d={sparkPath}
+              fill={LOW_COLOR}
+              fillOpacity={0.08}
+              stroke={LOW_COLOR}
+              strokeWidth={1.5}
+              clipPath="url(#cl-frt-below-baseline-clip)"
+            />
+          )}
+          {/* Between baseline and crit — amber. Skipped in the degenerate
+              baselineP50 ≈ 75 case where the band collapses to zero height. */}
+          {Math.abs(critY - baselineY) > 0.5 && (
+            <path
+              data-cl-fleet-risk-sparkline="between"
+              d={sparkPath}
+              fill={MEDIUM_COLOR}
+              fillOpacity={0.08}
+              stroke={MEDIUM_COLOR}
+              strokeWidth={1.5}
+              clipPath="url(#cl-frt-between-clip)"
+            />
+          )}
+          {/* Above crit threshold — red */}
           <path
-            data-cl-fleet-risk-sparkline="low"
-            d={sparkPath}
-            fill={HIGH_COLOR}
-            fillOpacity={0.28}
-            stroke={HIGH_COLOR}
-            strokeWidth={1.5}
-            clipPath="url(#cl-frt-low-clip)"
-          />
-          {/* Critical-tier area (above y=75 — hard clip at threshold) */}
-          <path
-            data-cl-fleet-risk-sparkline="crit"
+            data-cl-fleet-risk-sparkline="above-crit"
             d={sparkPath}
             fill={CRIT_COLOR}
-            fillOpacity={0.28}
+            fillOpacity={0.08}
             stroke={CRIT_COLOR}
             strokeWidth={1.5}
-            clipPath="url(#cl-frt-crit-clip)"
+            clipPath="url(#cl-frt-above-crit-clip)"
           />
 
-          {/* Critical threshold line + "75" label */}
+          {/* Critical threshold line — label dropped per polish §4, the
+              color transition at the line speaks for itself. */}
           <line
             data-cl-fleet-risk-threshold-line
             x1={PLOT_LEFT}
@@ -350,17 +389,10 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
             strokeDasharray="2 4"
             strokeWidth={0.5}
           />
-          <text
-            x={4}
-            y={critY + 3}
-            fontSize={10}
-            fontFamily="var(--cl-font-mono)"
-            fill={TEXT_SUBDUED}
-          >
-            75
-          </text>
 
-          {/* Baseline line + "{baselineP50}" label */}
+          {/* Baseline line + "{baselineP50}" label. Label is skipped when
+              baselineP50 < 5 (fresh-deploy guard — a "0" would clip
+              outside the viewBox at y = plotHeight + 3). */}
           <line
             data-cl-fleet-risk-baseline-line
             x1={PLOT_LEFT}
@@ -371,15 +403,17 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
             strokeDasharray="2 4"
             strokeWidth={1}
           />
-          <text
-            x={4}
-            y={baselineY + 3}
-            fontSize={10}
-            fontFamily="var(--cl-font-mono)"
-            fill={TEXT_MUTED}
-          >
-            {hero.baselineP50}
-          </text>
+          {hero.baselineP50 >= 5 && (
+            <text
+              x={4}
+              y={baselineY + 3}
+              fontSize={10}
+              fontFamily="var(--cl-font-mono)"
+              fill={TEXT_MUTED}
+            >
+              {hero.baselineP50}
+            </text>
+          )}
         </g>
 
         {/* Tape layer ── translated down by 120 */}
@@ -497,31 +531,52 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
           />
         )}
 
-        {/* Hover tooltip */}
+        {/* Hover tooltip — foreignObject + HTML body so the text can
+            auto-size, wrap, and pad without clipping at SVG coords. X is
+            clamped via clampTooltipX so dots near NOW don't push it
+            outside the viewBox. pointer-events: none prevents hover
+            flicker when the tooltip overlaps its own dot. */}
         {hovered && (
-          <g data-cl-risk-tooltip transform={`translate(${hovered.x}, ${TAPE_G_OFFSET + hovered.y})`}>
-            <rect
-              x={-90}
-              y={hovered.y < TAPE_H / 2 ? 10 : -34}
-              width={180}
-              height={24}
-              rx={4}
-              fill="var(--cl-elevated)"
-              stroke="var(--cl-border)"
-            />
-            <text
-              x={0}
-              y={hovered.y < TAPE_H / 2 ? 26 : -18}
-              textAnchor="middle"
-              fontFamily="var(--cl-font-mono)"
-              fontSize={10}
-              fill={TEXT_PRIMARY}
+          <foreignObject
+            data-cl-risk-tooltip
+            x={clampTooltipX(hovered.x, VIEW_WIDTH, TOOLTIP_W)}
+            y={
+              TAPE_G_OFFSET +
+              hovered.y +
+              (hovered.y < TAPE_H / 2 ? 10 : -48)
+            }
+            width={TOOLTIP_W}
+            height={40}
+            style={{ overflow: "visible", pointerEvents: "none" }}
+          >
+            <div
+              style={{
+                background: "var(--cl-elevated)",
+                border: "1px solid var(--cl-border)",
+                borderRadius: 4,
+                padding: "6px 10px",
+                fontFamily: "var(--cl-font-mono)",
+                fontSize: 10,
+                color: TEXT_PRIMARY,
+                lineHeight: 1.4,
+                whiteSpace: "nowrap",
+              }}
             >
-              {hovered.entry.agentId ?? "default"} · {toolNamespace(hovered.entry)} ·{" "}
-              {hovered.entry.riskScore ?? 0} ·{" "}
-              {new Date(hovered.entry.timestamp).toLocaleTimeString()}
-            </text>
-          </g>
+              <div>
+                <span style={{ color: TEXT_PRIMARY, fontWeight: 600 }}>
+                  {hovered.entry.agentId ?? "default"}
+                </span>
+                <span style={{ color: TEXT_SUBDUED }}> · </span>
+                <span style={{ color: TEXT_SECONDARY }}>
+                  {toolNamespace(hovered.entry)}
+                </span>
+              </div>
+              <div style={{ color: TEXT_MUTED }}>
+                {hovered.entry.riskScore ?? 0} ·{" "}
+                {new Date(hovered.entry.timestamp).toLocaleTimeString()}
+              </div>
+            </div>
+          </foreignObject>
         )}
       </svg>
 

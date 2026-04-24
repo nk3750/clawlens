@@ -1005,20 +1005,22 @@ export { tierRank as _tierRankForTests };
 
 /**
  * Fleet-level risk index. Powers the FleetRiskTile hero.
- * Semantics: homepage-bottom-row-spec §6.1 (locked for v1).
- *   current        = max riskScore in last 15 minutes, 0 if none
+ * Semantics: homepage-bottom-row-polish-spec §2 (widened from 15min to 1h).
+ *   current        = max riskScore in last 1 hour, 0 if none
  *   baselineP50    = median of daily-peak riskScores over last 7 COMPLETED days
  *   delta          = current - baselineP50 (signed)
  *   critCount      = last-24h entries with riskScore >= 75
  *   highCount      = last-24h entries with 50 <= riskScore < 75
  *   totalElevated  = critCount + highCount
  *
- * Completed-days window: excludes today so the baseline is stable as new
- * events arrive. Fresh deployment (<7 days of logs) yields baselineP50 = 0.
+ * 1-hour window gives the hero a continuous signal on fleets slower than
+ * ~1 event/min — the previous 15-min window flickered between 0 and real
+ * values between bursts. Completed-days baseline excludes today so it
+ * stays stable; fresh deployment (<7 days of logs) yields baselineP50 = 0.
  */
 export function computeFleetRiskIndex(entries: AuditEntry[]): FleetRiskIndexResponse {
   const now = Date.now();
-  const FIFTEEN_MIN = 15 * 60_000;
+  const ONE_HOUR = 60 * 60_000;
   const TWENTY_FOUR_H = 24 * 3_600_000;
   const DAY = TWENTY_FOUR_H;
 
@@ -1030,7 +1032,7 @@ export function computeFleetRiskIndex(entries: AuditEntry[]): FleetRiskIndexResp
     const t = new Date(e.timestamp).getTime();
     const score = e.riskScore ?? 0;
     const age = now - t;
-    if (age >= 0 && age <= FIFTEEN_MIN && score > current) current = score;
+    if (age >= 0 && age <= ONE_HOUR && score > current) current = score;
     if (age >= 0 && age <= TWENTY_FOUR_H) {
       if (score >= 75) critCount++;
       else if (score >= 50) highCount++;

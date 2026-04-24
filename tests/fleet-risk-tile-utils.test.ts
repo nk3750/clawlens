@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bucketEntriesByHour,
+  clampTooltipX,
   steppedAreaPath,
   yForScore,
 } from "../dashboard/src/components/FleetRiskTile/utils";
@@ -191,5 +192,30 @@ describe("steppedAreaPath — horizontal segments + vertical risers", () => {
       plotHeight: 100,
     });
     expect(d).toBe("");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// clampTooltipX (polish §5.3)
+// ─────────────────────────────────────────────────────────────
+
+describe("clampTooltipX — keeps the tooltip inside the SVG", () => {
+  const SVG_W = 420;
+  const TIP_W = 220;
+
+  it("centers the tooltip on the dot when there is room on both sides", () => {
+    // Dot in the middle → centered result dotX - tipWidth/2
+    expect(clampTooltipX(210, SVG_W, TIP_W)).toBe(100); // 210 - 110
+  });
+  it("clamps to left edge (x = 0) when the dot is near the left", () => {
+    expect(clampTooltipX(20, SVG_W, TIP_W)).toBe(0);
+  });
+  it("clamps to right edge (x = svgWidth - tipWidth) when the dot is near the right", () => {
+    // NOW line lives at VIEW_WIDTH - NOW_LINE_INSET (416) → tooltip must
+    // snap back so it never clips at the right edge.
+    expect(clampTooltipX(415, SVG_W, TIP_W)).toBe(200); // 420 - 220
+  });
+  it("uses the default tipWidth of 220 when the third arg is omitted", () => {
+    expect(clampTooltipX(210, SVG_W)).toBe(100);
   });
 });

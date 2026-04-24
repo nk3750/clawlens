@@ -259,3 +259,48 @@ describe("LiveFeed row — empty state", () => {
     expect(empty?.textContent?.toLowerCase()).toContain("no recent");
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// Polish §1 — scroll, counter-drop, View all footer, 25 cap
+// ─────────────────────────────────────────────────────────────
+
+describe("LiveFeed — polish §1 chrome", () => {
+  it("does NOT render the N-events counter in the header", () => {
+    mockInitial([entry({ toolCallId: "a" })]);
+    const { container } = renderFeed();
+    const header = container.querySelector("[data-cl-live-feed] > div");
+    // Before polish §1 the header had "LIVE · [dot] · N event(s)". Now only
+    // the label + pulsing dot remain.
+    expect(header?.textContent ?? "").not.toMatch(/event/i);
+  });
+  it("wraps the row list in a scrollable inner container", () => {
+    mockInitial([entry({ toolCallId: "a" })]);
+    const { container } = renderFeed();
+    const scroll = container.querySelector<HTMLElement>("[data-cl-live-feed-scroll]");
+    expect(scroll).not.toBeNull();
+    expect(scroll?.style.overflowY).toBe("auto");
+  });
+  it('renders a sticky "View all in Activity →" footer that links to /activity', () => {
+    mockInitial([entry({ toolCallId: "a" })]);
+    const { container } = renderFeed();
+    const link = container.querySelector<HTMLAnchorElement>("[data-cl-live-feed-viewall]");
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("/activity");
+    expect(link?.textContent?.toLowerCase()).toContain("view all");
+  });
+  it("omits the footer when the list is empty", () => {
+    mockInitial([]);
+    const { container } = renderFeed();
+    const link = container.querySelector("[data-cl-live-feed-viewall]");
+    expect(link).toBeNull();
+  });
+  it("caps the rendered list at 25 items, not the old 8", () => {
+    const entries = Array.from({ length: 40 }, (_, i) =>
+      entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),
+    );
+    mockInitial(entries);
+    const { container } = renderFeed();
+    const rows = container.querySelectorAll("[data-cl-live-feed-row]");
+    expect(rows.length).toBe(25);
+  });
+});

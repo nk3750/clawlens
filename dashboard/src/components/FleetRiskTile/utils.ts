@@ -106,3 +106,15 @@ function fmt(n: number): string {
   // Keep SVG path strings lean + stable-hashable across renders.
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
+
+/** Keep a tooltip inside the SVG regardless of which dot triggered it.
+ *  Centers the tooltip on the dot by default, clamps so the left edge
+ *  never goes below 0 and the right edge never exceeds svgWidth. */
+export function clampTooltipX(
+  dotX: number,
+  svgWidth: number,
+  tipWidth = 220,
+): number {
+  const centered = dotX - tipWidth / 2;
+  return Math.max(0, Math.min(svgWidth - tipWidth, centered));
+}
