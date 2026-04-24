@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { buildEvalIndex, checkHealth, computeEnhancedStats, getActivityTimeline, getAgentDetail, getAgents, getAttention, getInterventions, getRecentEntries, getSessionDetail, getSessions, getSessionTimeline, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
+import { buildEvalIndex, checkHealth, computeEnhancedStats, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -187,11 +187,11 @@ export function registerDashboardRoutes(api, deps) {
                 sendJson(res, getActivityTimeline(entries, bucketMinutes, date, range));
                 return true;
             }
-            if (subPath === "api/session-timeline") {
+            if (subPath === "api/fleet-activity") {
                 const range = url.searchParams.get("range") || undefined;
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, getSessionTimeline(entries, date, range));
+                sendJson(res, getFleetActivity(entries, range, date, deps.guardrailStore));
                 return true;
             }
             if (subPath === "api/health") {

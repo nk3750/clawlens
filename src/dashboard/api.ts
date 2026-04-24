@@ -1859,193 +1859,82 @@ export function getActivityTimeline(
   };
 }
 
-// ── Session-based timeline ─────────────────────────────
+// ── Fleet Activity (individual action swarm) ───────────
 
-export interface SessionSegment {
-  category: ActivityCategory;
+export interface FleetActivityResponse {
+  /** Every scored decision entry in the window, ascending by timestamp. */
+  entries: EntryResponse[];
+  /** Window start (inclusive), ISO. */
   startTime: string;
+  /** Window end (inclusive), ISO. */
   endTime: string;
-  actionCount: number;
-}
-
-export interface TimelineSession {
-  sessionKey: string;
-  agentId: string;
-  startTime: string;
-  endTime: string;
-  segments: SessionSegment[];
-  actionCount: number;
-  avgRisk: number;
-  peakRisk: number;
-  blockedCount: number;
-  isActive: boolean;
-}
-
-export interface SessionTimelineResponse {
-  agents: string[];
-  sessions: TimelineSession[];
-  startTime: string;
-  endTime: string;
+  /** entries.length, convenience. */
   totalActions: number;
+  /** True when the raw count exceeded the hard cap and we returned the newest. */
+  truncated: boolean;
 }
 
-export function buildSessionSegments(entries: AuditEntry[]): SessionSegment[] {
-  const sorted = [...entries]
-    .filter(isDecisionEntry)
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  if (sorted.length === 0) return [];
+const FLEET_ACTIVITY_MAX = 5000;
 
-  const segments: SessionSegment[] = [];
-  let currentCat = getCategoryFromEntry(sorted[0]);
-  let segStart = sorted[0].timestamp;
-  let segEnd = sorted[0].timestamp;
-  let segCount = 1;
-
-  for (let i = 1; i < sorted.length; i++) {
-    const cat = getCategoryFromEntry(sorted[i]);
-    if (cat === currentCat) {
-      segEnd = sorted[i].timestamp;
-      segCount++;
-    } else {
-      segments.push({
-        category: currentCat,
-        startTime: segStart,
-        endTime: segEnd,
-        actionCount: segCount,
-      });
-      currentCat = cat;
-      segStart = sorted[i].timestamp;
-      segEnd = sorted[i].timestamp;
-      segCount = 1;
-    }
+/**
+ * Individual decisions in a time window, sorted ascending by timestamp. Unlike
+ * getActivityTimeline (which buckets by time), this returns every per-action
+ * entry so the fleet swarm chart can render one dot per action.
+ *
+ * Window semantics:
+ *  - `date` given  → full local calendar day; `range` ignored (matches
+ *    DateChip past-day behavior — past-day always shows the whole day).
+ *  - `date` absent → rolling window `[now - rangeMs, now]`.
+ *
+ * Hard cap at FLEET_ACTIVITY_MAX entries. Above that we keep the newest and
+ * set `truncated: true`.
+ */
+export function getFleetActivity(
+  entries: AuditEntry[],
+  range = "12h",
+  date?: string,
+  guardrailStore?: GuardrailStore,
+): FleetActivityResponse {
+  let startMs: number;
+  let endMs: number;
+  if (date) {
+    startMs = localMidnightMs(date);
+    endMs = startMs + 86_400_000;
+  } else {
+    // parseRangeMs("12h") is always defined — "12h" matches the \d+h pattern.
+    const rangeMs = parseRangeMs(range) ?? (parseRangeMs("12h") as number);
+    endMs = Date.now();
+    startMs = endMs - rangeMs;
   }
-  segments.push({
-    category: currentCat,
-    startTime: segStart,
-    endTime: segEnd,
-    actionCount: segCount,
+
+  const inRange = entries.filter((e) => {
+    if (!isDecisionEntry(e)) return false;
+    const ts = new Date(e.timestamp).getTime();
+    return ts >= startMs && ts <= endMs;
   });
 
-  return segments;
-}
+  inRange.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const truncated = inRange.length > FLEET_ACTIVITY_MAX;
+  const capped = truncated ? inRange.slice(-FLEET_ACTIVITY_MAX) : inRange;
 
-export function getSessionTimeline(
-  entries: AuditEntry[],
-  dateStr?: string,
-  range?: string,
-): SessionTimelineResponse {
-  const emptyResponse: SessionTimelineResponse = {
-    agents: [],
-    sessions: [],
-    startTime: "",
-    endTime: "",
-    totalActions: 0,
-  };
-
-  // Same window semantics as getActivityTimeline (see there for rationale).
-  const rangeMs = range ? parseRangeMs(range) : undefined;
-  const window = resolveRangeWindow(dateStr, rangeMs);
-  const baseEntries = window
-    ? entries.filter((e) => {
-        const ts = new Date(e.timestamp).getTime();
-        return ts >= window.start && ts <= window.end;
-      })
-    : dateStr
-      ? getDayEntries(entries, dateStr)
-      : getTodayEntries(entries);
-  const decisions = baseEntries.filter(isDecisionEntry);
-
-  if (decisions.length === 0) return emptyResponse;
-
-  // Build session index from ALL entries so #N numbering is consistent
-  const splitSessionIndex = buildSplitSessionIndex(entries);
-
+  // Build indices once per response — both over ALL entries so #N numbering
+  // and LLM evals match what the rest of the API emits.
   const evalIdx = buildEvalIndex(entries);
-  const now = Date.now();
+  const splitIdx = buildSplitSessionIndex(entries);
 
-  // Group filtered decisions by split session key
-  const sessionEntries = new Map<string, AuditEntry[]>();
-  for (const e of decisions) {
+  const mapped = capped.map((e) => {
+    const m = mapEntry(e, evalIdx, guardrailStore);
     const entryKey = e.toolCallId ?? e.timestamp;
-    const sKey = splitSessionIndex.get(entryKey) ?? e.sessionKey ?? "unknown";
-    const existing = sessionEntries.get(sKey);
-    if (existing) {
-      existing.push(e);
-    } else {
-      sessionEntries.set(sKey, [e]);
-    }
-  }
-
-  // Determine view window for overlap filtering. When a window was resolved,
-  // use it directly; otherwise anchor to decision span / end-of-day / now.
-  const viewStart =
-    window?.start ?? Math.min(...decisions.map((e) => new Date(e.timestamp).getTime()));
-  const viewEnd = window?.end ?? (dateStr ? localMidnightMs(dateStr) + 86_400_000 : now);
-
-  const agentTotals = new Map<string, number>();
-  const sessions: TimelineSession[] = [];
-
-  for (const [sKey, sEntries] of sessionEntries) {
-    const sorted = [...sEntries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const startTime = sorted[0].timestamp;
-    const endTime = sorted[sorted.length - 1].timestamp;
-    const startMs = new Date(startTime).getTime();
-    const endMs = new Date(endTime).getTime();
-
-    // Overlap filter: session must intersect the view window
-    if (startMs > viewEnd || endMs < viewStart) continue;
-
-    const agentId = sorted.find((e) => e.agentId)?.agentId ?? DEFAULT_AGENT_ID;
-    const segments = buildSessionSegments(sorted);
-
-    let riskSum = 0;
-    let riskCount = 0;
-    let peakRisk = 0;
-    let blockedCount = 0;
-    for (const e of sorted) {
-      const score = getEffectiveScore(e, evalIdx);
-      if (score !== undefined) {
-        riskSum += score;
-        riskCount++;
-        if (score > peakRisk) peakRisk = score;
-      }
-      const eff = getEffectiveDecision(e);
-      if (eff === "block" || eff === "denied") blockedCount++;
-    }
-
-    const isActive = now - endMs <= ACTIVE_THRESHOLD_MS;
-
-    sessions.push({
-      sessionKey: sKey,
-      agentId,
-      startTime,
-      endTime,
-      segments,
-      actionCount: sorted.length,
-      avgRisk: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
-      peakRisk,
-      blockedCount,
-      isActive,
-    });
-
-    agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + sorted.length);
-  }
-
-  const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
-
-  const allTimestamps = sessions.flatMap((s) => [
-    new Date(s.startTime).getTime(),
-    new Date(s.endTime).getTime(),
-  ]);
-  const minTs = Math.min(...allTimestamps);
-  const maxTs = Math.max(...allTimestamps);
+    m.sessionKey = splitIdx.get(entryKey) ?? m.sessionKey;
+    return m;
+  });
 
   return {
-    agents,
-    sessions,
-    startTime: new Date(minTs).toISOString(),
-    endTime: new Date(maxTs).toISOString(),
-    totalActions: decisions.length,
+    entries: mapped,
+    startTime: new Date(startMs).toISOString(),
+    endTime: new Date(endMs).toISOString(),
+    totalActions: mapped.length,
+    truncated,
   };
 }
 

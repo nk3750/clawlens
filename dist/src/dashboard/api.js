@@ -1431,144 +1431,59 @@ export function getActivityTimeline(entries, bucketMinutes, dateStr, range) {
         bucketMinutes: effectiveBucket,
     };
 }
-export function buildSessionSegments(entries) {
-    const sorted = [...entries]
-        .filter(isDecisionEntry)
-        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    if (sorted.length === 0)
-        return [];
-    const segments = [];
-    let currentCat = getCategoryFromEntry(sorted[0]);
-    let segStart = sorted[0].timestamp;
-    let segEnd = sorted[0].timestamp;
-    let segCount = 1;
-    for (let i = 1; i < sorted.length; i++) {
-        const cat = getCategoryFromEntry(sorted[i]);
-        if (cat === currentCat) {
-            segEnd = sorted[i].timestamp;
-            segCount++;
-        }
-        else {
-            segments.push({
-                category: currentCat,
-                startTime: segStart,
-                endTime: segEnd,
-                actionCount: segCount,
-            });
-            currentCat = cat;
-            segStart = sorted[i].timestamp;
-            segEnd = sorted[i].timestamp;
-            segCount = 1;
-        }
+const FLEET_ACTIVITY_MAX = 5000;
+/**
+ * Individual decisions in a time window, sorted ascending by timestamp. Unlike
+ * getActivityTimeline (bucketed) and getSessionTimeline (per-session), this
+ * returns every per-action entry so the fleet swarm chart can render one dot
+ * per action.
+ *
+ * Window semantics:
+ *  - `date` given  → full local calendar day; `range` ignored (matches
+ *    DateChip past-day behavior — past-day always shows the whole day).
+ *  - `date` absent → rolling window `[now - rangeMs, now]`.
+ *
+ * Hard cap at FLEET_ACTIVITY_MAX entries. Above that we keep the newest and
+ * set `truncated: true`.
+ */
+export function getFleetActivity(entries, range = "12h", date, guardrailStore) {
+    let startMs;
+    let endMs;
+    if (date) {
+        startMs = localMidnightMs(date);
+        endMs = startMs + 86_400_000;
     }
-    segments.push({
-        category: currentCat,
-        startTime: segStart,
-        endTime: segEnd,
-        actionCount: segCount,
+    else {
+        // parseRangeMs("12h") is always defined — "12h" matches the \d+h pattern.
+        const rangeMs = parseRangeMs(range) ?? parseRangeMs("12h");
+        endMs = Date.now();
+        startMs = endMs - rangeMs;
+    }
+    const inRange = entries.filter((e) => {
+        if (!isDecisionEntry(e))
+            return false;
+        const ts = new Date(e.timestamp).getTime();
+        return ts >= startMs && ts <= endMs;
     });
-    return segments;
-}
-export function getSessionTimeline(entries, dateStr, range) {
-    const emptyResponse = {
-        agents: [],
-        sessions: [],
-        startTime: "",
-        endTime: "",
-        totalActions: 0,
-    };
-    // Same window semantics as getActivityTimeline (see there for rationale).
-    const rangeMs = range ? parseRangeMs(range) : undefined;
-    const window = resolveRangeWindow(dateStr, rangeMs);
-    const baseEntries = window
-        ? entries.filter((e) => {
-            const ts = new Date(e.timestamp).getTime();
-            return ts >= window.start && ts <= window.end;
-        })
-        : dateStr
-            ? getDayEntries(entries, dateStr)
-            : getTodayEntries(entries);
-    const decisions = baseEntries.filter(isDecisionEntry);
-    if (decisions.length === 0)
-        return emptyResponse;
-    // Build session index from ALL entries so #N numbering is consistent
-    const splitSessionIndex = buildSplitSessionIndex(entries);
+    inRange.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const truncated = inRange.length > FLEET_ACTIVITY_MAX;
+    const capped = truncated ? inRange.slice(-FLEET_ACTIVITY_MAX) : inRange;
+    // Build indices once per response — both over ALL entries so #N numbering
+    // and LLM evals match what the rest of the API emits.
     const evalIdx = buildEvalIndex(entries);
-    const now = Date.now();
-    // Group filtered decisions by split session key
-    const sessionEntries = new Map();
-    for (const e of decisions) {
+    const splitIdx = buildSplitSessionIndex(entries);
+    const mapped = capped.map((e) => {
+        const m = mapEntry(e, evalIdx, guardrailStore);
         const entryKey = e.toolCallId ?? e.timestamp;
-        const sKey = splitSessionIndex.get(entryKey) ?? e.sessionKey ?? "unknown";
-        const existing = sessionEntries.get(sKey);
-        if (existing) {
-            existing.push(e);
-        }
-        else {
-            sessionEntries.set(sKey, [e]);
-        }
-    }
-    // Determine view window for overlap filtering. When a window was resolved,
-    // use it directly; otherwise anchor to decision span / end-of-day / now.
-    const viewStart = window?.start ?? Math.min(...decisions.map((e) => new Date(e.timestamp).getTime()));
-    const viewEnd = window?.end ?? (dateStr ? localMidnightMs(dateStr) + 86_400_000 : now);
-    const agentTotals = new Map();
-    const sessions = [];
-    for (const [sKey, sEntries] of sessionEntries) {
-        const sorted = [...sEntries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        const startTime = sorted[0].timestamp;
-        const endTime = sorted[sorted.length - 1].timestamp;
-        const startMs = new Date(startTime).getTime();
-        const endMs = new Date(endTime).getTime();
-        // Overlap filter: session must intersect the view window
-        if (startMs > viewEnd || endMs < viewStart)
-            continue;
-        const agentId = sorted.find((e) => e.agentId)?.agentId ?? DEFAULT_AGENT_ID;
-        const segments = buildSessionSegments(sorted);
-        let riskSum = 0;
-        let riskCount = 0;
-        let peakRisk = 0;
-        let blockedCount = 0;
-        for (const e of sorted) {
-            const score = getEffectiveScore(e, evalIdx);
-            if (score !== undefined) {
-                riskSum += score;
-                riskCount++;
-                if (score > peakRisk)
-                    peakRisk = score;
-            }
-            const eff = getEffectiveDecision(e);
-            if (eff === "block" || eff === "denied")
-                blockedCount++;
-        }
-        const isActive = now - endMs <= ACTIVE_THRESHOLD_MS;
-        sessions.push({
-            sessionKey: sKey,
-            agentId,
-            startTime,
-            endTime,
-            segments,
-            actionCount: sorted.length,
-            avgRisk: riskCount > 0 ? Math.round(riskSum / riskCount) : 0,
-            peakRisk,
-            blockedCount,
-            isActive,
-        });
-        agentTotals.set(agentId, (agentTotals.get(agentId) ?? 0) + sorted.length);
-    }
-    const agents = [...agentTotals.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
-    const allTimestamps = sessions.flatMap((s) => [
-        new Date(s.startTime).getTime(),
-        new Date(s.endTime).getTime(),
-    ]);
-    const minTs = Math.min(...allTimestamps);
-    const maxTs = Math.max(...allTimestamps);
+        m.sessionKey = splitIdx.get(entryKey) ?? m.sessionKey;
+        return m;
+    });
     return {
-        agents,
-        sessions,
-        startTime: new Date(minTs).toISOString(),
-        endTime: new Date(maxTs).toISOString(),
-        totalActions: decisions.length,
+        entries: mapped,
+        startTime: new Date(startMs).toISOString(),
+        endTime: new Date(endMs).toISOString(),
+        totalActions: mapped.length,
+        truncated,
     };
 }
 /** Get full detail for a single session. */

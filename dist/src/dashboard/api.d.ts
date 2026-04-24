@@ -311,32 +311,32 @@ export interface ActivityTimelineResponse {
     bucketMinutes: number;
 }
 export declare function getActivityTimeline(entries: AuditEntry[], bucketMinutes?: number, dateStr?: string, range?: string): ActivityTimelineResponse;
-export interface SessionSegment {
-    category: ActivityCategory;
+export interface FleetActivityResponse {
+    /** Every scored decision entry in the window, ascending by timestamp. */
+    entries: EntryResponse[];
+    /** Window start (inclusive), ISO. */
     startTime: string;
+    /** Window end (inclusive), ISO. */
     endTime: string;
-    actionCount: number;
-}
-export interface TimelineSession {
-    sessionKey: string;
-    agentId: string;
-    startTime: string;
-    endTime: string;
-    segments: SessionSegment[];
-    actionCount: number;
-    avgRisk: number;
-    peakRisk: number;
-    blockedCount: number;
-    isActive: boolean;
-}
-export interface SessionTimelineResponse {
-    agents: string[];
-    sessions: TimelineSession[];
-    startTime: string;
-    endTime: string;
+    /** entries.length, convenience. */
     totalActions: number;
+    /** True when the raw count exceeded the hard cap and we returned the newest. */
+    truncated: boolean;
 }
-export declare function buildSessionSegments(entries: AuditEntry[]): SessionSegment[];
-export declare function getSessionTimeline(entries: AuditEntry[], dateStr?: string, range?: string): SessionTimelineResponse;
+/**
+ * Individual decisions in a time window, sorted ascending by timestamp. Unlike
+ * getActivityTimeline (bucketed) and getSessionTimeline (per-session), this
+ * returns every per-action entry so the fleet swarm chart can render one dot
+ * per action.
+ *
+ * Window semantics:
+ *  - `date` given  → full local calendar day; `range` ignored (matches
+ *    DateChip past-day behavior — past-day always shows the whole day).
+ *  - `date` absent → rolling window `[now - rangeMs, now]`.
+ *
+ * Hard cap at FLEET_ACTIVITY_MAX entries. Above that we keep the newest and
+ * set `truncated: true`.
+ */
+export declare function getFleetActivity(entries: AuditEntry[], range?: string, date?: string, guardrailStore?: GuardrailStore): FleetActivityResponse;
 /** Get full detail for a single session. */
 export declare function getSessionDetail(entries: AuditEntry[], sessionKey: string): SessionDetailResponse | null;

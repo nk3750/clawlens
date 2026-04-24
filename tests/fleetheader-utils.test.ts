@@ -66,14 +66,15 @@ describe("computeTrend", () => {
 // ── isRangeOption / RANGE_OPTIONS ────────────────────────────
 
 describe("RANGE_OPTIONS / isRangeOption", () => {
-  it("includes the six pills the header advertises", () => {
-    expect(RANGE_OPTIONS).toEqual(["24h", "12h", "6h", "3h", "1h", "7d"]);
+  it("includes every pill the swarm chart advertises in ascending-span order", () => {
+    expect(RANGE_OPTIONS).toEqual(["1h", "3h", "6h", "12h", "24h", "48h", "7d"]);
   });
 
   it("guards against arbitrary strings", () => {
     expect(isRangeOption("12h")).toBe(true);
     expect(isRangeOption("7d")).toBe(true);
-    expect(isRangeOption("48h")).toBe(false);
+    expect(isRangeOption("48h")).toBe(true);
+    expect(isRangeOption("96h")).toBe(false);
     expect(isRangeOption("")).toBe(false);
     expect(isRangeOption(null)).toBe(false);
     expect(isRangeOption(undefined)).toBe(false);
@@ -471,8 +472,8 @@ describe("FLEET_RANGE pref key contract", () => {
     expect(getPref<string>(PREF_KEYS.FLEET_RANGE, "12h")).toBe("6h");
 
     // A historical bad value should be rejected by the type guard before
-    // reaching <RangeOption> consumers.
-    setPref(PREF_KEYS.FLEET_RANGE, "48h");
+    // reaching <RangeOption> consumers. "96h" was never a supported range.
+    setPref(PREF_KEYS.FLEET_RANGE, "96h");
     const raw = getPref<string>(PREF_KEYS.FLEET_RANGE, "12h");
     expect(isRangeOption(raw)).toBe(false);
   });

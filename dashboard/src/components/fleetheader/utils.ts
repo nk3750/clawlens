@@ -1,8 +1,8 @@
 import type { LlmHealthStatus, RiskPosture } from "../../lib/types";
 import type { SSEStatus } from "../../lib/sseStatus";
 
-/** Range options shown in the fleet-header pill group. Canonical order. */
-export const RANGE_OPTIONS = ["24h", "12h", "6h", "3h", "1h", "7d"] as const;
+/** Range options shown in the fleet chart header. Canonical order. */
+export const RANGE_OPTIONS = ["1h", "3h", "6h", "12h", "24h", "48h", "7d"] as const;
 export type RangeOption = (typeof RANGE_OPTIONS)[number];
 
 export function isRangeOption(value: unknown): value is RangeOption {

@@ -46,7 +46,7 @@ vi.mock("../dashboard/src/hooks/useSSE", () => ({
 
 import { useApi } from "../dashboard/src/hooks/useApi";
 import { useLiveApi } from "../dashboard/src/hooks/useLiveApi";
-import type { AgentInfo, SessionTimelineResponse, StatsResponse } from "../dashboard/src/lib/types";
+import type { AgentInfo, FleetActivityResponse, StatsResponse } from "../dashboard/src/lib/types";
 import Agents from "../dashboard/src/pages/Agents";
 
 const mockedUseLiveApi = vi.mocked(useLiveApi);
@@ -138,49 +138,53 @@ function wireLiveApi() {
   });
 }
 
-// The FleetChart consumes `useApi` directly (session-timeline) and so does the
-// LiveFeed (recent entries). Wire both so the chart doesn't hit its empty-state
-// branch (which hides the fullscreen toggle button).
+// FleetActivityChart consumes `useApi` directly (fleet-activity endpoint).
+// LiveFeed consumes it too for the recent-entries list. Wire both so the chart
+// doesn't land on its empty-state branch (which would hide the fullscreen toggle
+// button).
 //
-// We deliberately build the response objects ONCE at module load and return
-// the same references on every mock call. Returning fresh objects on each
-// render would thrash `useEffect(() => setLiveSessions(apiData.sessions),
-// [apiData])` and deadlock the test with an infinite render loop.
-const TIMELINE_RESPONSE: SessionTimelineResponse = {
-  agents: ["alpha"],
-  sessions: [
+// We build the response objects ONCE at module load and return the same
+// references on every mock call. Returning fresh objects on each render would
+// thrash `useEffect(() => setLiveEntries(data.entries), [data])` and deadlock
+// the test with an infinite render loop.
+const FLEET_ACTIVITY_RESPONSE: FleetActivityResponse = {
+  entries: [
     {
+      timestamp: "2026-04-20T11:30:00.000Z",
+      toolName: "read",
+      toolCallId: "tc-1",
+      params: {},
+      effectiveDecision: "allow",
+      decision: "allow",
+      category: "exploring",
       sessionKey: "agent:alpha:main:s1",
       agentId: "alpha",
-      startTime: "2026-04-20T11:30:00.000Z",
-      endTime: "2026-04-20T11:45:00.000Z",
-      segments: [
-        {
-          category: "exploring",
-          startTime: "2026-04-20T11:30:00.000Z",
-          endTime: "2026-04-20T11:45:00.000Z",
-          actionCount: 3,
-        },
-      ],
-      actionCount: 3,
-      avgRisk: 10,
-      peakRisk: 20,
-      blockedCount: 0,
-      isActive: false,
+    },
+    {
+      timestamp: "2026-04-20T11:45:00.000Z",
+      toolName: "exec",
+      toolCallId: "tc-2",
+      params: {},
+      effectiveDecision: "allow",
+      decision: "allow",
+      category: "scripts",
+      sessionKey: "agent:alpha:main:s1",
+      agentId: "alpha",
     },
   ],
   startTime: "2026-04-20T11:00:00.000Z",
   endTime: "2026-04-20T12:00:00.000Z",
-  totalActions: 3,
+  totalActions: 2,
+  truncated: false,
 };
 const EMPTY_ENTRIES: never[] = [];
 const STABLE_REFETCH = vi.fn();
 
 function wireApi() {
   mockedUseApi.mockImplementation((path: string) => {
-    if (path.startsWith("api/session-timeline")) {
+    if (path.startsWith("api/fleet-activity")) {
       return {
-        data: TIMELINE_RESPONSE,
+        data: FLEET_ACTIVITY_RESPONSE,
         loading: false,
         error: null,
         refetch: STABLE_REFETCH,
@@ -553,29 +557,6 @@ describe("Agents homepage — range pill placement (issue #16)", () => {
   });
 });
 
-describe("Agents homepage — tight prop threads from layout state (layout-fixes §3)", () => {
-  it("dot radius reflects tight=true at default (5px routine)", () => {
-    const { container } = renderAt("/");
-    const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
-    expect(dot).not.toBeNull();
-    expect(dot?.getAttribute("r")).toBe("5");
-  });
-
-  it("dot radius reflects tight=false at ?chart=full (4px routine — modal mode)", () => {
-    // Chart is portaled to document.body when fullscreen — query there.
-    renderAt("/?chart=full");
-    const dot = document.body.querySelector(
-      '[data-cl-fleet-dot][data-cl-cluster="false"] > circle',
-    );
-    expect(dot).not.toBeNull();
-    expect(dot?.getAttribute("r")).toBe("4");
-  });
-
-  it("dot radius reflects tight=false at narrow viewport (4px routine — stack mode)", () => {
-    stubViewportWidth(640);
-    const { container } = renderAt("/");
-    const dot = container.querySelector('[data-cl-fleet-dot][data-cl-cluster="false"] > circle');
-    expect(dot).not.toBeNull();
-    expect(dot?.getAttribute("r")).toBe("4");
-  });
-});
+// The "tight prop" describe block was removed together with the old FleetChart.
+// The new FleetActivityChart uses uniform dot radii (4px routine, 5px cluster);
+// layout width is no longer encoded into the chart's rendered geometry.

@@ -250,34 +250,14 @@ export interface ActivityTimelineResponse {
   bucketMinutes: number;
 }
 
-// ── Session Timeline ─────────────────────────────────
+// ── Fleet Activity (individual action swarm) ──────────
 
-export interface SessionSegment {
-  category: ActivityCategory;
-  startTime: string;
-  endTime: string;
-  actionCount: number;
-}
-
-export interface TimelineSession {
-  sessionKey: string;
-  agentId: string;
-  startTime: string;
-  endTime: string;
-  segments: SessionSegment[];
-  actionCount: number;
-  avgRisk: number;
-  peakRisk: number;
-  blockedCount: number;
-  isActive: boolean;
-}
-
-export interface SessionTimelineResponse {
-  agents: string[];
-  sessions: TimelineSession[];
+export interface FleetActivityResponse {
+  entries: EntryResponse[];
   startTime: string;
   endTime: string;
   totalActions: number;
+  truncated: boolean;
 }
 
 // ── Guardrails ────────────────────────────────────────

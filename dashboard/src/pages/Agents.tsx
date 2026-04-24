@@ -6,7 +6,7 @@ import type { AgentInfo, AttentionResponse, StatsResponse } from "../lib/types";
 import FleetHeader from "../components/FleetHeader";
 import AttentionInbox from "../components/AttentionInbox";
 import AgentRow from "../components/AgentCardCompact";
-import FleetChart from "../components/FleetChart/FleetChart";
+import FleetActivityChart from "../components/FleetActivityChart/FleetActivityChart";
 import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
 import DormantState from "../components/DormantState";
@@ -91,11 +91,11 @@ export default function Agents() {
   }, [chartFullscreenParam]);
 
   // Focus is handled by `autoFocus={fullscreen}` on the minimize button in
-  // FleetChart — fires synchronously when that specific element mounts,
-  // naturally sequenced around FleetChart's loading/measurement branches.
+  // FleetActivityChart — fires synchronously when that element mounts, so no
+  // rAF sequencing is needed around the chart's loading/measurement branches.
 
-  const isToday = selectedDate === null;
   const dateParam = selectedDate ? `?date=${selectedDate}` : "";
+  const isToday = selectedDate === null;
 
   const statsPath = useMemo(() => `api/stats${dateParam}`, [dateParam]);
   const agentsPath = useMemo(() => `api/agents${dateParam}`, [dateParam]);
@@ -166,24 +166,13 @@ export default function Agents() {
 
   // Chart body is shared between inline (grid cell) and portaled (modal)
   // positions. Same element — placement flips based on chartFullscreenParam.
-  // Moving FleetChart between positions does remount it (useApi refetches,
-  // SSE reconnects, popover state resets) — accepted cost of toggling
-  // fullscreen.
+  // Moving between positions does remount (useApi refetches, SSE reconnects,
+  // popover state resets) — accepted cost of toggling fullscreen.
   const chartAnchor = (
-    <FleetChart
-      isToday={isToday}
+    <FleetActivityChart
       selectedDate={selectedDate}
       range={range}
-      agents={agents}
-      pendingSessionKeys={
-        new Set(
-          (attention?.pending ?? [])
-            .map((p) => p.sessionKey)
-            .filter((k): k is string => Boolean(k)),
-        )
-      }
       fullscreen={chartFullscreenParam}
-      tight={!chartFullscreenParam && !isNarrow}
       onToggleFullscreen={toggleFullscreen}
       onRangeChange={onRangeChange}
     />

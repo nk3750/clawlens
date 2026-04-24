@@ -17,11 +17,11 @@ import {
   getAgentDetail,
   getAgents,
   getAttention,
+  getFleetActivity,
   getInterventions,
   getRecentEntries,
   getSessionDetail,
   getSessions,
-  getSessionTimeline,
   localDateOf,
   localToday,
   mapEntry,
@@ -247,11 +247,11 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         return true;
       }
 
-      if (subPath === "api/session-timeline") {
+      if (subPath === "api/fleet-activity") {
         const range = url.searchParams.get("range") || undefined;
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getSessionTimeline(entries, date, range));
+        sendJson(res, getFleetActivity(entries, range, date, deps.guardrailStore));
         return true;
       }
 

@@ -1,0 +1,55 @@
+/* Enter animation for newly-arrived SSE dots. Pop-in with overshoot ease. */
+@keyframes cl-swarm-enter {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+}
+
+[data-cl-swarm-dot].cl-swarm-dot-enter {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: cl-swarm-enter 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Per-arrival pulse on the now line. */
+@keyframes cl-now-line-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.2;
+  }
+  50% {
+    stroke-opacity: 0.6;
+  }
+}
+[data-cl-swarm-now-line].cl-now-line-pulse {
+  animation: cl-now-line-pulse 400ms ease-in-out;
+}
+
+/* Burst variant — brighter peak, slightly longer duration. */
+@keyframes cl-now-line-burst {
+  0%,
+  100% {
+    stroke-opacity: 0.2;
+  }
+  50% {
+    stroke-opacity: 0.85;
+  }
+}
+[data-cl-swarm-now-line].cl-now-line-burst {
+  animation: cl-now-line-burst 500ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-cl-swarm-dot].cl-swarm-dot-enter {
+    animation: none;
+  }
+  [data-cl-swarm-now-line].cl-now-line-pulse,
+  [data-cl-swarm-now-line].cl-now-line-burst {
+    animation: none;
+  }
+}
