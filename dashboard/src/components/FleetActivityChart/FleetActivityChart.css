@@ -16,28 +16,28 @@
   animation: cl-swarm-enter 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
-/* Per-arrival pulse on the now line. */
+/* Per-arrival pulse on the now line. Baseline opacity is 0.4 (inline style). */
 @keyframes cl-now-line-pulse {
   0%,
   100% {
-    stroke-opacity: 0.2;
+    stroke-opacity: 0.4;
   }
   50% {
-    stroke-opacity: 0.6;
+    stroke-opacity: 0.75;
   }
 }
 [data-cl-swarm-now-line].cl-now-line-pulse {
   animation: cl-now-line-pulse 400ms ease-in-out;
 }
 
-/* Burst variant — brighter peak, slightly longer duration. */
+/* Burst variant — peaks at the full 1.0 for unambiguous "lots arrived". */
 @keyframes cl-now-line-burst {
   0%,
   100% {
-    stroke-opacity: 0.2;
+    stroke-opacity: 0.4;
   }
   50% {
-    stroke-opacity: 0.85;
+    stroke-opacity: 1;
   }
 }
 [data-cl-swarm-now-line].cl-now-line-burst {

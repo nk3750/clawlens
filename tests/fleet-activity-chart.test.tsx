@@ -220,7 +220,7 @@ describe("FleetActivityChart — clustering", () => {
     const dots = container.querySelectorAll("[data-cl-swarm-dot]");
     expect(dots).toHaveLength(1);
     expect(dots[0].getAttribute("data-cl-swarm-cluster")).toBe("true");
-    expect(dots[0].querySelector("[data-cl-swarm-cluster-count]")?.textContent).toBe("2");
+    expect(dots[0].querySelector("[data-cl-swarm-cluster-count]")?.textContent).toBe("+2");
   });
 
   it("does NOT merge dots from different lanes at the same cx", () => {
@@ -494,5 +494,48 @@ describe("FleetActivityChart — legend", () => {
     expect(chips.length).toBe(6);
     const ids = [...chips].map((el) => el.getAttribute("data-cl-swarm-legend-chip"));
     expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+  });
+});
+
+// ── Polish pass ────────────────────────────────────────────
+
+describe("FleetActivityChart — lane labels (left gutter)", () => {
+  it("renders one [data-cl-swarm-lane-label] per category in LANE_ORDER", () => {
+    const { container } = renderChart();
+    const labels = container.querySelectorAll("[data-cl-swarm-lane-label]");
+    const ids = [...labels].map((el) => el.getAttribute("data-cl-swarm-lane-label"));
+    expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+  });
+
+  it("lane labels show the CATEGORY_META short-lowercase form", () => {
+    const { container } = renderChart();
+    const labels = container.querySelectorAll("[data-cl-swarm-lane-label]");
+    const texts = [...labels].map((el) => el.textContent);
+    expect(texts).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+  });
+
+  it("lane labels render even when all lanes are empty — empty is a signal", () => {
+    const { container } = renderChart({ entries: [] });
+    expect(container.querySelectorAll("[data-cl-swarm-lane-label]").length).toBe(6);
+  });
+});
+
+describe("FleetActivityChart — now-line visibility", () => {
+  it("sits 4px inside the right edge of the main chart (not clipped)", () => {
+    const { container } = renderChart();
+    const line = container.querySelector("[data-cl-swarm-now-line]") as SVGLineElement | null;
+    expect(line).not.toBeNull();
+    // Stub returns body width = STUB_CHART_WIDTH (900). Gutter is 64 so the
+    // main chart width = 836; now line at 832.
+    const x1 = Number.parseFloat(line?.getAttribute("x1") ?? "NaN");
+    expect(x1).toBe(836 - 4);
+  });
+
+  it("uses the accent color and a baseline stroke-opacity of 0.4", () => {
+    const { container } = renderChart();
+    const line = container.querySelector("[data-cl-swarm-now-line]") as SVGLineElement | null;
+    expect(line?.getAttribute("stroke")).toBe("var(--cl-accent)");
+    expect(line?.getAttribute("stroke-opacity")).toBe("0.4");
+    expect(line?.getAttribute("stroke-width")).toBe("1.5");
   });
 });

@@ -45,7 +45,7 @@ interface Props {
   onToggleFullscreen?: () => void;
 }
 
-const INLINE_CHART_HEIGHT = 132;
+const INLINE_CHART_HEIGHT = 200;
 const FULLSCREEN_CHART_HEIGHT = 360;
 const DOT_RADIUS = 4;
 const CLUSTER_RADIUS = 5;
@@ -54,6 +54,10 @@ const LEFT_EDGE_FADE_PCT = 0.05;
 const ENTER_ANIMATION_MS = 280;
 const BURST_WINDOW_MS = 1000;
 const BURST_THRESHOLD = 10;
+/** Fixed-width left gutter that holds the always-visible lane labels. */
+const GUTTER_W = 64;
+/** Distance the now-line hangs inside the right edge so it's not half-clipped. */
+const NOW_LINE_INSET = 4;
 
 export default function FleetActivityChart({
   range,
@@ -180,6 +184,9 @@ export default function FleetActivityChart({
 
   const chartH = fullscreen ? FULLSCREEN_CHART_HEIGHT : INLINE_CHART_HEIGHT;
   const laneH = laneHeight(chartH);
+  /** Chart width = total measured width minus the fixed-width lane-label
+   *  gutter. All X-mapping (timeToX, axis ticks, now line) is in this frame. */
+  const chartWidth = Math.max(measuredWidth - GUTTER_W, 100);
 
   const startMs = useMemo(() => {
     if (data) return Date.parse(data.startTime);
@@ -193,8 +200,8 @@ export default function FleetActivityChart({
   }, [isToday, nowMs, data]);
 
   const timeToX = useMemo(
-    () => makeTimeToX(startMs, endMs, measuredWidth),
-    [startMs, endMs, measuredWidth],
+    () => makeTimeToX(startMs, endMs, chartWidth),
+    [startMs, endMs, chartWidth],
   );
 
   const clustersByLane = useMemo(() => {
@@ -280,9 +287,11 @@ export default function FleetActivityChart({
   }
 
   const hasDots = liveEntries.length > 0;
-  const leftEdge = measuredWidth * LEFT_EDGE_FADE_PCT;
+  const leftEdge = chartWidth * LEFT_EDGE_FADE_PCT;
+  // Now-line clamps to chartWidth - NOW_LINE_INSET so the stroke never half-
+  // clips against the SVG's right edge.
   const nowX = isToday
-    ? Math.min(measuredWidth, Math.max(0, timeToX(nowMs)))
+    ? Math.min(chartWidth - NOW_LINE_INSET, Math.max(0, timeToX(nowMs)))
     : 0;
 
   return (
@@ -346,17 +355,46 @@ export default function FleetActivityChart({
         )}
       </div>
 
-      {/* Chart body */}
+      {/* Chart body — split into a fixed-width lane-label gutter on the left
+          and a flex-1 swarm SVG on the right so lane labels stay visible even
+          when all six lanes are empty. */}
       <div
         ref={setContainerEl}
-        style={{ position: "relative", height: chartH }}
+        style={{ position: "relative", height: chartH, display: "flex" }}
         data-cl-swarm-body
       >
+        {/* Lane-label gutter */}
         <svg
-          width={measuredWidth}
+          width={GUTTER_W}
           height={chartH}
-          viewBox={`0 0 ${measuredWidth} ${chartH}`}
-          style={{ display: "block" }}
+          viewBox={`0 0 ${GUTTER_W} ${chartH}`}
+          style={{ display: "block", flex: `0 0 ${GUTTER_W}px` }}
+          aria-hidden="true"
+        >
+          <title>Lane labels</title>
+          {LANE_ORDER.map((cat) => (
+            <text
+              key={cat}
+              data-cl-swarm-lane-label={cat}
+              x={GUTTER_W - 8}
+              y={laneYForCategory(cat, chartH)}
+              textAnchor="end"
+              dominantBaseline="middle"
+              style={{
+                fill: "var(--cl-text-subdued)",
+                fontFamily: "var(--cl-font-mono)",
+                fontSize: 10,
+              }}
+            >
+              {CATEGORY_META[cat].label}
+            </text>
+          ))}
+        </svg>
+        <svg
+          width={chartWidth}
+          height={chartH}
+          viewBox={`0 0 ${chartWidth} ${chartH}`}
+          style={{ display: "block", flex: 1 }}
         >
           <title>Fleet activity swarm chart</title>
           {/* Now line (today only) */}
@@ -368,9 +406,9 @@ export default function FleetActivityChart({
               x2={nowX}
               y1={0}
               y2={chartH}
-              stroke="var(--cl-text-primary)"
-              strokeWidth={1}
-              strokeOpacity={0.2}
+              stroke="var(--cl-accent)"
+              strokeWidth={1.5}
+              strokeOpacity={0.4}
               className={
                 reducedMotion
                   ? undefined
@@ -456,9 +494,9 @@ export default function FleetActivityChart({
                       y={c.cy - r - 4}
                       textAnchor="middle"
                       className="label-mono"
-                      style={{ fill: "var(--cl-text-secondary)", fontSize: 10 }}
+                      style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
                     >
-                      {c.dots.length}
+                      {`+${c.dots.length}`}
                     </text>
                   )}
                 </g>
@@ -486,23 +524,23 @@ export default function FleetActivityChart({
         )}
       </div>
 
-      {/* Axis */}
-      {measuredWidth > 0 && (
+      {/* Axis — padded so ticks align with the main chart's x-frame. */}
+      {chartWidth > 0 && (
         <div
           className="flex"
-          style={{ marginTop: 4, height: 16 }}
+          style={{ marginTop: 4, height: 16, paddingLeft: GUTTER_W }}
           data-cl-swarm-axis
         >
           <svg
-            viewBox={`0 0 ${measuredWidth} 16`}
-            width={measuredWidth}
+            viewBox={`0 0 ${chartWidth} 16`}
+            width={chartWidth}
             height={16}
             style={{ display: "block" }}
           >
             <title>Time axis</title>
             <line
               x1={0}
-              x2={measuredWidth}
+              x2={chartWidth}
               y1={0.5}
               y2={0.5}
               stroke="var(--cl-border-subtle)"
@@ -510,7 +548,7 @@ export default function FleetActivityChart({
             />
             {axisTicks.map((t) => {
               const tx = timeToX(t.ms);
-              if (tx < 0 || tx > measuredWidth) return null;
+              if (tx < 0 || tx > chartWidth) return null;
               return (
                 <g key={t.ms}>
                   <line
@@ -539,10 +577,10 @@ export default function FleetActivityChart({
         </div>
       )}
 
-      {/* Legend */}
+      {/* Legend — padded so chips sit under the chart, not under the gutter. */}
       <div
         className="flex items-center flex-wrap"
-        style={{ gap: 12, marginTop: 8 }}
+        style={{ gap: 12, marginTop: 8, paddingLeft: GUTTER_W }}
         data-cl-swarm-legend
       >
         {LANE_ORDER.map((cat) => {
