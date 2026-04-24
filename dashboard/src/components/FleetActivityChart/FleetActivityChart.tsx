@@ -54,8 +54,10 @@ const LEFT_EDGE_FADE_PCT = 0.05;
 const ENTER_ANIMATION_MS = 280;
 const BURST_WINDOW_MS = 1000;
 const BURST_THRESHOLD = 10;
-/** Fixed-width left gutter that holds the always-visible lane labels. */
-const GUTTER_W = 64;
+/** Fixed-width left gutter that holds the always-visible lane icons + labels. */
+const GUTTER_W = 96;
+/** Icon glyph size in the gutter. 14px matches the agent-card category strip. */
+const LANE_ICON_SIZE = 14;
 /** Distance the now-line hangs inside the right edge so it's not half-clipped. */
 const NOW_LINE_INSET = 4;
 
@@ -363,7 +365,9 @@ export default function FleetActivityChart({
         style={{ position: "relative", height: chartH, display: "flex" }}
         data-cl-swarm-body
       >
-        {/* Lane-label gutter */}
+        {/* Lane-label gutter — icon + text per category. Mirrors the
+            CATEGORY_META palette used in agent cards and the bottom legend
+            so the reviewer pattern-matches on the same glyphs. */}
         <svg
           width={GUTTER_W}
           height={chartH}
@@ -372,23 +376,43 @@ export default function FleetActivityChart({
           aria-hidden="true"
         >
           <title>Lane labels</title>
-          {LANE_ORDER.map((cat) => (
-            <text
-              key={cat}
-              data-cl-swarm-lane-label={cat}
-              x={GUTTER_W - 8}
-              y={laneYForCategory(cat, chartH)}
-              textAnchor="end"
-              dominantBaseline="middle"
-              style={{
-                fill: "var(--cl-text-subdued)",
-                fontFamily: "var(--cl-font-mono)",
-                fontSize: 10,
-              }}
-            >
-              {CATEGORY_META[cat].label}
-            </text>
-          ))}
+          {LANE_ORDER.map((cat) => {
+            const meta = CATEGORY_META[cat];
+            const cy = laneYForCategory(cat, chartH);
+            return (
+              <g key={cat}>
+                <svg
+                  data-cl-swarm-lane-icon={cat}
+                  x={8}
+                  y={cy - LANE_ICON_SIZE / 2}
+                  width={LANE_ICON_SIZE}
+                  height={LANE_ICON_SIZE}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={meta.color}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d={meta.iconPath} />
+                </svg>
+                <text
+                  data-cl-swarm-lane-label={cat}
+                  x={GUTTER_W - 8}
+                  y={cy}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  style={{
+                    fill: "var(--cl-text-subdued)",
+                    fontFamily: "var(--cl-font-mono)",
+                    fontSize: 10,
+                  }}
+                >
+                  {meta.label}
+                </text>
+              </g>
+            );
+          })}
         </svg>
         <svg
           width={chartWidth}
@@ -397,7 +421,8 @@ export default function FleetActivityChart({
           style={{ display: "block", flex: 1 }}
         >
           <title>Fleet activity swarm chart</title>
-          {/* Now line (today only) */}
+          {/* Now line (today only) — persistent accent aura reads "live" at
+              rest, pulse/burst keyframes modulate on SSE arrivals. */}
           {isToday && (
             <line
               data-cl-swarm-now-line
@@ -407,8 +432,9 @@ export default function FleetActivityChart({
               y1={0}
               y2={chartH}
               stroke="var(--cl-accent)"
-              strokeWidth={1.5}
-              strokeOpacity={0.4}
+              strokeWidth={2}
+              strokeOpacity={0.7}
+              style={{ filter: "drop-shadow(0 0 3px var(--cl-accent))" }}
               className={
                 reducedMotion
                   ? undefined

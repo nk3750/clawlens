@@ -518,6 +518,27 @@ describe("FleetActivityChart — lane labels (left gutter)", () => {
     const { container } = renderChart({ entries: [] });
     expect(container.querySelectorAll("[data-cl-swarm-lane-label]").length).toBe(6);
   });
+
+  it("renders one [data-cl-swarm-lane-icon] per category, stroked with the category color", () => {
+    const { container } = renderChart();
+    const icons = [...container.querySelectorAll("[data-cl-swarm-lane-icon]")];
+    const ids = icons.map((el) => el.getAttribute("data-cl-swarm-lane-icon"));
+    expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+    const expectedStrokes: Record<string, string> = {
+      exploring: "var(--cl-cat-exploring)",
+      changes: "var(--cl-cat-changes)",
+      git: "var(--cl-cat-commands)",
+      scripts: "var(--cl-cat-data)",
+      web: "var(--cl-cat-web)",
+      comms: "var(--cl-cat-comms)",
+    };
+    for (const icon of icons) {
+      const cat = icon.getAttribute("data-cl-swarm-lane-icon") ?? "";
+      expect(icon.getAttribute("stroke")).toBe(expectedStrokes[cat]);
+      // Icon contains at least one <path> (from CATEGORY_META[cat].iconPath).
+      expect(icon.querySelector("path")).not.toBeNull();
+    }
+  });
 });
 
 describe("FleetActivityChart — now-line visibility", () => {
@@ -525,17 +546,20 @@ describe("FleetActivityChart — now-line visibility", () => {
     const { container } = renderChart();
     const line = container.querySelector("[data-cl-swarm-now-line]") as SVGLineElement | null;
     expect(line).not.toBeNull();
-    // Stub returns body width = STUB_CHART_WIDTH (900). Gutter is 64 so the
-    // main chart width = 836; now line at 832.
+    // Stub returns body width = STUB_CHART_WIDTH (900). Gutter is 96 so the
+    // main chart width = 804; now line at 800.
     const x1 = Number.parseFloat(line?.getAttribute("x1") ?? "NaN");
-    expect(x1).toBe(836 - 4);
+    expect(x1).toBe(804 - 4);
   });
 
-  it("uses the accent color and a baseline stroke-opacity of 0.4", () => {
+  it("uses the accent color, bolder stroke, and a persistent drop-shadow aura", () => {
     const { container } = renderChart();
     const line = container.querySelector("[data-cl-swarm-now-line]") as SVGLineElement | null;
     expect(line?.getAttribute("stroke")).toBe("var(--cl-accent)");
-    expect(line?.getAttribute("stroke-opacity")).toBe("0.4");
-    expect(line?.getAttribute("stroke-width")).toBe("1.5");
+    expect(line?.getAttribute("stroke-opacity")).toBe("0.7");
+    expect(line?.getAttribute("stroke-width")).toBe("2");
+    // Inline style applies a persistent drop-shadow so the line reads "live"
+    // at rest without depending on the pulse/burst keyframes.
+    expect(line?.style.filter).toMatch(/drop-shadow/);
   });
 });
