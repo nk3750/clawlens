@@ -39,8 +39,8 @@ describe("LANE_ORDER", () => {
 });
 
 describe("CLUSTER_PX", () => {
-  it("is 8 (moved from the old FleetChart utils — keep visual continuity)", () => {
-    expect(CLUSTER_PX).toBe(8);
+  it("is 14 (widened to track r=8 icon-bearing single dots)", () => {
+    expect(CLUSTER_PX).toBe(14);
   });
 });
 
@@ -50,12 +50,12 @@ describe("jitterForKey", () => {
     expect(jitterForKey("xyz-123", 44)).toBe(jitterForKey("xyz-123", 44));
   });
 
-  it("stays within ±35% of the supplied lane height", () => {
+  it("stays within ±17.5% of the supplied lane height", () => {
     const h = 60;
     for (const key of ["a", "bb", "ccc", "t0", "t99999", "call_01HZ"]) {
       const j = jitterForKey(key, h);
-      expect(j).toBeGreaterThanOrEqual(-0.35 * h);
-      expect(j).toBeLessThanOrEqual(0.35 * h);
+      expect(j).toBeGreaterThanOrEqual(-0.175 * h);
+      expect(j).toBeLessThanOrEqual(0.175 * h);
     }
   });
 

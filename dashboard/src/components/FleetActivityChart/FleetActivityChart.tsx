@@ -47,8 +47,10 @@ interface Props {
 
 const INLINE_CHART_HEIGHT = 200;
 const FULLSCREEN_CHART_HEIGHT = 360;
-const DOT_RADIUS = 4;
-const CLUSTER_RADIUS = 5;
+const DOT_RADIUS = 8;
+const CLUSTER_RADIUS = 10;
+/** Icon glyph inside a single dot. 12px square inside a 16px fill. */
+const DOT_ICON_SIZE = 12;
 const LIVE_CAP = 5000;
 const LEFT_EDGE_FADE_PCT = 0.05;
 const ENTER_ANIMATION_MS = 280;
@@ -422,29 +424,54 @@ export default function FleetActivityChart({
         >
           <title>Fleet activity swarm chart</title>
           {/* Now line (today only) — persistent accent aura reads "live" at
-              rest, pulse/burst keyframes modulate on SSE arrivals. */}
+              rest, pulse/burst keyframes modulate on SSE arrivals. The NOW
+              caption + ▼ arrow above it anchors "this is now" visually so the
+              line is unambiguous even when the chart is idle. */}
           {isToday && (
-            <line
-              data-cl-swarm-now-line
-              key={`now-${nowLinePulseKey}-${nowLineBurstKey}`}
-              x1={nowX}
-              x2={nowX}
-              y1={0}
-              y2={chartH}
-              stroke="var(--cl-accent)"
-              strokeWidth={2}
-              strokeOpacity={0.7}
-              style={{ filter: "drop-shadow(0 0 3px var(--cl-accent))" }}
-              className={
-                reducedMotion
-                  ? undefined
-                  : nowLineBurstKey > 0
-                    ? "cl-now-line-burst"
-                    : nowLinePulseKey > 0
-                      ? "cl-now-line-pulse"
-                      : undefined
-              }
-            />
+            <>
+              <line
+                data-cl-swarm-now-line
+                key={`now-${nowLinePulseKey}-${nowLineBurstKey}`}
+                x1={nowX}
+                x2={nowX}
+                y1={0}
+                y2={chartH}
+                stroke="var(--cl-accent)"
+                strokeWidth={2}
+                strokeOpacity={0.7}
+                style={{ filter: "drop-shadow(0 0 3px var(--cl-accent))" }}
+                className={
+                  reducedMotion
+                    ? undefined
+                    : nowLineBurstKey > 0
+                      ? "cl-now-line-burst"
+                      : nowLinePulseKey > 0
+                        ? "cl-now-line-pulse"
+                        : undefined
+                }
+              />
+              <text
+                data-cl-swarm-now-caption
+                x={nowX}
+                y={11}
+                textAnchor="middle"
+                style={{
+                  fill: "var(--cl-accent)",
+                  fontFamily: "var(--cl-font-mono)",
+                  fontSize: 9,
+                  fontWeight: 600,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                NOW
+              </text>
+              <polygon
+                data-cl-swarm-now-arrow
+                points={`${nowX - 4},16 ${nowX + 4},16 ${nowX},22`}
+                fill="var(--cl-accent)"
+              />
+            </>
           )}
 
           {/* Dots + clusters */}
@@ -454,9 +481,14 @@ export default function FleetActivityChart({
               const tier = c.worstTier;
               const halo = haloRadiusOffset(tier);
               const r = c.isCluster ? CLUSTER_RADIUS : DOT_RADIUS;
-              const color = CATEGORY_META[cat]?.color ?? "var(--cl-text-muted)";
+              const meta = CATEGORY_META[cat];
+              const color = meta?.color ?? "var(--cl-text-muted)";
+              // Clamp to the now-line on today view — dots never appear in
+              // the future half-second beyond `now`, regardless of SSE clock
+              // skew. Past-date views have no now-line, no clamp.
+              const cx = isToday ? Math.min(c.cx, nowX) : c.cx;
               const fadeOpacity =
-                c.cx < leftEdge ? Math.max(0, 0.9 * (c.cx / leftEdge)) : 0.9;
+                cx < leftEdge ? Math.max(0, 0.9 * (cx / leftEdge)) : 0.9;
               const firstEntry = c.dots[0].entry;
               const clickable = c.isCluster || Boolean(firstEntry.sessionKey);
               const enterKey = c.isCluster
@@ -484,7 +516,7 @@ export default function FleetActivityChart({
                   {halo > 0 && (
                     <circle
                       data-cl-swarm-halo
-                      cx={c.cx}
+                      cx={cx}
                       cy={c.cy}
                       r={r + halo}
                       fill="none"
@@ -507,16 +539,34 @@ export default function FleetActivityChart({
                     </circle>
                   )}
                   <circle
-                    cx={c.cx}
+                    cx={cx}
                     cy={c.cy}
                     r={r}
                     fill={color}
                     opacity={fadeOpacity}
                   />
+                  {!c.isCluster && meta && (
+                    <svg
+                      x={cx - DOT_ICON_SIZE / 2}
+                      y={c.cy - DOT_ICON_SIZE / 2}
+                      width={DOT_ICON_SIZE}
+                      height={DOT_ICON_SIZE}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--cl-bg-0)"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      pointerEvents="none"
+                      opacity={fadeOpacity}
+                    >
+                      <path d={meta.iconPath} />
+                    </svg>
+                  )}
                   {c.isCluster && (
                     <text
                       data-cl-swarm-cluster-count
-                      x={c.cx}
+                      x={cx}
                       y={c.cy - r - 4}
                       textAnchor="middle"
                       className="label-mono"

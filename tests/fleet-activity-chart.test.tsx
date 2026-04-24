@@ -562,4 +562,59 @@ describe("FleetActivityChart — now-line visibility", () => {
     // at rest without depending on the pulse/burst keyframes.
     expect(line?.style.filter).toMatch(/drop-shadow/);
   });
+
+  it("renders a NOW ▼ caption + arrow on the today view, both accent-colored", () => {
+    const { container } = renderChart();
+    const caption = container.querySelector("[data-cl-swarm-now-caption]") as SVGTextElement | null;
+    const arrow = container.querySelector("[data-cl-swarm-now-arrow]");
+    expect(caption).not.toBeNull();
+    expect(arrow).not.toBeNull();
+    expect(caption?.textContent).toBe("NOW");
+    expect(caption?.style.fill).toContain("--cl-accent");
+    expect(arrow?.getAttribute("fill")).toBe("var(--cl-accent)");
+  });
+
+  it("does NOT render the caption/arrow on past-date views", () => {
+    const { container } = renderChart({ selectedDate: "2026-04-15" });
+    expect(container.querySelector("[data-cl-swarm-now-caption]")).toBeNull();
+    expect(container.querySelector("[data-cl-swarm-now-arrow]")).toBeNull();
+  });
+});
+
+describe("FleetActivityChart — dot icons", () => {
+  it("overlays the category iconPath on single dots (circle + path siblings)", () => {
+    const entries = [mkEntry({ category: "git", toolCallId: "solo" })];
+    const { container } = renderChart({ entries });
+    const dot = container.querySelector('[data-cl-swarm-dot][data-cl-swarm-cluster="false"]');
+    expect(dot).not.toBeNull();
+    expect(dot?.querySelector("circle")).not.toBeNull();
+    expect(dot?.querySelector("path")).not.toBeNull();
+  });
+
+  it("does NOT overlay an icon on cluster dots (circle + text, no path)", () => {
+    const base = Date.parse(NOW) - 30 * 60_000;
+    const entries: EntryResponse[] = [
+      mkEntry({ category: "web", timestamp: new Date(base).toISOString(), toolCallId: "a" }),
+      mkEntry({ category: "web", timestamp: new Date(base + 100).toISOString(), toolCallId: "b" }),
+    ];
+    const { container } = renderChart({ entries });
+    const cluster = container.querySelector('[data-cl-swarm-dot][data-cl-swarm-cluster="true"]');
+    expect(cluster).not.toBeNull();
+    expect(cluster?.querySelector("circle")).not.toBeNull();
+    expect(cluster?.querySelector("[data-cl-swarm-cluster-count]")).not.toBeNull();
+    expect(cluster?.querySelector("path")).toBeNull();
+  });
+});
+
+describe("FleetActivityChart — clamp dots to now-line", () => {
+  it("clamps a future-timestamped dot to nowX on today view (no future activity past the line)", () => {
+    const future = new Date(Date.parse(NOW) + 10_000).toISOString();
+    const entries = [mkEntry({ category: "exploring", timestamp: future, toolCallId: "future" })];
+    const { container } = renderChart({ entries });
+    const circle = container.querySelector("[data-cl-swarm-dot] circle") as SVGCircleElement | null;
+    expect(circle).not.toBeNull();
+    const cx = Number.parseFloat(circle?.getAttribute("cx") ?? "NaN");
+    // Expected: nowX = chartWidth - NOW_LINE_INSET = 804 - 4 = 800.
+    expect(cx).toBe(800);
+  });
 });

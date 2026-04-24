@@ -14,8 +14,8 @@ export const LANE_ORDER: ActivityCategory[] = [
 ];
 
 /** Horizontal px threshold for merging adjacent dots within a lane.
- *  Matches the old FleetChart value so the visual density feels continuous. */
-export const CLUSTER_PX = 8;
+ *  Widened to 14 to track the larger (r=8) icon-bearing single-dot shape. */
+export const CLUSTER_PX = 14;
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -45,8 +45,9 @@ export interface AxisTick {
 
 /**
  * Stable pseudo-random jitter for a dot within its lane.
- * Returns a value in `[-0.35 * laneHeight, 0.35 * laneHeight]` — the 30%
- * end-buffer keeps dots from visually spilling into adjacent lanes.
+ * Returns a value in `[-0.175 * laneHeight, 0.175 * laneHeight]` — tightened
+ * from the original ±35% now that dots are r=8 (16px diameter) and need room
+ * to sit centered without spilling into adjacent lanes.
  *
  * Deterministic in the key so re-renders don't shuffle the swarm pattern.
  */
@@ -56,7 +57,7 @@ export function jitterForKey(key: string, laneHeight: number): number {
     h = ((h << 5) + h + key.charCodeAt(i)) | 0;
   }
   const frac = (Math.abs(h) % 1000) / 1000; // [0, 1)
-  return (frac - 0.5) * 0.7 * laneHeight;
+  return (frac - 0.5) * 0.35 * laneHeight;
 }
 
 // ── Lane math ──────────────────────────────────────────────
