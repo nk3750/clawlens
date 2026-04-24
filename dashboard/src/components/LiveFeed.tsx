@@ -17,7 +17,13 @@ import {
   riskTierFromScore,
 } from "../lib/utils";
 
-const MAX_ITEMS = 25;
+// Polish-2 §1.4 — progressive disclosure via "View more".
+//   INITIAL_LIMIT = initial fetch count (rows visible on mount)
+//   PAGE_STEP     = rows appended per "View more" click
+//   CAP           = hard ceiling on in-memory row count (3 clicks land here)
+const INITIAL_LIMIT = 8;
+const PAGE_STEP = 8;
+const CAP = 24;
 
 /** Tags that warrant the danger-color palette — everything else stays
  *  muted-neutral. Keeps the chip row reading as a quiet annotation except
@@ -42,10 +48,17 @@ function tagIsDanger(tag: string): boolean {
 }
 
 export default function LiveFeed() {
-  const { data: initialEntries } = useApi<EntryResponse[]>("api/entries?limit=25");
+  const [pageSize, setPageSize] = useState(INITIAL_LIMIT);
+  const { data: initialEntries } = useApi<EntryResponse[]>(
+    `api/entries?limit=${pageSize}`,
+  );
   const [sseEntries, setSseEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
+
+  const loadMore = useCallback(() => {
+    setPageSize((prev) => Math.min(prev + PAGE_STEP, CAP));
+  }, []);
 
   useSSE<EntryResponse>(
     "api/stream",
@@ -53,7 +66,9 @@ export default function LiveFeed() {
       // Skip result-only emits (after_tool_call, eval, approval-resolution).
       // Only decision rows belong in the action feed.
       if (!entry.decision) return;
-      setSseEntries((prev) => [entry, ...prev].slice(0, MAX_ITEMS));
+      // SSE slice cap is the hard CAP — not pageSize — so arrivals keep
+      // filling the top even before the user clicks View more.
+      setSseEntries((prev) => [entry, ...prev].slice(0, CAP));
 
       const id = entry.toolCallId ?? entry.timestamp;
       setNewIds((prev) => new Set(prev).add(id));
@@ -79,14 +94,14 @@ export default function LiveFeed() {
       }
     }
     for (const e of initialEntries ?? []) {
-      if (merged.length >= MAX_ITEMS) break;
+      if (merged.length >= CAP) break;
       const key = e.toolCallId ?? e.timestamp;
       if (!seen.has(key)) {
         seen.add(key);
         merged.push(e);
       }
     }
-    return merged.slice(0, MAX_ITEMS);
+    return merged.slice(0, CAP);
   }, [sseEntries, initialEntries]);
 
   return (
@@ -94,6 +109,7 @@ export default function LiveFeed() {
       data-cl-live-feed
       style={{
         height: "100%",
+        maxHeight: 580,
         display: "flex",
         flexDirection: "column",
         minHeight: 0,
@@ -175,7 +191,7 @@ export default function LiveFeed() {
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
-                  padding: "10px 14px",
+                  padding: "8px 14px",
                   borderBottom: isLast
                     ? undefined
                     : "1px solid var(--cl-border-subtle)",
@@ -280,7 +296,30 @@ export default function LiveFeed() {
           })
           )}
         </div>
-        {entries.length > 0 && (
+        {entries.length > 0 && pageSize < CAP && (
+          <button
+            type="button"
+            data-cl-live-feed-viewmore
+            onClick={loadMore}
+            className="flex items-center justify-center"
+            style={{
+              padding: "10px 14px",
+              fontFamily: "var(--cl-font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--cl-text-muted)",
+              border: 0,
+              borderTop: "1px solid var(--cl-border-subtle)",
+              background: "var(--cl-surface)",
+              cursor: "pointer",
+              width: "100%",
+            }}
+          >
+            View more
+          </button>
+        )}
+        {entries.length > 0 && pageSize >= CAP && (
           <Link
             data-cl-live-feed-viewall
             to="/activity"

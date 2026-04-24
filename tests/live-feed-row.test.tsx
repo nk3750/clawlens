@@ -5,7 +5,7 @@
 // timestamp column. Complements the legacy chrome assertions in
 // live-feed.test.tsx.
 
-import { render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -59,6 +59,22 @@ function mockInitial(entries: EntryResponse[] | null) {
     loading: false,
     error: null,
     refetch: vi.fn(),
+  });
+}
+
+/** Path-aware mock: returns up to `limit` entries based on the
+ *  `api/entries?limit=N` query. Used for the §1 View more mechanic where the
+ *  path changes on each click (`limit=8` → `limit=16` → `limit=24`). */
+function mockLimitAware(all: EntryResponse[]) {
+  mockedUseApi.mockImplementation((path: string) => {
+    const m = /\?limit=(\d+)/.exec(path);
+    const n = m ? Number(m[1]) : all.length;
+    return {
+      data: all.slice(0, n),
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    };
   });
 }
 
@@ -261,16 +277,15 @@ describe("LiveFeed row — empty state", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Polish §1 — scroll, counter-drop, View all footer, 25 cap
+// Polish-2 §1 — View more mechanic, fixed-height card, 24 cap
 // ─────────────────────────────────────────────────────────────
 
-describe("LiveFeed — polish §1 chrome", () => {
+describe("LiveFeed — polish-2 §1 chrome", () => {
   it("does NOT render the N-events counter in the header", () => {
     mockInitial([entry({ toolCallId: "a" })]);
     const { container } = renderFeed();
     const header = container.querySelector("[data-cl-live-feed] > div");
-    // Before polish §1 the header had "LIVE · [dot] · N event(s)". Now only
-    // the label + pulsing dot remain.
+    // Counter was dropped in polish-1 §1.1 and STAYS dropped (polish-2 §1.7).
     expect(header?.textContent ?? "").not.toMatch(/event/i);
   });
   it("wraps the row list in a scrollable inner container", () => {
@@ -280,27 +295,86 @@ describe("LiveFeed — polish §1 chrome", () => {
     expect(scroll).not.toBeNull();
     expect(scroll?.style.overflowY).toBe("auto");
   });
-  it('renders a sticky "View all in Activity →" footer that links to /activity', () => {
+  it("outer section caps its height at 580px (polish-2 §3.5 belt-and-suspenders)", () => {
     mockInitial([entry({ toolCallId: "a" })]);
     const { container } = renderFeed();
+    const section = container.querySelector<HTMLElement>("[data-cl-live-feed]");
+    expect(section?.style.maxHeight).toBe("580px");
+  });
+  it("renders 8 rows initially (INITIAL_LIMIT), not the old 25", () => {
+    const entries = Array.from({ length: 40 }, (_, i) =>
+      entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),
+    );
+    mockLimitAware(entries);
+    const { container } = renderFeed();
+    const rows = container.querySelectorAll("[data-cl-live-feed-row]");
+    expect(rows.length).toBe(8);
+  });
+  it("rows use tight 8px vertical padding (polish-2 §3.4) so 8 fit in 580px", () => {
+    mockInitial([entry({ toolCallId: "padding-check" })]);
+    const { container } = renderFeed();
+    const row = container.querySelector<HTMLElement>('[data-cl-live-feed-row="padding-check"]');
+    expect(row?.style.padding).toBe("8px 14px");
+  });
+  it('renders a "View more" button when rendered count < CAP', () => {
+    const entries = Array.from({ length: 40 }, (_, i) =>
+      entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),
+    );
+    mockLimitAware(entries);
+    const { container } = renderFeed();
+    const btn = container.querySelector<HTMLButtonElement>("[data-cl-live-feed-viewmore]");
+    expect(btn).not.toBeNull();
+    expect(btn?.tagName.toLowerCase()).toBe("button");
+    expect(btn?.textContent?.toLowerCase()).toContain("view more");
+    // And the "View all in Activity" link is NOT yet shown — that's for the
+    // at-cap state.
+    expect(container.querySelector("[data-cl-live-feed-viewall]")).toBeNull();
+  });
+  it("click on View more fetches the next page and renders 16 rows", () => {
+    const entries = Array.from({ length: 40 }, (_, i) =>
+      entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),
+    );
+    mockLimitAware(entries);
+    const { container } = renderFeed();
+    const btn = container.querySelector<HTMLButtonElement>("[data-cl-live-feed-viewmore]");
+    expect(btn).not.toBeNull();
+    if (!btn) return;
+    act(() => {
+      fireEvent.click(btn);
+    });
+    // useApi mock is synchronous + path-aware; setPageSize re-renders the
+    // component, the new `limit=16` path resolves immediately in the same
+    // act() flush. No waitFor — fake timers in beforeEach would starve it.
+    expect(container.querySelectorAll("[data-cl-live-feed-row]").length).toBe(16);
+    expect(container.querySelector("[data-cl-live-feed-viewmore]")).not.toBeNull();
+    expect(container.querySelector("[data-cl-live-feed-viewall]")).toBeNull();
+  });
+  it("second click lands at 24 rows + footer flips to 'View all in Activity →' link", () => {
+    const entries = Array.from({ length: 40 }, (_, i) =>
+      entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),
+    );
+    mockLimitAware(entries);
+    const { container } = renderFeed();
+    act(() => {
+      fireEvent.click(container.querySelector("[data-cl-live-feed-viewmore]") as Element);
+    });
+    expect(container.querySelectorAll("[data-cl-live-feed-row]").length).toBe(16);
+    act(() => {
+      fireEvent.click(container.querySelector("[data-cl-live-feed-viewmore]") as Element);
+    });
+    expect(container.querySelectorAll("[data-cl-live-feed-row]").length).toBe(24);
+    // Footer has flipped: no more View more button; a Link to /activity
+    // takes its place.
+    expect(container.querySelector("[data-cl-live-feed-viewmore]")).toBeNull();
     const link = container.querySelector<HTMLAnchorElement>("[data-cl-live-feed-viewall]");
     expect(link).not.toBeNull();
     expect(link?.getAttribute("href")).toBe("/activity");
     expect(link?.textContent?.toLowerCase()).toContain("view all");
   });
-  it("omits the footer when the list is empty", () => {
+  it("omits BOTH footer elements when the list is empty", () => {
     mockInitial([]);
     const { container } = renderFeed();
-    const link = container.querySelector("[data-cl-live-feed-viewall]");
-    expect(link).toBeNull();
-  });
-  it("caps the rendered list at 25 items, not the old 8", () => {
-    const entries = Array.from({ length: 40 }, (_, i) =>
-      entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),
-    );
-    mockInitial(entries);
-    const { container } = renderFeed();
-    const rows = container.querySelectorAll("[data-cl-live-feed-row]");
-    expect(rows.length).toBe(25);
+    expect(container.querySelector("[data-cl-live-feed-viewmore]")).toBeNull();
+    expect(container.querySelector("[data-cl-live-feed-viewall]")).toBeNull();
   });
 });

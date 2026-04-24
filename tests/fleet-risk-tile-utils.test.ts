@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bucketEntriesByHour,
   clampTooltipX,
-  steppedAreaPath,
+  midpointLinearAreaPath,
   yForScore,
 } from "../dashboard/src/components/FleetRiskTile/utils";
 import type { EntryResponse } from "../dashboard/src/lib/types";
@@ -148,28 +148,78 @@ describe("bucketEntriesByHour — max per bucket with 30 floor", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// steppedAreaPath
+// midpointLinearAreaPath (polish-2 §2 — replaces steppedAreaPath)
 // ─────────────────────────────────────────────────────────────
 
-describe("steppedAreaPath — horizontal segments + vertical risers", () => {
-  it("renders a closed area for a single bucket", () => {
-    const d = steppedAreaPath({
+describe("midpointLinearAreaPath — polyline through bucket midpoints", () => {
+  it("empty bucket list → empty path (no NaNs)", () => {
+    const d = midpointLinearAreaPath({
+      buckets: [],
+      timeToX: (ms: number) => ms,
+      plotHeight: 100,
+    });
+    expect(d).toBe("");
+  });
+
+  it("1-bucket degenerate case → M x plotHeight L x peak L x plotHeight Z", () => {
+    // One bucket: firstX === lastX (both the single midpoint). The path
+    // collapses to a vertical line segment closed with Z — acceptable.
+    const d = midpointLinearAreaPath({
       buckets: [{ max: 60, startMs: 0, endMs: 10 }],
       timeToX: (ms: number) => ms,
       plotHeight: 100,
     });
-    // Move to baseline start, line-to top-left, line-to top-right,
-    // line-to baseline-right, close path.
-    expect(d.startsWith("M ")).toBe(true);
-    expect(d.endsWith("Z")).toBe(true);
-    // The top segment is horizontal (same y on consecutive L commands).
-    const lines = d.split(" ");
-    // Sanity: contains multiple L commands
-    expect(lines.filter((t) => t === "L").length).toBeGreaterThan(2);
+    // midpoint = 5, yForScore(60,100) = 100 * (1 - 30/70) ≈ 57.14
+    expect(d).toBe("M 5 100 L 5 57.14 L 5 100 Z");
   });
 
-  it("renders step risers between buckets with different max values", () => {
-    const d = steppedAreaPath({
+  it("N buckets → M + (N + 1) L + Z for N buckets (one L per midpoint + closing L)", () => {
+    const buckets = [
+      { max: 40, startMs: 0, endMs: 10 }, // midpoint 5
+      { max: 80, startMs: 10, endMs: 20 }, // midpoint 15
+      { max: 60, startMs: 20, endMs: 30 }, // midpoint 25
+    ];
+    const d = midpointLinearAreaPath({
+      buckets,
+      timeToX: (ms: number) => ms,
+      plotHeight: 100,
+    });
+    const tokens = d.split(" ");
+    const lCount = tokens.filter((t) => t === "L").length;
+    // 3 buckets → 3 midpoint Ls + 1 closing L = 4
+    expect(lCount).toBe(4);
+    expect(tokens[0]).toBe("M");
+    expect(tokens[tokens.length - 1]).toBe("Z");
+  });
+
+  it("starts at baseline-left (first midpoint x, plotHeight)", () => {
+    const d = midpointLinearAreaPath({
+      buckets: [
+        { max: 60, startMs: 0, endMs: 10 },
+        { max: 80, startMs: 10, endMs: 20 },
+      ],
+      timeToX: (ms: number) => ms,
+      plotHeight: 100,
+    });
+    // First midpoint is at x = 5, baseline y = 100.
+    expect(d.startsWith("M 5 100 ")).toBe(true);
+  });
+
+  it("ends at baseline-right (last midpoint x, plotHeight) before Z", () => {
+    const d = midpointLinearAreaPath({
+      buckets: [
+        { max: 60, startMs: 0, endMs: 10 },
+        { max: 80, startMs: 10, endMs: 20 },
+      ],
+      timeToX: (ms: number) => ms,
+      plotHeight: 100,
+    });
+    // Last midpoint is at x = 15, baseline y = 100.
+    expect(d.endsWith("L 15 100 Z")).toBe(true);
+  });
+
+  it("middle Ls pass through midpoint y-coordinates (yForScore of each bucket max)", () => {
+    const d = midpointLinearAreaPath({
       buckets: [
         { max: 40, startMs: 0, endMs: 10 },
         { max: 80, startMs: 10, endMs: 20 },
@@ -177,21 +227,24 @@ describe("steppedAreaPath — horizontal segments + vertical risers", () => {
       timeToX: (ms: number) => ms,
       plotHeight: 100,
     });
-    // 40 → top at yForScore(40,100) = 100 * (1 - 10/70) ≈ 85.71
-    // 80 → top at yForScore(80,100) = 100 * (1 - 50/70) ≈ 28.57
-    // The riser is a vertical move inside the path. Assert we pass through
-    // both top-y values.
-    expect(d).toMatch(/85\.71/); // 40 top
-    expect(d).toMatch(/28\.57/); // 80 top
+    // 40 → yForScore(40,100) = 100 * (1 - 10/70) ≈ 85.71
+    // 80 → yForScore(80,100) = 100 * (1 - 50/70) ≈ 28.57
+    expect(d).toMatch(/85\.71/);
+    expect(d).toMatch(/28\.57/);
   });
 
-  it("empty bucket list → empty path (no NaNs)", () => {
-    const d = steppedAreaPath({
-      buckets: [],
+  it("midpoints are at (startMs + endMs) / 2 (not bucket edges)", () => {
+    // Bucket [0, 10] has midpoint 5, not 0 or 10. With timeToX = identity,
+    // the path must contain the literal value "5" somewhere.
+    const d = midpointLinearAreaPath({
+      buckets: [{ max: 60, startMs: 0, endMs: 10 }],
       timeToX: (ms: number) => ms,
       plotHeight: 100,
     });
-    expect(d).toBe("");
+    // ALL x coordinates are the single midpoint = 5 (integer serialized).
+    const tokens = d.split(" ");
+    const xCoords = [tokens[1], tokens[4], tokens[7]];
+    expect(xCoords.every((x) => x === "5")).toBe(true);
   });
 });
 

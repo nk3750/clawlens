@@ -215,7 +215,7 @@ describe("FleetRiskTile hero", () => {
 // ─────────────────────────────────────────────────────────────
 
 describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish §3)", () => {
-  it("renders three stepped paths — one per band (below-baseline, between, above-crit)", () => {
+  it("renders three paths — one per band (below-baseline, between, above-crit)", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,

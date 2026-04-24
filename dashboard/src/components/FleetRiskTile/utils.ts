@@ -66,11 +66,11 @@ export function bucketEntriesByHour(opts: {
   return buckets;
 }
 
-/** Stepped area path (closed polygon). Each bucket renders as a horizontal
- *  segment at y = yForScore(bucket.max), with a vertical riser at the boundary
- *  between consecutive buckets whose max differs. Polygon closes down to the
- *  baseline so an SVG <path fill=…> fills the area under the curve. */
-export function steppedAreaPath(opts: {
+/** Midpoint-linear area path (closed polygon). One point per bucket at the
+ *  midpoint x + max-score y; consecutive midpoints connect with straight
+ *  diagonals (no stepped risers). Closes to `plotHeight` at the leftmost and
+ *  rightmost midpoints so the polygon fills under the curve. */
+export function midpointLinearAreaPath(opts: {
   buckets: HourBucket[];
   timeToX: (ms: number) => number;
   plotHeight: number;
@@ -78,26 +78,20 @@ export function steppedAreaPath(opts: {
   const { buckets, timeToX, plotHeight } = opts;
   if (buckets.length === 0) return "";
 
+  const pts: { x: number; y: number }[] = buckets.map((b) => ({
+    x: timeToX((b.startMs + b.endMs) / 2),
+    y: yForScore(b.max, plotHeight),
+  }));
+
+  const firstX = pts[0].x;
+  const lastX = pts[pts.length - 1].x;
+
   const parts: string[] = [];
-  const leftX = timeToX(buckets[0].startMs);
-  parts.push(`M ${fmt(leftX)} ${fmt(plotHeight)}`);
-  for (let i = 0; i < buckets.length; i++) {
-    const b = buckets[i];
-    const xL = timeToX(b.startMs);
-    const xR = timeToX(b.endMs);
-    const y = yForScore(b.max, plotHeight);
-    if (i === 0) {
-      // Up from baseline to the first bucket's top.
-      parts.push(`L ${fmt(xL)} ${fmt(y)}`);
-    } else {
-      // Vertical riser at the bucket boundary.
-      parts.push(`L ${fmt(xL)} ${fmt(y)}`);
-    }
-    // Horizontal top of this bucket.
-    parts.push(`L ${fmt(xR)} ${fmt(y)}`);
+  parts.push(`M ${fmt(firstX)} ${fmt(plotHeight)}`);
+  for (const p of pts) {
+    parts.push(`L ${fmt(p.x)} ${fmt(p.y)}`);
   }
-  const rightX = timeToX(buckets[buckets.length - 1].endMs);
-  parts.push(`L ${fmt(rightX)} ${fmt(plotHeight)}`);
+  parts.push(`L ${fmt(lastX)} ${fmt(plotHeight)}`);
   parts.push("Z");
   return parts.join(" ");
 }

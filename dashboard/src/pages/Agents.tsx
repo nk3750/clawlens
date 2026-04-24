@@ -342,6 +342,7 @@ export default function Agents() {
           style={{
             display: "grid",
             gridTemplateColumns: bottomRowSingleColumn ? "1fr" : "2fr 1fr",
+            gridAutoRows: bottomRowSingleColumn ? "auto" : 580,
             gap: 12,
           }}
         >

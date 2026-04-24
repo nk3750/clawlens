@@ -13,7 +13,7 @@ import {
   clampTooltipX,
   CRIT_THRESHOLD,
   makeTimeToX,
-  steppedAreaPath,
+  midpointLinearAreaPath,
   yForScore,
 } from "./utils";
 import { buildDayTicks, buildHourTicks, cullLabelsForWidth } from "../FleetActivityChart/utils";
@@ -115,7 +115,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
   }, [activity, range, startMs, endMs]);
 
   const sparkPath = useMemo(
-    () => steppedAreaPath({ buckets, timeToX, plotHeight: SPARK_H }),
+    () => midpointLinearAreaPath({ buckets, timeToX, plotHeight: SPARK_H }),
     [buckets, timeToX],
   );
 
