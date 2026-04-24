@@ -168,6 +168,19 @@ describe("FleetRiskTile hero", () => {
     const delta = container.querySelector<HTMLElement>("[data-cl-fleet-risk-delta]");
     expect(delta?.style.color).toMatch(/cl-risk-high/);
   });
+  it('renders "0 vs 24h baseline" (no "+") when delta is exactly zero', () => {
+    mockApis(fleetActivity([]), {
+      current: 40,
+      baselineP50: 40,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const delta = container.querySelector<HTMLElement>("[data-cl-fleet-risk-delta]");
+    expect(delta?.textContent).toBe("0 vs 24h baseline");
+  });
   it("uses text-secondary color for delta when delta <= 0", () => {
     mockApis(fleetActivity([]), {
       current: 20,
@@ -260,6 +273,38 @@ describe("FleetRiskTile tape", () => {
     });
     const { container } = renderTile();
     expect(container.querySelector('[data-cl-fleet-risk-tape-dot="lo-1"]')).toBeNull();
+  });
+  it("hover on a tape dot surfaces a tooltip containing the tool namespace", () => {
+    mockApis(
+      fleetActivity([
+        mkEntry({
+          toolName: "exec",
+          params: { command: "git status" },
+          riskScore: 80,
+          toolCallId: "tc-hover",
+          agentId: "alpha",
+        }),
+      ]),
+      {
+        current: 80,
+        baselineP50: 40,
+        delta: 40,
+        critCount: 1,
+        highCount: 0,
+        totalElevated: 1,
+      },
+    );
+    const { container } = renderTile();
+    const dot = container.querySelector('[data-cl-fleet-risk-tape-dot="tc-hover"]');
+    expect(dot).not.toBeNull();
+    fireEvent.mouseEnter(dot as Element);
+    const tooltip = container.querySelector("[data-cl-risk-tooltip]");
+    expect(tooltip).not.toBeNull();
+    // §6.6 — tooltip format: {agent} · {namespace} · {score} · {time}
+    const text = tooltip?.textContent ?? "";
+    expect(text).toContain("shell.git");
+    expect(text).toContain("alpha");
+    expect(text).toContain("80");
   });
 });
 

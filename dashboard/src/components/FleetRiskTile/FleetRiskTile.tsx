@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../../hooks/useApi";
+import { toolNamespace } from "../../lib/eventFormat";
 import type {
   EntryResponse,
   FleetActivityResponse,
@@ -181,7 +182,16 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
   );
 
   return (
-    <section data-cl-fleet-risk-tile className="cl-card" style={{ padding: 14 }}>
+    <section
+      data-cl-fleet-risk-tile
+      className="cl-card"
+      style={{
+        padding: 14,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       {/* ── Hero (spec §6.2) ───────────────────────────────────── */}
       <div
         data-cl-fleet-risk-hero
@@ -258,7 +268,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
               color: hero.delta > 0 ? HIGH_COLOR : TEXT_SECONDARY,
             }}
           >
-            {hero.delta >= 0 ? `+${hero.delta}` : hero.delta} vs 24h baseline
+            {hero.delta > 0 ? `+${hero.delta}` : hero.delta} vs 24h baseline
           </span>
           <span
             style={{
@@ -507,7 +517,8 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
               fontSize={10}
               fill={TEXT_PRIMARY}
             >
-              {(hovered.entry.agentId ?? "default")} · {hovered.entry.riskScore ?? 0} ·{" "}
+              {hovered.entry.agentId ?? "default"} · {toolNamespace(hovered.entry)} ·{" "}
+              {hovered.entry.riskScore ?? 0} ·{" "}
               {new Date(hovered.entry.timestamp).toLocaleTimeString()}
             </text>
           </g>
@@ -520,7 +531,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
         className="flex items-center"
         style={{
           gap: 12,
-          marginTop: 8,
+          marginTop: "auto",
           paddingTop: 8,
           borderTop: "1px solid var(--cl-border-subtle)",
         }}

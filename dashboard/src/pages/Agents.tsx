@@ -348,7 +348,7 @@ export default function Agents() {
           <div data-cl-live-feed-anchor style={{ minWidth: 0 }}>
             <LiveFeed />
           </div>
-          <div data-cl-fleet-risk-tile-anchor style={{ minWidth: 0 }}>
+          <div data-cl-fleet-risk-tile-anchor style={{ minWidth: 0, height: "100%" }}>
             <FleetRiskTile range={range} selectedDate={selectedDate} />
           </div>
         </section>

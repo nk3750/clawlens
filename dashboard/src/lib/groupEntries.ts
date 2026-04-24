@@ -18,7 +18,7 @@ export interface EntryGroup {
 
 /**
  * One-line human-readable description for a single entry. Thin adapter over
- * eventFormat primitives (spec \u00a77). The legacy one-liner format is preserved
+ * eventFormat primitives (spec §7). The legacy one-liner format is preserved
  * for the 7 callers that still render this string directly (LiveFeed-specific
  * two-line rendering goes through verbFor/formatEventTarget directly, not here).
  */
