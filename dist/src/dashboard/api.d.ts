@@ -33,6 +33,20 @@ export interface EnhancedStatsResponse extends StatsResponse {
     lastEntryTimestamp?: string;
     llmHealth: LlmHealthSnapshot;
 }
+export interface FleetRiskIndexResponse {
+    /** 0-100. Max riskScore of any event in the last 15 minutes. 0 if none. */
+    current: number;
+    /** 0-100. Median of daily-peak riskScore over the last 7 COMPLETED days (not including today). */
+    baselineP50: number;
+    /** current - baselineP50. May be negative. */
+    delta: number;
+    /** Entries in last 24h with riskScore >= 75. */
+    critCount: number;
+    /** Entries in last 24h with 50 <= riskScore < 75. */
+    highCount: number;
+    /** critCount + highCount. */
+    totalElevated: number;
+}
 export interface InterventionEntry {
     timestamp: string;
     agentId: string;
@@ -256,6 +270,20 @@ export declare function deriveAgentAttention(entries: AuditEntry[], guardrailSto
  */
 export declare function getAttention(entries: AuditEntry[], guardrailStore?: GuardrailStore, attentionStore?: AttentionStore, now?: number): AttentionResponse;
 export { tierRank as _tierRankForTests };
+/**
+ * Fleet-level risk index. Powers the FleetRiskTile hero.
+ * Semantics: homepage-bottom-row-spec §6.1 (locked for v1).
+ *   current        = max riskScore in last 15 minutes, 0 if none
+ *   baselineP50    = median of daily-peak riskScores over last 7 COMPLETED days
+ *   delta          = current - baselineP50 (signed)
+ *   critCount      = last-24h entries with riskScore >= 75
+ *   highCount      = last-24h entries with 50 <= riskScore < 75
+ *   totalElevated  = critCount + highCount
+ *
+ * Completed-days window: excludes today so the baseline is stable as new
+ * events arrive. Fresh deployment (<7 days of logs) yields baselineP50 = 0.
+ */
+export declare function computeFleetRiskIndex(entries: AuditEntry[]): FleetRiskIndexResponse;
 /** Compute today's decision counts. */
 export declare function computeStats(entries: AuditEntry[]): StatsResponse;
 /** Return paginated decision entries in reverse chronological order, with optional filtering. */

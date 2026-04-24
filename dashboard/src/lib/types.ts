@@ -260,6 +260,24 @@ export interface FleetActivityResponse {
   truncated: boolean;
 }
 
+// ── Fleet Risk Index (FleetRiskTile hero) ─────────────
+// Mirrors src/dashboard/api.ts::FleetRiskIndexResponse.
+
+export interface FleetRiskIndexResponse {
+  /** 0-100. Max riskScore of any event in the last 15 minutes. 0 if none. */
+  current: number;
+  /** 0-100. Median of daily-peak riskScore over the last 7 COMPLETED days. */
+  baselineP50: number;
+  /** current - baselineP50. May be negative. */
+  delta: number;
+  /** Entries in last 24h with riskScore >= 75. */
+  critCount: number;
+  /** Entries in last 24h with 50 <= riskScore < 75. */
+  highCount: number;
+  /** critCount + highCount. */
+  totalElevated: number;
+}
+
 // ── Guardrails ────────────────────────────────────────
 
 export type GuardrailAction =

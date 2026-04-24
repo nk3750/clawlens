@@ -682,6 +682,67 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
 }
 export { tierRank as _tierRankForTests };
 // ── Existing functions (unchanged signatures) ───────────
+/**
+ * Fleet-level risk index. Powers the FleetRiskTile hero.
+ * Semantics: homepage-bottom-row-spec §6.1 (locked for v1).
+ *   current        = max riskScore in last 15 minutes, 0 if none
+ *   baselineP50    = median of daily-peak riskScores over last 7 COMPLETED days
+ *   delta          = current - baselineP50 (signed)
+ *   critCount      = last-24h entries with riskScore >= 75
+ *   highCount      = last-24h entries with 50 <= riskScore < 75
+ *   totalElevated  = critCount + highCount
+ *
+ * Completed-days window: excludes today so the baseline is stable as new
+ * events arrive. Fresh deployment (<7 days of logs) yields baselineP50 = 0.
+ */
+export function computeFleetRiskIndex(entries) {
+    const now = Date.now();
+    const FIFTEEN_MIN = 15 * 60_000;
+    const TWENTY_FOUR_H = 24 * 3_600_000;
+    const DAY = TWENTY_FOUR_H;
+    let current = 0;
+    let critCount = 0;
+    let highCount = 0;
+    for (const e of entries) {
+        const t = new Date(e.timestamp).getTime();
+        const score = e.riskScore ?? 0;
+        const age = now - t;
+        if (age >= 0 && age <= FIFTEEN_MIN && score > current)
+            current = score;
+        if (age >= 0 && age <= TWENTY_FOUR_H) {
+            if (score >= 75)
+                critCount++;
+            else if (score >= 50)
+                highCount++;
+        }
+    }
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+    const peaks = [];
+    for (let d = 1; d <= 7; d++) {
+        const dayStart = startOfToday - d * DAY;
+        const dayEnd = dayStart + DAY;
+        let peak = 0;
+        for (const e of entries) {
+            const t = new Date(e.timestamp).getTime();
+            if (t >= dayStart && t < dayEnd) {
+                const s = e.riskScore ?? 0;
+                if (s > peak)
+                    peak = s;
+            }
+        }
+        peaks.push(peak);
+    }
+    peaks.sort((a, b) => a - b);
+    const baselineP50 = peaks.length > 0 ? peaks[Math.floor(peaks.length / 2)] : 0;
+    return {
+        current,
+        baselineP50,
+        delta: current - baselineP50,
+        critCount,
+        highCount,
+        totalElevated: critCount + highCount,
+    };
+}
 /** Compute today's decision counts. */
 export function computeStats(entries) {
     const todayDecisions = getTodayEntries(entries).filter(isDecisionEntry);

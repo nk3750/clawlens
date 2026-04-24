@@ -262,41 +262,43 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Agents homepage — bottom-row grid (§D1)", () => {
-  it("wraps FleetChart + LiveFeed in a <section data-cl-bottom-row> grid", () => {
+describe("Agents homepage — bottom-row grid (homepage-bottom-row-spec §8)", () => {
+  it("wraps the fleet chart in a full-width data-cl-chart-row and the LiveFeed + FleetRiskTile in a data-cl-insights-row grid", () => {
     const { container } = renderAt("/");
-    const row = container.querySelector("[data-cl-bottom-row]");
-    expect(row).not.toBeNull();
-    expect((row as HTMLElement).style.display).toBe("grid");
-    // Both anchors live inside the row.
-    expect(row?.querySelector("[data-cl-fleet-chart-anchor]")).not.toBeNull();
-    expect(row?.querySelector("[data-cl-live-feed-anchor]")).not.toBeNull();
+    const chartRow = container.querySelector("[data-cl-chart-row]");
+    const insightsRow = container.querySelector("[data-cl-insights-row]");
+    expect(chartRow).not.toBeNull();
+    expect(insightsRow).not.toBeNull();
+    expect((insightsRow as HTMLElement).style.display).toBe("grid");
+    // Chart anchor sits in row 1; LiveFeed + FleetRiskTile in row 2.
+    expect(chartRow?.querySelector("[data-cl-fleet-chart-anchor]")).not.toBeNull();
+    expect(insightsRow?.querySelector("[data-cl-live-feed-anchor]")).not.toBeNull();
+    expect(insightsRow?.querySelector("[data-cl-fleet-risk-tile-anchor]")).not.toBeNull();
   });
 
-  it("default layout (no ?chart URL param) is a weighted 2fr/1fr split with min-widths (layout-fixes §1)", () => {
+  it("default layout (no ?chart URL param) is a 2fr/1fr split on the insights row", () => {
     const { container } = renderAt("/");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
     expect(row).not.toBeNull();
-    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    expect(row?.style.gridTemplateColumns).toBe("2fr 1fr");
     expect(row?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
   });
 
-  it("sets minWidth: 0 on BOTH cell anchors so 1fr/2fr can shrink below min-content (layout-fixes §1)", () => {
-    // Without minWidth: 0 on the cell child, Grid's auto floor is
-    // min-content — the chart's ~1100px min-content blows out any fr-based
-    // split. The inline style must set minWidth to 0 explicitly.
+  it("sets minWidth: 0 on BOTH insights-row cell anchors so 2fr/1fr can shrink below min-content", () => {
+    // Without minWidth: 0 on the cell child, Grid's auto floor is min-content
+    // and the LiveFeed's intrinsic width blows out the 2fr/1fr split.
     const { container } = renderAt("/");
-    const chart = container.querySelector<HTMLElement>("[data-cl-fleet-chart-anchor]");
     const feed = container.querySelector<HTMLElement>("[data-cl-live-feed-anchor]");
-    expect(chart).not.toBeNull();
+    const tile = container.querySelector<HTMLElement>("[data-cl-fleet-risk-tile-anchor]");
     expect(feed).not.toBeNull();
-    expect(chart?.style.minWidth).toBe("0px");
+    expect(tile).not.toBeNull();
     expect(feed?.style.minWidth).toBe("0px");
+    expect(tile?.style.minWidth).toBe("0px");
   });
 
-  it("collapses to a single column when ?chart=full is in the URL (§D2)", () => {
+  it("collapses the insights row to a single column when ?chart=full is in the URL (§D2)", () => {
     const { container } = renderAt("/?chart=full");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
     expect(row).not.toBeNull();
     expect(row?.style.gridTemplateColumns).toBe("1fr");
     expect(row?.getAttribute("data-cl-chart-fullscreen")).toBe("true");
@@ -315,16 +317,16 @@ describe("Agents homepage — fullscreen toggle (§D3)", () => {
     expect(btn?.getAttribute("aria-label")).toMatch(/fullscreen|expand/i);
   });
 
-  it("click flips data-cl-chart-fullscreen on the bottom-row and toggles gridTemplateColumns", () => {
+  it("click flips data-cl-chart-fullscreen on the insights row and toggles gridTemplateColumns", () => {
     // Re-query the button each time — opening/closing the modal portals
     // the chart in/out of document.body, which remounts the button.
     const { container } = renderAt("/");
     const queryBtn = () =>
       document.body.querySelector<HTMLButtonElement>("[data-cl-chart-fullscreen-toggle]");
-    const queryRow = () => container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    const queryRow = () => container.querySelector<HTMLElement>("[data-cl-insights-row]");
 
     // Pre-click state — two columns.
-    expect(queryRow()?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    expect(queryRow()?.style.gridTemplateColumns).toBe("2fr 1fr");
 
     const openBtn = queryBtn();
     expect(openBtn).not.toBeNull();
@@ -346,17 +348,15 @@ describe("Agents homepage — fullscreen toggle (§D3)", () => {
       fireEvent.click(closeBtn);
     });
     expect(queryRow()?.getAttribute("data-cl-chart-fullscreen")).toBeNull();
-    expect(queryRow()?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    expect(queryRow()?.style.gridTemplateColumns).toBe("2fr 1fr");
   });
 });
 
-describe("Agents homepage — narrow-viewport collapse (layout-fixes §1 — 911px breakpoint)", () => {
+describe("Agents homepage — narrow-viewport collapse (911px breakpoint)", () => {
   it("forces single-column layout on viewports <= 911px regardless of URL param", () => {
-    // New breakpoint matches the 520 + 380 + 12 gap minimum from the 2fr/1fr
-    // split. Below that, the split would overflow, so the page stacks.
     stubViewportWidth(640);
     const { container } = renderAt("/");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
     expect(row).not.toBeNull();
     expect(row?.style.gridTemplateColumns).toBe("1fr");
   });
@@ -364,21 +364,21 @@ describe("Agents homepage — narrow-viewport collapse (layout-fixes §1 — 911
   it("still stacks at exactly 911px (boundary is inclusive)", () => {
     stubViewportWidth(911);
     const { container } = renderAt("/");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
     expect(row?.style.gridTemplateColumns).toBe("1fr");
   });
 
   it("shows the weighted split at exactly 912px (boundary is exclusive)", () => {
     stubViewportWidth(912);
     const { container } = renderAt("/");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
+    expect(row?.style.gridTemplateColumns).toBe("2fr 1fr");
   });
 
   it("keeps narrow viewports single-column even when ?chart=full is set", () => {
     stubViewportWidth(480);
     const { container } = renderAt("/?chart=full");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
     expect(row?.style.gridTemplateColumns).toBe("1fr");
   });
 });
@@ -478,13 +478,13 @@ describe("Agents homepage — modal fullscreen overlay (layout-fixes §2, portal
 
   it("Esc keydown is a no-op when the modal is not open", () => {
     const { container } = renderAt("/");
-    const row = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(row?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    const row = container.querySelector<HTMLElement>("[data-cl-insights-row]");
+    expect(row?.style.gridTemplateColumns).toBe("2fr 1fr");
     act(() => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
-    const after = container.querySelector<HTMLElement>("[data-cl-bottom-row]");
-    expect(after?.style.gridTemplateColumns).toBe("minmax(520px, 2fr) minmax(380px, 1fr)");
+    const after = container.querySelector<HTMLElement>("[data-cl-insights-row]");
+    expect(after?.style.gridTemplateColumns).toBe("2fr 1fr");
   });
 
   it("locks body scroll while modal is open and restores prior overflow when toggled off", () => {

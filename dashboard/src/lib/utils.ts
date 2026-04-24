@@ -16,6 +16,25 @@ export function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/**
+ * Compact relative time — no trailing "ago", collapsed units.
+ * Used by LiveFeed's two-line rows where the time chip needs to stay
+ * narrow (spec §5).
+ *   2s, 14s, 1m, 44m, 1h, 2h, 3d, then absolute date after 7d.
+ */
+export function relTimeCompact(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(diff / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
 // ── Schedule cadence (mirror of src/dashboard/cadence.ts) ──
 
 const CADENCE_SEC = 1000;
@@ -297,29 +316,38 @@ const TOOL_TAGS: Record<string, string> = {
 
 /**
  * Derive display tags for a timeline entry.
- * Priority: scorer riskTags > exec sub-category > tool type.
- * Returns 1-2 tags; never empty for known tools.
+ * Priority: decision prepend > scorer riskTags > exec sub-category > tool type.
+ *
+ * Decision prepend (spec §4): when effectiveDecision is block/timeout/pending,
+ * prepend a matching tag so the chip row surfaces intervention state directly.
+ *
+ * Cap: 3 items total (bumped from 2 to fit decision + 2 context tags).
  */
 export function deriveTags(entry: {
   toolName: string;
   execCategory?: string;
   riskTags?: string[];
+  effectiveDecision?: string;
 }): string[] {
-  // Scorer tags take priority (e.g., "exfiltration", "credential-access")
+  const extra: string[] = [];
+  if (entry.effectiveDecision === "block") extra.push("blocked");
+  else if (entry.effectiveDecision === "timeout") extra.push("timeout");
+  else if (entry.effectiveDecision === "pending") extra.push("pending");
+
+  const base: string[] = [];
   if (entry.riskTags && entry.riskTags.length > 0) {
-    return entry.riskTags.slice(0, 2);
-  }
-  // Exec sub-category tag
-  if (entry.execCategory) {
+    // Scorer tags take priority (e.g., "exfiltration", "credential-access")
+    base.push(...entry.riskTags.slice(0, 2));
+  } else if (entry.execCategory) {
     const tag = EXEC_CATEGORY_TAGS[entry.execCategory];
-    if (tag) return [tag];
+    if (tag) base.push(tag);
+  } else {
+    const tag = TOOL_TAGS[entry.toolName];
+    if (tag) base.push(tag);
+    else if (entry.toolName) base.push(entry.toolName);
   }
-  // Non-exec tool tag
-  const tag = TOOL_TAGS[entry.toolName];
-  if (tag) return [tag];
-  // Unknown tool — use the tool name itself
-  if (entry.toolName) return [entry.toolName];
-  return [];
+
+  return [...extra, ...base].slice(0, 3);
 }
 
 // ── Entry icon selection ────────────────────────────────

@@ -12,6 +12,7 @@ import {
   buildEvalIndex,
   checkHealth,
   computeEnhancedStats,
+  computeFleetRiskIndex,
   type EntryFilters,
   getActivityTimeline,
   getAgentDetail,
@@ -214,6 +215,12 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
         sendJson(res, computeEnhancedStats(entries, date));
+        return true;
+      }
+
+      if (subPath === "api/fleet-risk-index") {
+        const entries = deps.auditLogger.readEntries();
+        sendJson(res, computeFleetRiskIndex(entries));
         return true;
       }
 

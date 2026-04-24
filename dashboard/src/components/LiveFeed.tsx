@@ -1,27 +1,35 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
+import {
+  formatEventTarget,
+  toolNamespace,
+  verbFor,
+} from "../lib/eventFormat";
 import type { EntryResponse } from "../lib/types";
 import {
   DEFAULT_AGENT_ID,
   deriveTags,
-  relTime,
+  relTimeCompact,
   riskColorRaw,
   riskLeftBorder,
   riskTierFromScore,
 } from "../lib/utils";
-import { describeEntry } from "../lib/groupEntries";
-import GradientAvatar from "./GradientAvatar";
 
 const MAX_ITEMS = 8;
 
 /** Tags that warrant the danger-color palette — everything else stays
  *  muted-neutral. Keeps the chip row reading as a quiet annotation except
- *  when something actually needs attention. */
+ *  when something actually needs attention.
+ *
+ *  Decision chips (spec §4, §5): `blocked` matches `^block/i`; `timeout` is
+ *  added here so timed-out approvals also read red. `pending` is a neutral
+ *  state — deliberately NOT matched here. */
 const DANGER_TAG_PATTERNS = [
   /^destruct/i,
   /^block/i,
+  /^timeout$/i,
   /delete/i,
   /^permission/i,
   /credential/i,
@@ -34,9 +42,7 @@ function tagIsDanger(tag: string): boolean {
 }
 
 export default function LiveFeed() {
-  const { data: initialEntries } = useApi<EntryResponse[]>(
-    "api/entries?limit=8",
-  );
+  const { data: initialEntries } = useApi<EntryResponse[]>("api/entries?limit=8");
   const [sseEntries, setSseEntries] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
@@ -45,12 +51,10 @@ export default function LiveFeed() {
     "api/stream",
     useCallback((entry: EntryResponse) => {
       // Skip result-only emits (after_tool_call, eval, approval-resolution).
-      // Only decision rows belong in the action feed; everything else is a
-      // post-fact annotation on a row already shown.
+      // Only decision rows belong in the action feed.
       if (!entry.decision) return;
       setSseEntries((prev) => [entry, ...prev].slice(0, MAX_ITEMS));
 
-      // Flash animation for new entry — matches the .entry-flash timing (1.5s).
       const id = entry.toolCallId ?? entry.timestamp;
       setNewIds((prev) => new Set(prev).add(id));
       setTimeout(() => {
@@ -63,7 +67,6 @@ export default function LiveFeed() {
     }, []),
   );
 
-  // Merge SSE entries (newest) with initial API entries (backfill), deduped.
   const entries = useMemo(() => {
     if (sseEntries.length === 0 && !initialEntries) return [];
     const seen = new Set<string>();
@@ -85,8 +88,6 @@ export default function LiveFeed() {
     }
     return merged.slice(0, MAX_ITEMS);
   }, [sseEntries, initialEntries]);
-
-  if (entries.length === 0 && !initialEntries) return null;
 
   return (
     <section data-cl-live-feed>
@@ -114,136 +115,159 @@ export default function LiveFeed() {
         className="cl-card overflow-hidden"
         style={{ padding: 0 }}
       >
-        {entries.map((entry, i) => {
-          const id = entry.toolCallId ?? entry.timestamp;
-          const isNew = newIds.has(id);
-          const agentId = entry.agentId || DEFAULT_AGENT_ID;
-          const tier = riskTierFromScore(entry.riskScore ?? 0);
-          const tierColor = riskColorRaw(tier);
-          const isLast = i === entries.length - 1;
-          const tags = deriveTags({
-            toolName: entry.toolName,
-            execCategory: entry.execCategory,
-            riskTags: entry.riskTags,
-          });
-          const shadow = riskLeftBorder(entry.riskScore);
+        {entries.length === 0 ? (
+          <div
+            data-cl-live-feed-empty
+            className="flex items-center justify-center"
+            style={{
+              padding: "24px 14px",
+              minHeight: 80,
+              color: "var(--cl-text-muted)",
+              fontFamily: "var(--cl-font-sans)",
+              fontSize: 12,
+            }}
+          >
+            No recent activity
+          </div>
+        ) : (
+          entries.map((entry, i) => {
+            const id = entry.toolCallId ?? entry.timestamp;
+            const isNew = newIds.has(id);
+            const agentId = entry.agentId || DEFAULT_AGENT_ID;
+            const tier = riskTierFromScore(entry.riskScore ?? 0);
+            const tierColor = riskColorRaw(tier);
+            const isLast = i === entries.length - 1;
+            const tags = deriveTags({
+              toolName: entry.toolName,
+              execCategory: entry.execCategory,
+              riskTags: entry.riskTags,
+              effectiveDecision: entry.effectiveDecision,
+            });
+            const shadow = riskLeftBorder(entry.riskScore);
+            const verb = verbFor(entry);
+            const ns = toolNamespace(entry);
+            const target = formatEventTarget(entry);
 
-          return (
-            <Link
-              key={`${id}-${i}`}
-              to={
-                entry.sessionKey
-                  ? `/session/${encodeURIComponent(entry.sessionKey)}`
-                  : `/agent/${encodeURIComponent(agentId)}`
-              }
-              data-cl-live-feed-row={id}
-              className={`entry-hover ${isNew ? "entry-flash" : ""}`.trim()}
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "auto auto auto minmax(0, 1fr) auto auto",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 12px",
-                borderBottom: isLast
-                  ? undefined
-                  : "1px solid var(--cl-border-subtle)",
-                textDecoration: "none",
-                color: "var(--cl-text-primary)",
-                boxShadow: shadow,
-              }}
-            >
-              {/* Timestamp — mono 11 */}
-              <span
-                className="font-mono tabular-nums"
+            return (
+              <Link
+                key={`${id}-${i}`}
+                to={
+                  entry.sessionKey
+                    ? `/session/${encodeURIComponent(entry.sessionKey)}`
+                    : `/agent/${encodeURIComponent(agentId)}`
+                }
+                data-cl-live-feed-row={id}
+                className={`entry-hover ${isNew ? "entry-flash" : ""}`.trim()}
+                title={entry.timestamp}
                 style={{
-                  fontSize: 11,
-                  color: "var(--cl-text-subdued)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  padding: "10px 14px",
+                  borderBottom: isLast
+                    ? undefined
+                    : "1px solid var(--cl-border-subtle)",
+                  textDecoration: "none",
+                  color: "var(--cl-text-primary)",
+                  boxShadow: shadow,
                 }}
               >
-                {fmtTimeOfDay(entry.timestamp)}
-              </span>
-
-              {/* Tier dot */}
-              <span
-                className="inline-block rounded-full shrink-0"
-                style={{
-                  width: 6,
-                  height: 6,
-                  backgroundColor: tierColor,
-                }}
-                aria-hidden="true"
-              />
-
-              {/* Agent avatar */}
-              <GradientAvatar agentId={agentId} size="xs" />
-
-              {/* Agent + tool description. `describeEntry` includes the tool
-                  args in-line so we don't need a separate column for them. */}
-              <span
-                className="truncate flex items-baseline gap-1.5"
-                style={{
-                  color: "var(--cl-text-secondary)",
-                  fontFamily: "var(--cl-font-sans)",
-                  fontSize: 13,
-                  fontWeight: 510,
-                }}
-              >
-                <span style={{ color: "var(--cl-text-primary)" }}>
-                  {agentId}
-                </span>
+                {/* Line 1 — tier dot, agent, verb, namespace, chips, rel-time */}
                 <span
-                  className="truncate"
-                  style={{
-                    fontFamily: "var(--cl-font-mono)",
-                    fontWeight: 400,
-                    fontSize: 12,
-                    color: "var(--cl-text-secondary)",
-                  }}
+                  className="flex items-center"
+                  style={{ gap: 8, minWidth: 0 }}
                 >
-                  {describeEntry(entry)}
-                </span>
-              </span>
-
-              {/* Tag chips */}
-              <span className="flex items-center gap-1 shrink-0">
-                {tags.map((tag) => (
                   <span
-                    key={tag}
-                    className="cl-pill"
-                    style={
-                      tagIsDanger(tag)
-                        ? { color: "var(--cl-risk-high)" }
-                        : undefined
-                    }
+                    className="inline-block rounded-full shrink-0"
+                    style={{
+                      width: 6,
+                      height: 6,
+                      backgroundColor: tierColor,
+                      boxShadow: `0 0 4px ${tierColor}4d`,
+                    }}
+                    aria-hidden="true"
+                  />
+                  <span
+                    style={{
+                      fontFamily: "var(--cl-font-sans)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--cl-text-primary)",
+                    }}
                   >
-                    {tag}
+                    {agentId}
                   </span>
-                ))}
-              </span>
-
-              {/* Relative time — mono 11 */}
-              <span
-                className="font-mono tabular-nums shrink-0"
-                style={{
-                  fontSize: 11,
-                  color: "var(--cl-text-subdued)",
-                }}
-              >
-                {relTime(entry.timestamp)}
-              </span>
-            </Link>
-          );
-        })}
+                  <span
+                    style={{
+                      fontFamily: "var(--cl-font-sans)",
+                      fontSize: 13,
+                      fontWeight: 400,
+                      color: "var(--cl-text-secondary)",
+                    }}
+                  >
+                    {verb}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--cl-font-mono)",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: "var(--cl-text-primary)",
+                    }}
+                  >
+                    {ns}
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="cl-pill"
+                        style={
+                          tagIsDanger(tag)
+                            ? { color: "var(--cl-risk-high)" }
+                            : undefined
+                        }
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                  <span
+                    className="font-mono tabular-nums shrink-0"
+                    style={{
+                      marginLeft: "auto",
+                      fontSize: 11,
+                      color: "var(--cl-text-muted)",
+                    }}
+                  >
+                    {relTimeCompact(entry.timestamp)}
+                  </span>
+                </span>
+                {/* Line 2 — target (path / command / URL / query). Skip entirely
+                    when formatEventTarget returns empty so memoryless rows
+                    don't grow a phantom blank line. */}
+                {target !== "" && (
+                  <span
+                    data-cl-live-feed-target
+                    className="block truncate"
+                    style={{
+                      fontFamily: "var(--cl-font-mono)",
+                      fontSize: 12,
+                      color: "var(--cl-text-muted)",
+                      paddingLeft: 14,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {target}
+                  </span>
+                )}
+              </Link>
+            );
+          })
+        )}
       </div>
     </section>
   );
-}
-
-function fmtTimeOfDay(iso: string): string {
-  const d = new Date(iso);
-  const h = String(d.getHours()).padStart(2, "0");
-  const m = String(d.getMinutes()).padStart(2, "0");
-  const s = String(d.getSeconds()).padStart(2, "0");
-  return `${h}:${m}:${s}`;
 }

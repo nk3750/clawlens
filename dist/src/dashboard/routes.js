@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
-import { buildEvalIndex, checkHealth, computeEnhancedStats, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
+import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
@@ -153,6 +153,11 @@ export function registerDashboardRoutes(api, deps) {
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
                 sendJson(res, computeEnhancedStats(entries, date));
+                return true;
+            }
+            if (subPath === "api/fleet-risk-index") {
+                const entries = deps.auditLogger.readEntries();
+                sendJson(res, computeFleetRiskIndex(entries));
                 return true;
             }
             if (subPath === "api/entries") {

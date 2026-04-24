@@ -7,6 +7,7 @@ import FleetHeader from "../components/FleetHeader";
 import AttentionInbox from "../components/AttentionInbox";
 import AgentRow from "../components/AgentCardCompact";
 import FleetActivityChart from "../components/FleetActivityChart/FleetActivityChart";
+import FleetRiskTile from "../components/FleetRiskTile/FleetRiskTile";
 import LiveFeed from "../components/LiveFeed";
 import ErrorCard from "../components/ErrorCard";
 import DormantState from "../components/DormantState";
@@ -316,39 +317,42 @@ export default function Agents() {
         )}
       </section>
 
-      {/* Bottom row — Fleet Chart + Live Feed side-by-side (spec §D1,
-          layout-fixes §1).
-          - default: weighted 2fr/1fr split, chart inline in its grid cell
-          - ?chart=full: chart + backdrop portal out to document.body (see
-            below); grid collapses to 1fr so the LiveFeed fills the row
-            behind the modal. Portaling escapes `.page-enter`'s persisted
-            transform, which would otherwise make position:fixed measure
-            from the wrong origin.
-          - narrow viewports (<= 911px): single column regardless of param
-          - minWidth:0 on both anchors so Grid can shrink them below their
-            content's min-content (fr math needs this). */}
-      <section
-        data-cl-bottom-row
-        data-cl-chart-fullscreen={chartFullscreenParam ? "true" : undefined}
-        style={{
-          display: "grid",
-          gridTemplateColumns: bottomRowSingleColumn
-            ? "1fr"
-            : "minmax(520px, 2fr) minmax(380px, 1fr)",
-          gap: 12,
-        }}
-      >
+      {/* Row 1 — Fleet Activity chart, full width (homepage-bottom-row-spec §8).
+          The chart stays inline here except in fullscreen mode, where the
+          anchor portals out to document.body (see portal block below).
+          minWidth:0 lets Grid/Flex children shrink below min-content. */}
+      <section data-cl-chart-row style={{ minWidth: 0 }}>
         {!chartFullscreenParam && (
           <div data-cl-fleet-chart-anchor style={{ minWidth: 0 }}>
             {chartAnchor}
           </div>
         )}
-        {isToday && (
+      </section>
+
+      {/* Row 2 — LiveFeed (2fr) + FleetRiskTile (1fr). Today-only — past-day
+          views have no "risk right now" concept. Collapses to 1fr when the
+          narrow-viewport breakpoint or fullscreen-chart mode applies
+          (bottomRowSingleColumn handles both cases, unchanged from the old
+          row). data-cl-chart-fullscreen moves here so existing listeners can
+          still track the modal state from one of the anchored rows. */}
+      {isToday && (
+        <section
+          data-cl-insights-row
+          data-cl-chart-fullscreen={chartFullscreenParam ? "true" : undefined}
+          style={{
+            display: "grid",
+            gridTemplateColumns: bottomRowSingleColumn ? "1fr" : "2fr 1fr",
+            gap: 12,
+          }}
+        >
           <div data-cl-live-feed-anchor style={{ minWidth: 0 }}>
             <LiveFeed />
           </div>
-        )}
-      </section>
+          <div data-cl-fleet-risk-tile-anchor style={{ minWidth: 0 }}>
+            <FleetRiskTile range={range} selectedDate={selectedDate} />
+          </div>
+        </section>
+      )}
       {chartFullscreenParam &&
         createPortal(
           <>
