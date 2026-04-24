@@ -1006,17 +1006,18 @@ export { tierRank as _tierRankForTests };
 /**
  * Fleet-level risk index. Powers the FleetRiskTile hero.
  * Semantics: homepage-bottom-row-polish-spec §2 + polish-3 #5.
- *   current        = max riskScore in last 1 hour, 0 if none
+ *   current        = max effective score in last 1 hour across decision entries, 0 if none
  *   baselineP50    = median of daily-peak riskScores over last 7 COMPLETED days
  *   delta          = current - baselineP50 (signed)
- *   critCount      = today-calendar-day entries with riskScore >= 75
- *   highCount      = today-calendar-day entries with 50 <= riskScore < 75
+ *   critCount      = today-calendar-day decision entries whose effectiveTier === "critical"
+ *   highCount      = today-calendar-day decision entries whose effectiveTier === "high"
  *   totalElevated  = critCount + highCount
  *
- * crit/highCount window is today-calendar-day (not rolling 24h) so the
- * hero numbers reconcile with the RISK MIX · 24H donut in FleetHeader,
- * which also reads today's calendar-day slice. Rolling 24h made the two
- * counts drift early in the morning.
+ * crit/highCount match the RISK MIX · 24H donut in FleetHeader exactly —
+ * same window (today-calendar-day, not rolling 24h), same filter
+ * (decision entries only, not after_tool_call / eval rows), same tier
+ * source (evalEntry?.riskTier ?? e.riskTier). All three ingredients
+ * matter — drop any one and the hero drifts from the donut.
  */
 export function computeFleetRiskIndex(entries: AuditEntry[]): FleetRiskIndexResponse {
   const now = Date.now();
