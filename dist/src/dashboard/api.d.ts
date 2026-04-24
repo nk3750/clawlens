@@ -272,18 +272,18 @@ export declare function getAttention(entries: AuditEntry[], guardrailStore?: Gua
 export { tierRank as _tierRankForTests };
 /**
  * Fleet-level risk index. Powers the FleetRiskTile hero.
- * Semantics: homepage-bottom-row-polish-spec §2 (widened from 15min to 1h).
+ * Semantics: homepage-bottom-row-polish-spec §2 + polish-3 #5.
  *   current        = max riskScore in last 1 hour, 0 if none
  *   baselineP50    = median of daily-peak riskScores over last 7 COMPLETED days
  *   delta          = current - baselineP50 (signed)
- *   critCount      = last-24h entries with riskScore >= 75
- *   highCount      = last-24h entries with 50 <= riskScore < 75
+ *   critCount      = today-calendar-day entries with riskScore >= 75
+ *   highCount      = today-calendar-day entries with 50 <= riskScore < 75
  *   totalElevated  = critCount + highCount
  *
- * 1-hour window gives the hero a continuous signal on fleets slower than
- * ~1 event/min — the previous 15-min window flickered between 0 and real
- * values between bursts. Completed-days baseline excludes today so it
- * stays stable; fresh deployment (<7 days of logs) yields baselineP50 = 0.
+ * crit/highCount window is today-calendar-day (not rolling 24h) so the
+ * hero numbers reconcile with the RISK MIX · 24H donut in FleetHeader,
+ * which also reads today's calendar-day slice. Rolling 24h made the two
+ * counts drift early in the morning.
  */
 export declare function computeFleetRiskIndex(entries: AuditEntry[]): FleetRiskIndexResponse;
 /** Compute today's decision counts. */

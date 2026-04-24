@@ -684,41 +684,48 @@ export { tierRank as _tierRankForTests };
 // ── Existing functions (unchanged signatures) ───────────
 /**
  * Fleet-level risk index. Powers the FleetRiskTile hero.
- * Semantics: homepage-bottom-row-polish-spec §2 (widened from 15min to 1h).
+ * Semantics: homepage-bottom-row-polish-spec §2 + polish-3 #5.
  *   current        = max riskScore in last 1 hour, 0 if none
  *   baselineP50    = median of daily-peak riskScores over last 7 COMPLETED days
  *   delta          = current - baselineP50 (signed)
- *   critCount      = last-24h entries with riskScore >= 75
- *   highCount      = last-24h entries with 50 <= riskScore < 75
+ *   critCount      = today-calendar-day entries with riskScore >= 75
+ *   highCount      = today-calendar-day entries with 50 <= riskScore < 75
  *   totalElevated  = critCount + highCount
  *
- * 1-hour window gives the hero a continuous signal on fleets slower than
- * ~1 event/min — the previous 15-min window flickered between 0 and real
- * values between bursts. Completed-days baseline excludes today so it
- * stays stable; fresh deployment (<7 days of logs) yields baselineP50 = 0.
+ * crit/highCount window is today-calendar-day (not rolling 24h) so the
+ * hero numbers reconcile with the RISK MIX · 24H donut in FleetHeader,
+ * which also reads today's calendar-day slice. Rolling 24h made the two
+ * counts drift early in the morning.
  */
 export function computeFleetRiskIndex(entries) {
     const now = Date.now();
     const ONE_HOUR = 60 * 60_000;
-    const TWENTY_FOUR_H = 24 * 3_600_000;
-    const DAY = TWENTY_FOUR_H;
+    const DAY = 24 * 3_600_000;
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+    const evalIdx = buildEvalIndex(entries);
     let current = 0;
     let critCount = 0;
     let highCount = 0;
     for (const e of entries) {
+        // Reconcile with computeEnhancedStats (donut source): decisions only +
+        // LLM-adjusted score for `current` + effectiveTier for per-tier counts +
+        // today-calendar-day window. Anything else drifts from the donut.
+        if (!isDecisionEntry(e))
+            continue;
         const t = new Date(e.timestamp).getTime();
-        const score = e.riskScore ?? 0;
+        const score = getEffectiveScore(e, evalIdx) ?? 0;
         const age = now - t;
         if (age >= 0 && age <= ONE_HOUR && score > current)
             current = score;
-        if (age >= 0 && age <= TWENTY_FOUR_H) {
-            if (score >= 75)
+        if (t >= startOfToday && t <= now) {
+            const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
+            const tier = evalEntry?.riskTier ?? e.riskTier;
+            if (tier === "critical")
                 critCount++;
-            else if (score >= 50)
+            else if (tier === "high")
                 highCount++;
         }
     }
-    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
     const peaks = [];
     for (let d = 1; d <= 7; d++) {
         const dayStart = startOfToday - d * DAY;

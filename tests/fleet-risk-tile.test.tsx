@@ -214,8 +214,8 @@ describe("FleetRiskTile hero", () => {
 // Sparkline (spec §6.3)
 // ─────────────────────────────────────────────────────────────
 
-describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish §3)", () => {
-  it("renders three paths — one per band (below-baseline, between, above-crit)", () => {
+describe("FleetRiskTile sparkline — 2-tier crit vs below-crit (polish-3 #1, #2)", () => {
+  it("renders exactly 2 paths — one below-crit orange, one crit red", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
@@ -226,9 +226,11 @@ describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish 
     });
     const { container } = renderTile();
     const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
-    expect(paths.length).toBe(3);
+    expect(paths.length).toBe(2);
+    const kinds = Array.from(paths).map((p) => p.getAttribute("data-cl-fleet-risk-sparkline"));
+    expect(new Set(kinds)).toEqual(new Set(["below-crit", "crit"]));
   });
-  it("each band references its own clipPath", () => {
+  it("has exactly 2 clipPaths — below-crit and crit", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
@@ -238,40 +240,39 @@ describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish 
       totalElevated: 1,
     });
     const { container } = renderTile();
-    expect(container.querySelector("clipPath#cl-frt-below-baseline-clip")).not.toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-between-clip")).not.toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-above-crit-clip")).not.toBeNull();
+    // Gone — replaced by 2 simpler clips.
+    expect(container.querySelector("clipPath#cl-frt-below-baseline-clip")).toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-between-clip")).toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-above-crit-clip")).toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-below-crit-clip")).not.toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-crit-clip")).not.toBeNull();
   });
-  it("skips the amber middle band when baselineP50 ≈ 75 (degenerate)", () => {
+  it("does NOT render the '75' dashed threshold line anymore (polish-3 #2)", () => {
     mockApis(fleetActivity([]), {
       current: 80,
-      baselineP50: 75,
-      delta: 5,
-      critCount: 0,
+      baselineP50: 40,
+      delta: 40,
+      critCount: 1,
       highCount: 0,
-      totalElevated: 0,
+      totalElevated: 1,
     });
     const { container } = renderTile();
-    const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
-    // baseline coincides with crit threshold → amber band collapses → 2 paths.
-    expect(paths.length).toBe(2);
+    // Replaced by the color transition at y=75 between orange and red.
+    expect(container.querySelector("[data-cl-fleet-risk-threshold-line]")).toBeNull();
   });
-  it("skips the green below-baseline band when baselineP50 = 0 (fresh deploy)", () => {
+  it("keeps the baseline dashed line (anchors the delta hero)", () => {
     mockApis(fleetActivity([]), {
       current: 0,
-      baselineP50: 0,
+      baselineP50: 40,
       delta: 0,
       critCount: 0,
       highCount: 0,
       totalElevated: 0,
     });
     const { container } = renderTile();
-    const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
-    // baseline clamps to score-floor (30) → yForScore(0) = plotHeight →
-    // green band has zero height → 2 paths (amber + red).
-    expect(paths.length).toBe(2);
+    expect(container.querySelector("[data-cl-fleet-risk-baseline-line]")).not.toBeNull();
   });
-  it("uses a 1.5px stroke + 0.08 fillOpacity (line-dominant, faint backdrop)", () => {
+  it("uses a 1.5px stroke + 0.08 fillOpacity on both paths (line-dominant)", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
@@ -288,19 +289,6 @@ describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish 
       expect(p.getAttribute("stroke-width")).toBe("1.5");
       expect(p.getAttribute("fill-opacity")).toBe("0.08");
     }
-  });
-  it("renders critical threshold line + baseline line", () => {
-    mockApis(fleetActivity([]), {
-      current: 0,
-      baselineP50: 40,
-      delta: 0,
-      critCount: 0,
-      highCount: 0,
-      totalElevated: 0,
-    });
-    const { container } = renderTile();
-    expect(container.querySelector("[data-cl-fleet-risk-threshold-line]")).not.toBeNull();
-    expect(container.querySelector("[data-cl-fleet-risk-baseline-line]")).not.toBeNull();
   });
   it("does NOT render the '75' threshold text label (polish §4)", () => {
     mockApis(fleetActivity([]), {
@@ -345,9 +333,80 @@ describe("FleetRiskTile sparkline — 3-band baseline-relative coloring (polish 
     const texts = Array.from(container.querySelectorAll("svg text")).map(
       (t) => t.textContent?.trim() ?? "",
     );
-    // Baseline label must NOT appear — a "0" label outside the viewBox would
-    // clip and read as noise.
     expect(texts).not.toContain("0");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// NOW dot on sparkline (polish-3 #3)
+// ─────────────────────────────────────────────────────────────
+
+describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
+  it("renders a NOW dot on today view when buckets have data", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector("[data-cl-fleet-risk-now-dot]");
+    expect(dot).not.toBeNull();
+    expect(dot?.tagName.toLowerCase()).toBe("circle");
+  });
+  it("does NOT render the NOW dot on past-day views", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ selectedDate: "2026-04-01" });
+    expect(container.querySelector("[data-cl-fleet-risk-now-dot]")).toBeNull();
+  });
+  it("paints the NOW dot red when the last bucket is crit (>= 75)", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 90 })]), {
+      current: 90,
+      baselineP50: 40,
+      delta: 50,
+      critCount: 1,
+      highCount: 0,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
+    expect(dot?.getAttribute("fill")).toMatch(/cl-risk-critical/);
+  });
+  it("paints the NOW dot orange when the last bucket is below crit (< 75)", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 55 })]), {
+      current: 55,
+      baselineP50: 40,
+      delta: 15,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
+    expect(dot?.getAttribute("fill")).toMatch(/cl-risk-high/);
+  });
+  it("has a bg-colored stroke (knockout halo) so it reads over the fill", () => {
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
+    expect(dot?.getAttribute("stroke")).toMatch(/cl-bg/);
+    expect(dot?.getAttribute("stroke-width")).toBe("2");
   });
 });
 

@@ -110,35 +110,40 @@ export default function LiveFeed() {
       style={{
         height: "100%",
         maxHeight: 580,
-        display: "flex",
-        flexDirection: "column",
         minHeight: 0,
       }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
-          LIVE
-        </span>
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full"
-          style={{
-            backgroundColor: "var(--cl-risk-low)",
-            animation: "cl-pulse 2s ease-in-out infinite",
-          }}
-        />
-      </div>
       <div
         ref={listRef}
         data-cl-live-feed-list
         className="cl-card"
         style={{
           padding: 0,
-          flex: 1,
+          height: "100%",
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
         }}
       >
+        <div
+          data-cl-live-feed-header
+          className="flex items-center gap-2"
+          style={{
+            padding: "10px 14px",
+            borderBottom: "1px solid var(--cl-border-subtle)",
+          }}
+        >
+          <span className="label-mono" style={{ color: "var(--cl-text-muted)" }}>
+            LIVE
+          </span>
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{
+              backgroundColor: "var(--cl-risk-low)",
+              animation: "cl-pulse 2s ease-in-out infinite",
+            }}
+          />
+        </div>
         <div
           data-cl-live-feed-scroll
           style={{ flex: 1, overflowY: "auto", minHeight: 0 }}

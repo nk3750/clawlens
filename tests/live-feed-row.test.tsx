@@ -301,6 +301,34 @@ describe("LiveFeed — polish-2 §1 chrome", () => {
     const section = container.querySelector<HTMLElement>("[data-cl-live-feed]");
     expect(section?.style.maxHeight).toBe("580px");
   });
+  it("renders the LIVE header INSIDE the cl-card (polish-3 #4 alignment)", () => {
+    // Before polish-3 the LIVE label + pulse dot sat OUTSIDE the card as a
+    // floating header, which pushed the whole card down relative to the
+    // FleetRiskTile next door. Header must now live inside the card as its
+    // first child so both tiles' card-tops align at the grid-cell top.
+    mockInitial([entry({ toolCallId: "header-inside" })]);
+    const { container } = renderFeed();
+    const card = container.querySelector<HTMLElement>("[data-cl-live-feed-list]");
+    expect(card).not.toBeNull();
+    const liveLabel = Array.from(card?.querySelectorAll("span") ?? []).find(
+      (s) => s.textContent?.trim().toLowerCase() === "live",
+    );
+    expect(liveLabel).toBeDefined();
+  });
+  it("LIVE header has a borderBottom separator from the scroll area", () => {
+    mockInitial([entry({ toolCallId: "border-check" })]);
+    const { container } = renderFeed();
+    const header = container.querySelector<HTMLElement>("[data-cl-live-feed-header]");
+    expect(header).not.toBeNull();
+    expect(header?.style.borderBottom).toMatch(/1px solid/);
+  });
+  it("card is the first child of the outer section — no floating header before it", () => {
+    mockInitial([entry({ toolCallId: "first-child" })]);
+    const { container } = renderFeed();
+    const section = container.querySelector<HTMLElement>("[data-cl-live-feed]");
+    const firstChild = section?.firstElementChild;
+    expect(firstChild?.getAttribute("data-cl-live-feed-list")).not.toBeNull();
+  });
   it("renders 8 rows initially (INITIAL_LIMIT), not the old 25", () => {
     const entries = Array.from({ length: 40 }, (_, i) =>
       entry({ toolCallId: `e-${i}`, timestamp: NOW_ISO }),

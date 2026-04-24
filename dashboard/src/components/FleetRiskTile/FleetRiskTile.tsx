@@ -42,8 +42,6 @@ const TOOLTIP_W = 220;
 // ── Tier color tokens ────────────────────────────────────────
 const CRIT_COLOR = "var(--cl-risk-critical)";
 const HIGH_COLOR = "var(--cl-risk-high)";
-const LOW_COLOR = "var(--cl-risk-low)";
-const MEDIUM_COLOR = "var(--cl-risk-medium)";
 const ACCENT = "var(--cl-accent)";
 const TEXT_MUTED = "var(--cl-text-muted)";
 const TEXT_SUBDUED = "var(--cl-text-subdued)";
@@ -312,87 +310,49 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
         style={{ overflow: "visible" }}
       >
         <defs>
-          {/* Three bands, baseline-relative (polish §3.2).
-              - below-baseline: y ∈ [baselineY, SPARK_H] — green
-              - between baseline and crit: y ∈ [min(critY,baselineY), max(critY,baselineY)]
-                → amber; degenerate when baselineP50 ≈ 75 (band collapses)
-              - above-crit: y ∈ [0, critY] — red */}
-          <clipPath id="cl-frt-below-baseline-clip">
+          {/* Two bands, crit-threshold-relative (polish-3 #1).
+              - below-crit: y ∈ [critY, SPARK_H] — orange
+              - crit:       y ∈ [0, critY]       — red */}
+          <clipPath id="cl-frt-below-crit-clip">
             <rect
               x={PLOT_LEFT}
-              y={baselineY}
+              y={critY}
               width={PLOT_WIDTH}
-              height={Math.max(0, SPARK_H - baselineY)}
+              height={Math.max(0, SPARK_H - critY)}
             />
           </clipPath>
-          <clipPath id="cl-frt-between-clip">
-            <rect
-              x={PLOT_LEFT}
-              y={Math.min(critY, baselineY)}
-              width={PLOT_WIDTH}
-              height={Math.max(0, Math.abs(critY - baselineY))}
-            />
-          </clipPath>
-          <clipPath id="cl-frt-above-crit-clip">
+          <clipPath id="cl-frt-crit-clip">
             <rect x={PLOT_LEFT} y={0} width={PLOT_WIDTH} height={critY} />
           </clipPath>
         </defs>
 
         {/* Sparkline layer ── y in [0, 100] */}
         <g>
-          {/* Below baseline — green (skipped when baseline clamps to floor →
-              zero-height band) */}
-          {SPARK_H - baselineY > 0.5 && (
-            <path
-              data-cl-fleet-risk-sparkline="below-baseline"
-              d={sparkPath}
-              fill={LOW_COLOR}
-              fillOpacity={0.08}
-              stroke={LOW_COLOR}
-              strokeWidth={1.5}
-              clipPath="url(#cl-frt-below-baseline-clip)"
-            />
-          )}
-          {/* Between baseline and crit — amber. Skipped in the degenerate
-              baselineP50 ≈ 75 case where the band collapses to zero height. */}
-          {Math.abs(critY - baselineY) > 0.5 && (
-            <path
-              data-cl-fleet-risk-sparkline="between"
-              d={sparkPath}
-              fill={MEDIUM_COLOR}
-              fillOpacity={0.08}
-              stroke={MEDIUM_COLOR}
-              strokeWidth={1.5}
-              clipPath="url(#cl-frt-between-clip)"
-            />
-          )}
-          {/* Above crit threshold — red */}
+          {/* Below crit — orange */}
           <path
-            data-cl-fleet-risk-sparkline="above-crit"
+            data-cl-fleet-risk-sparkline="below-crit"
+            d={sparkPath}
+            fill={HIGH_COLOR}
+            fillOpacity={0.08}
+            stroke={HIGH_COLOR}
+            strokeWidth={1.5}
+            clipPath="url(#cl-frt-below-crit-clip)"
+          />
+          {/* Above crit — red. Color transition at y=75 is itself the
+              threshold marker (polish-3 #2 drops the dashed line). */}
+          <path
+            data-cl-fleet-risk-sparkline="crit"
             d={sparkPath}
             fill={CRIT_COLOR}
             fillOpacity={0.08}
             stroke={CRIT_COLOR}
             strokeWidth={1.5}
-            clipPath="url(#cl-frt-above-crit-clip)"
-          />
-
-          {/* Critical threshold line — label dropped per polish §4, the
-              color transition at the line speaks for itself. */}
-          <line
-            data-cl-fleet-risk-threshold-line
-            x1={PLOT_LEFT}
-            x2={PLOT_LEFT + PLOT_WIDTH}
-            y1={critY}
-            y2={critY}
-            stroke={TEXT_SUBDUED}
-            strokeDasharray="2 4"
-            strokeWidth={0.5}
+            clipPath="url(#cl-frt-crit-clip)"
           />
 
           {/* Baseline line + "{baselineP50}" label. Label is skipped when
-              baselineP50 < 5 (fresh-deploy guard — a "0" would clip
-              outside the viewBox at y = plotHeight + 3). */}
+              baselineP50 < 5 (fresh-deploy guard). Baseline anchors the
+              -N vs 7d baseline delta in the hero. */}
           <line
             data-cl-fleet-risk-baseline-line
             x1={PLOT_LEFT}
@@ -414,6 +374,28 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
               {hero.baselineP50}
             </text>
           )}
+
+          {/* NOW dot at the last bucket's midpoint (polish-3 #3). Only on
+              today view — past-day panels have no "now" concept. bg-colored
+              stroke creates a knockout halo so the dot reads crisply over
+              the fill beneath. */}
+          {isToday && buckets.length > 0 && (() => {
+            const last = buckets[buckets.length - 1];
+            const lastX = timeToX((last.startMs + last.endMs) / 2);
+            const lastY = yForScore(last.max, SPARK_H);
+            const lastColor = last.max >= CRIT_THRESHOLD ? CRIT_COLOR : HIGH_COLOR;
+            return (
+              <circle
+                data-cl-fleet-risk-now-dot
+                cx={lastX}
+                cy={lastY}
+                r={4}
+                fill={lastColor}
+                stroke="var(--cl-bg)"
+                strokeWidth={2}
+              />
+            );
+          })()}
         </g>
 
         {/* Tape layer ── translated down by 120 */}
