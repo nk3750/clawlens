@@ -49,8 +49,9 @@ const INLINE_CHART_HEIGHT = 200;
 const FULLSCREEN_CHART_HEIGHT = 360;
 const DOT_RADIUS = 8;
 const CLUSTER_RADIUS = 10;
-/** Icon glyph inside a single dot. 12px square inside a 16px fill. */
-const DOT_ICON_SIZE = 12;
+/** Icon glyph — the dot IS the icon now (no fill disc). 14px gives it more
+ *  presence in the chart than the 12px legend glyphs. */
+const DOT_ICON_SIZE = 14;
 const LIVE_CAP = 5000;
 const LEFT_EDGE_FADE_PCT = 0.05;
 const ENTER_ANIMATION_MS = 280;
@@ -361,12 +362,12 @@ export default function FleetActivityChart({
 
       {/* Chart body — split into a fixed-width lane-label gutter on the left
           and a flex-1 swarm SVG on the right so lane labels stay visible even
-          when all six lanes are empty. marginTop reserves room for cluster
-          '+N' labels that draw above the top lane (y < 0) once the main SVG
-          is given overflow="visible" below. */}
+          when all six lanes are empty. marginTop reserves room for both the
+          NOW caption (lifted above y=0) and cluster '+N' labels that draw
+          above the top lane; the main SVG has overflow="visible" below. */}
       <div
         ref={setContainerEl}
-        style={{ position: "relative", height: chartH, display: "flex", marginTop: 14 }}
+        style={{ position: "relative", height: chartH, display: "flex", marginTop: 20 }}
         data-cl-swarm-body
       >
         {/* Lane-label gutter — icon + text per category. Mirrors the
@@ -456,7 +457,7 @@ export default function FleetActivityChart({
               <text
                 data-cl-swarm-now-caption
                 x={nowX}
-                y={11}
+                y={-6}
                 textAnchor="end"
                 style={{
                   fill: "var(--cl-accent)",
@@ -471,7 +472,7 @@ export default function FleetActivityChart({
               </text>
               <polygon
                 data-cl-swarm-now-arrow
-                points={`${nowX - 4},16 ${nowX + 4},16 ${nowX},22`}
+                points={`${nowX - 4},-2 ${nowX + 4},-2 ${nowX},4`}
                 fill="var(--cl-accent)"
               />
             </>
@@ -541,14 +542,7 @@ export default function FleetActivityChart({
                       )}
                     </circle>
                   )}
-                  <circle
-                    cx={cx}
-                    cy={c.cy}
-                    r={r}
-                    fill={color}
-                    opacity={fadeOpacity}
-                  />
-                  {!c.isCluster && meta && (
+                  {meta && (
                     <svg
                       x={cx - DOT_ICON_SIZE / 2}
                       y={c.cy - DOT_ICON_SIZE / 2}
@@ -556,7 +550,7 @@ export default function FleetActivityChart({
                       height={DOT_ICON_SIZE}
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke="var(--cl-bg)"
+                      stroke={color}
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -566,6 +560,16 @@ export default function FleetActivityChart({
                       <path d={meta.iconPath} />
                     </svg>
                   )}
+                  {/* Transparent hit target — stroke-only icons have thin hit
+                      areas, so this circle gives clicks a comfortable landing
+                      zone at r=DOT_RADIUS/CLUSTER_RADIUS. */}
+                  <circle
+                    cx={cx}
+                    cy={c.cy}
+                    r={r}
+                    fill="transparent"
+                    pointerEvents={clickable ? "auto" : "none"}
+                  />
                   {c.isCluster && (
                     <text
                       data-cl-swarm-cluster-count

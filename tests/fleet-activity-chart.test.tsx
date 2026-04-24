@@ -192,11 +192,26 @@ describe("FleetActivityChart — dot placement", () => {
     }
   });
 
-  it("uses the category color for the dot fill", () => {
+  it("strokes the dot icon with the category color (no filled disc)", () => {
     const entries = [mkEntry({ category: "git", toolCallId: "t1" })];
     const { container } = renderChart({ entries });
-    const circle = container.querySelector("[data-cl-swarm-dot] circle");
-    expect(circle?.getAttribute("fill")).toBe("var(--cl-cat-commands)");
+    const iconSvg = container.querySelector("[data-cl-swarm-dot] svg");
+    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-commands)");
+    // No fill circle remains — only the transparent hit target + icon path.
+    const fillCircles = [...container.querySelectorAll("[data-cl-swarm-dot] > circle")].filter(
+      (c) => {
+        const f = c.getAttribute("fill");
+        return f !== "transparent" && f !== "none";
+      },
+    );
+    expect(fillCircles).toHaveLength(0);
+  });
+
+  it("renders a transparent hit target circle so clicks land reliably", () => {
+    const entries = [mkEntry({ category: "git", toolCallId: "t1" })];
+    const { container } = renderChart({ entries });
+    const hit = container.querySelector('[data-cl-swarm-dot] circle[fill="transparent"]');
+    expect(hit).not.toBeNull();
   });
 });
 
@@ -580,6 +595,22 @@ describe("FleetActivityChart — now-line visibility", () => {
     expect(caption?.getAttribute("text-anchor")).toBe("end");
   });
 
+  it("lifts the NOW caption above the chart (y=-6) so exploring-lane dots don't collide", () => {
+    const { container } = renderChart();
+    const caption = container.querySelector("[data-cl-swarm-now-caption]");
+    expect(caption?.getAttribute("y")).toBe("-6");
+  });
+
+  it("places the arrow in the top margin (base at y=-2, apex at y=4)", () => {
+    const { container } = renderChart();
+    const arrow = container.querySelector("[data-cl-swarm-now-arrow]");
+    const points = arrow?.getAttribute("points") ?? "";
+    // Base y=-2 (in the reserved margin), apex y=4 (just inside the chart).
+    expect(points).toMatch(/,-2 /);
+    expect(points).toMatch(/,-2$|,4$/);
+    expect(points).toContain(",4");
+  });
+
   it("does NOT render the caption/arrow on past-date views", () => {
     const { container } = renderChart({ selectedDate: "2026-04-15" });
     expect(container.querySelector("[data-cl-swarm-now-caption]")).toBeNull();
@@ -588,26 +619,17 @@ describe("FleetActivityChart — now-line visibility", () => {
 });
 
 describe("FleetActivityChart — dot icons", () => {
-  it("overlays the category iconPath on single dots (circle + path siblings)", () => {
+  it("renders the category iconPath on single dots, stroked with the category color", () => {
     const entries = [mkEntry({ category: "git", toolCallId: "solo" })];
     const { container } = renderChart({ entries });
     const dot = container.querySelector('[data-cl-swarm-dot][data-cl-swarm-cluster="false"]');
     expect(dot).not.toBeNull();
-    expect(dot?.querySelector("circle")).not.toBeNull();
-    expect(dot?.querySelector("path")).not.toBeNull();
+    const iconSvg = dot?.querySelector("svg");
+    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-commands)");
+    expect(iconSvg?.querySelector("path")).not.toBeNull();
   });
 
-  it("strokes the dot-icon with var(--cl-bg) — the defined page-canvas token", () => {
-    const entries = [mkEntry({ category: "git", toolCallId: "solo" })];
-    const { container } = renderChart({ entries });
-    const iconSvg = container.querySelector(
-      '[data-cl-swarm-dot][data-cl-swarm-cluster="false"] svg',
-    );
-    expect(iconSvg).not.toBeNull();
-    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-bg)");
-  });
-
-  it("does NOT overlay an icon on cluster dots (circle + text, no path)", () => {
+  it("renders the SAME icon treatment on cluster dots (icon + '+N' badge)", () => {
     const base = Date.parse(NOW) - 30 * 60_000;
     const entries: EntryResponse[] = [
       mkEntry({ category: "web", timestamp: new Date(base).toISOString(), toolCallId: "a" }),
@@ -616,9 +638,28 @@ describe("FleetActivityChart — dot icons", () => {
     const { container } = renderChart({ entries });
     const cluster = container.querySelector('[data-cl-swarm-dot][data-cl-swarm-cluster="true"]');
     expect(cluster).not.toBeNull();
-    expect(cluster?.querySelector("circle")).not.toBeNull();
-    expect(cluster?.querySelector("[data-cl-swarm-cluster-count]")).not.toBeNull();
-    expect(cluster?.querySelector("path")).toBeNull();
+    const iconSvg = cluster?.querySelector("svg");
+    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-web)");
+    expect(iconSvg?.querySelector("path")).not.toBeNull();
+    expect(cluster?.querySelector("[data-cl-swarm-cluster-count]")?.textContent).toBe("+2");
+  });
+
+  it("gives both singles and clusters a transparent hit target", () => {
+    const base = Date.parse(NOW) - 30 * 60_000;
+    const entries: EntryResponse[] = [
+      mkEntry({ category: "web", timestamp: new Date(base).toISOString(), toolCallId: "a" }),
+      mkEntry({ category: "web", timestamp: new Date(base + 100).toISOString(), toolCallId: "b" }),
+      mkEntry({
+        category: "exploring",
+        timestamp: new Date(base - 1800_000).toISOString(),
+        toolCallId: "c",
+      }),
+    ];
+    const { container } = renderChart({ entries });
+    const dots = [...container.querySelectorAll("[data-cl-swarm-dot]")];
+    for (const d of dots) {
+      expect(d.querySelector('circle[fill="transparent"]')).not.toBeNull();
+    }
   });
 });
 
@@ -634,11 +675,11 @@ describe("FleetActivityChart — overflow guards (unclip cluster labels)", () =>
     expect(main?.getAttribute("overflow")).toBe("visible");
   });
 
-  it("reserves top space on the chart body so the overflowing label does not overlap the header", () => {
+  it("reserves 20px of top margin so the NOW caption and cluster labels both sit above the chart cleanly", () => {
     const { container } = renderChart();
     const body = container.querySelector("[data-cl-swarm-body]") as HTMLElement | null;
     expect(body).not.toBeNull();
-    expect(body?.style.marginTop).toBe("14px");
+    expect(body?.style.marginTop).toBe("20px");
   });
 });
 
