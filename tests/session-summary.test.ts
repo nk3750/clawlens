@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditEntry } from "../src/audit/logger";
 import {
+  capSummaryLength,
   clearSummaryCache,
   getSessionSummary,
   getSummaryCacheSize,
@@ -223,11 +224,77 @@ describe("getSessionSummary", () => {
   });
 });
 
-// agent-card-polish §3: card slot is 2 lines × ~70 chars. The prompt asks the
-// LLM for ≤140 chars; the server-side cap is the safety net for overshoot.
-// These tests pin the cap behavior + the persona/length framing in the prompt
-// so future drift surfaces in CI.
-describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
+// #25: capSummaryLength is content-shaped (sentence-terminator preferred) with
+// a 400-char panic stop. Direct unit tests on the helper lock the new shape;
+// the LLM-integration tests below pin the soft prompt + token-headroom changes
+// that motivated the rewrite.
+describe("capSummaryLength", () => {
+  it("returns full raw when input ends in a sentence terminator (≥40 chars)", () => {
+    // Last terminator is at the very end → slice up to and including it gives
+    // the full string. Most common LLM-output shape post-fix.
+    const input = "Agent monitors remote host with heartbeat probes.";
+    expect(input.length).toBeGreaterThanOrEqual(40);
+    expect(capSummaryLength(input)).toBe(input);
+  });
+
+  it("returns full raw for multi-sentence input under the panic cap", () => {
+    // Last terminator dominates → full string returned. Hybrid display in the
+    // popover scrolls if needed; no truncation here.
+    const input = "Sentence one ends here. Then a second clean sentence follows.";
+    expect(input.length).toBeGreaterThanOrEqual(40);
+    expect(input.length).toBeLessThan(400);
+    expect(capSummaryLength(input)).toBe(input);
+  });
+
+  it("caps at the last terminator that yields ≥40 chars when raw runs past the panic budget", () => {
+    // Long tail with no further terminators forces a content-shaped cap at the
+    // last `.` in the leading prose. Ellipsis is NOT appended — the sentence
+    // terminator already signals completion.
+    const head = "First. This is the second sentence here.";
+    expect(head.length).toBeGreaterThanOrEqual(40);
+    const input = `${head} ${"x".repeat(500)}`;
+    expect(capSummaryLength(input)).toBe(head);
+    expect(capSummaryLength(input)).not.toMatch(/…$/);
+  });
+
+  it("returns full raw for short input ending in '.' (no leading-fragment truncation, no '…')", () => {
+    // The 40-char fragment guard exists to avoid truncating 'Yes. Done — agent
+    // monitors X' to just 'Yes.'. For inputs already <40 chars, both branches
+    // return raw unchanged.
+    const input = "Yes. Done.";
+    expect(input.length).toBeLessThan(40);
+    expect(capSummaryLength(input)).toBe(input);
+  });
+
+  it("does NOT truncate to a leading <40-char fragment when the only terminator is too early", () => {
+    // 'Yes.' produces a 4-char slice → guard rejects it. Falls through to
+    // passthrough since raw (under 400) is below the panic cap.
+    const input =
+      "Yes. The agent is currently monitoring remote hosts and emitting heartbeat traffic";
+    expect(input.length).toBeLessThan(400);
+    expect(capSummaryLength(input)).toBe(input);
+    expect(capSummaryLength(input)).not.toMatch(/^Yes\.$/);
+  });
+
+  it("falls back to word-boundary char-cap with '…' when no terminator AND raw exceeds 400", () => {
+    // True LLM misbehavior — long stream of words with no terminators. Last
+    // resort: the legacy word-boundary slice plus the '…' marker so the user
+    // sees the truncation explicitly.
+    const word = "lorem ";
+    const input = word.repeat(80).trimEnd(); // 479 chars, spaces, no terminators
+    expect(input.length).toBeGreaterThan(400);
+    expect(input).not.toMatch(/[.!?]/);
+    const out = capSummaryLength(input);
+    expect(out).toMatch(/…$/);
+    expect(out.length).toBeLessThanOrEqual(401);
+  });
+});
+
+// LLM-integration tests: stub fetch so we can assert the system prompt + user
+// prompt content + max_tokens that the summary path sends upstream. These pin
+// the soft-target wording + 100-token headroom from #25 so a regression back
+// to "MAXIMUM 140 characters" / 48 tokens fails CI.
+describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   function manyEntries(): AuditEntry[] {
     return Array.from({ length: 5 }, (_, i) =>
       entry({
@@ -242,9 +309,8 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
 
   let originalKey: string | undefined;
   let mockFetch: ReturnType<typeof vi.fn>;
-  // Captured user message from the most recent fetch call. Use this to assert
-  // the prompt's persona/length framing instead of patching internals.
   let lastUserMessage = "";
+  let lastSystemPrompt = "";
   let lastMaxTokens: number | undefined;
 
   beforeEach(() => {
@@ -253,6 +319,7 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
     process.env.ANTHROPIC_API_KEY = "test-key";
 
     lastUserMessage = "";
+    lastSystemPrompt = "";
     lastMaxTokens = undefined;
     mockFetch = vi.fn();
     vi.stubGlobal("fetch", mockFetch);
@@ -271,6 +338,7 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
     mockFetch.mockImplementation(async (_url: string, opts: { body: string }) => {
       const body = JSON.parse(opts.body);
       lastUserMessage = body.messages?.[0]?.content ?? "";
+      lastSystemPrompt = body.system ?? "";
       lastMaxTokens = body.max_tokens;
       return {
         ok: true,
@@ -281,35 +349,10 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
     });
   }
 
-  it("truncates a 200-char overshoot at a word boundary and ends with `…`", async () => {
-    // 200-char single-line response (well past the 140 limit). The cap should
-    // trim to ≤141 chars total (140 + ellipsis), break on a space, and end on
-    // a non-space char before the ellipsis.
-    const overshoot =
-      "This agent has been actively triaging customer support requests across telephony and email channels, escalating two high-risk billing disputes and quietly resolving routine refunds";
-    expect(overshoot.length).toBeGreaterThan(160);
-    setLlmResponse(overshoot);
-
-    const result = await getSessionSummary("s1", manyEntries(), {
-      llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
-      provider: "anthropic",
-    });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const out = result.summary.summary;
-    expect(out.length).toBeLessThanOrEqual(141);
-    // Must end on a non-whitespace char immediately before the ellipsis (word
-    // boundary, not mid-word).
-    expect(out).toMatch(/[^\s]…$/);
-  });
-
-  it("passes through a 90-char response untouched (no `…` appended)", async () => {
-    const short =
+  it("passes a sentence-terminated LLM response straight through (no '…' appended)", async () => {
+    const clean =
       "This agent is running scheduled health checks across the production search pipelines.";
-    expect(short.length).toBeLessThan(140);
-    setLlmResponse(short);
+    setLlmResponse(clean);
 
     const result = await getSessionSummary("s1", manyEntries(), {
       llmModel: "claude-haiku-4-5-20251001",
@@ -319,13 +362,14 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.summary.summary).toBe(short);
+    expect(result.summary.summary).toBe(clean);
     expect(result.summary.summary).not.toMatch(/…$/);
   });
 
-  it("sends `one present-tense sentence` and `140 characters` framing in the prompt", async () => {
-    // Locks the persona/cap framing against drift — the card slot exists
-    // because of these phrases. If a future PR softens them, this fails.
+  it("uses a soft length target in the system prompt — no MAXIMUM 140 hard-cap language", async () => {
+    // Locks the #25 fix: "MAXIMUM 140 characters" is what caused the popover to
+    // land mid-thought. The new framing prefers a complete sentence over a hard
+    // count.
     setLlmResponse("ok");
 
     await getSessionSummary("s1", manyEntries(), {
@@ -334,14 +378,16 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
       provider: "anthropic",
     });
 
+    expect(lastSystemPrompt).toContain("complete thought");
+    expect(lastSystemPrompt).toContain("200 characters");
+    expect(lastSystemPrompt).not.toMatch(/MAXIMUM\s+140/);
+    // User-side persona framing is preserved.
     expect(lastUserMessage).toContain("one present-tense sentence");
-    expect(lastUserMessage).toContain("140 characters");
   });
 
-  it("requests max_tokens=48 on the direct-API call (~140 chars + margin)", async () => {
-    // Explicit cap on the upstream side. Spec §3 lowers this from the eval
-    // path's default (512) so the model can't ramble even before the helper
-    // truncates.
+  it("requests max_tokens=100 on the direct-API call (room for a long-but-complete sentence)", async () => {
+    // Bumped from 48 → 100 in #25 so the LLM has headroom to land on a sentence
+    // terminator instead of truncating mid-word against the upstream cap.
     setLlmResponse("ok");
 
     await getSessionSummary("s1", manyEntries(), {
@@ -350,6 +396,6 @@ describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
       provider: "anthropic",
     });
 
-    expect(lastMaxTokens).toBe(48);
+    expect(lastMaxTokens).toBe(100);
   });
 });

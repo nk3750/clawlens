@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 interface Props {
   /** Resolved summary text. `null` while idle/closed; `null` + loading=true while fetching. */
@@ -27,6 +27,7 @@ const WORD_STAGGER_MS = 30;
  */
 export default function SummaryPopover({ summary, loading, agentId, onClose }: Props) {
   const popRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   // Esc + outside-click dismiss. Lifted from RiskMixMicrobar's pattern.
   // The popover only mounts when the card flips popoverOpen=true, so the
@@ -72,13 +73,22 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
         bottom: "calc(100% + 6px)",
         right: 0,
         width: 280,
+        // Hybrid display: dynamic up to a 220px ceiling, scroll past it. The
+        // soft prompt target lands well under this in the typical case.
+        maxHeight: 220,
+        overflowY: "auto",
         padding: "10px 12px",
         borderRadius: "var(--cl-r-md)",
         boxShadow: "var(--cl-depth-pop)",
-        backgroundColor: "var(--cl-bg-card, var(--cl-bg))",
+        backgroundColor: "var(--cl-bg-popover)",
         border: "1px solid var(--cl-border)",
-        zIndex: "var(--cl-z-tooltip)" as unknown as number,
-        animation: "page-fade-in 120ms var(--cl-ease) both",
+        // mirrors --cl-z-tooltip in index.css; numeric literal avoids the string-cast
+        zIndex: 80,
+        // Linear-style spring; cl-pop-in-up rises into rest because this
+        // popover is anchored above its trigger (mirror of RiskMixPopover's
+        // cl-pop-in which drops down). Origin sits at the trigger's edge.
+        animation: "cl-pop-in-up 160ms cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        transformOrigin: "bottom right",
       }}
     >
       <div
@@ -114,25 +124,32 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
             lineHeight: 1.5,
           }}
         >
-          {words.map((word, i) => (
-            // Words are stable for a given summary; index keys are safe here
-            // because the summary string never partially mutates.
-            //
-            // The inter-word space is a sibling text node (Fragment child),
-            // not part of the span's textContent — keeps each word's reveal
-            // animation clean and lets tests assert word.textContent === "Three"
-            // without trailing whitespace.
-            // biome-ignore lint/suspicious/noArrayIndexKey: stable per render
-            <Fragment key={`w-${i}`}>
-              <span
-                className="cl-summary-word"
-                style={{ animationDelay: `${i * WORD_STAGGER_MS}ms` }}
-              >
-                {word}
-              </span>
-              {i < words.length - 1 ? " " : null}
-            </Fragment>
-          ))}
+          {(() => {
+            // Per-word delay clamps total reveal at ~800ms — long LLM outputs
+            // would otherwise drag past the AI-shine timing at the naive
+            // 30ms × N rate. max(words.length, 1) guards against empty arrays
+            // (skeleton-loading state has zero words).
+            const perWord = Math.min(WORD_STAGGER_MS, 800 / Math.max(words.length, 1));
+            return words.map((word, i) => (
+              // Words are stable for a given summary; index keys are safe here
+              // because the summary string never partially mutates.
+              //
+              // The inter-word space is a sibling text node (Fragment child),
+              // not part of the span's textContent — keeps each word's reveal
+              // animation clean and lets tests assert word.textContent === "Three"
+              // without trailing whitespace.
+              // biome-ignore lint/suspicious/noArrayIndexKey: stable per render
+              <Fragment key={`w-${i}`}>
+                <span
+                  className="cl-summary-word"
+                  style={{ animationDelay: `${i * perWord}ms` }}
+                >
+                  {word}
+                </span>
+                {i < words.length - 1 ? " " : null}
+              </Fragment>
+            ));
+          })()}
         </div>
       )}
 
@@ -144,14 +161,16 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
         }}
       />
 
-      <Link
+      <button
+        type="button"
         data-cl-summary-pop-link
-        to={targetHref}
         // The popover sits inside the card's outer <Link to="/agent/:id">.
-        // stopPropagation so clicking the footer doesn't double-fire the
-        // outer card navigation (same pattern as RiskMixPopover's link).
+        // <button> avoids the nested-anchor HTML invalid state; useNavigate
+        // drives the same drill-through. stopPropagation prevents the outer
+        // card click from double-firing.
         onClick={(e) => {
           e.stopPropagation();
+          navigate(targetHref);
         }}
         style={{
           color: "var(--cl-accent)",
@@ -160,10 +179,14 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
           fontSize: 11,
           textDecoration: "none",
           display: "inline-block",
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
         }}
       >
         Open agent →
-      </Link>
+      </button>
     </div>
   );
 }

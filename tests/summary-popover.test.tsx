@@ -2,9 +2,23 @@
 
 import { fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return { ...actual, useNavigate: vi.fn() };
+});
+
+import { useNavigate } from "react-router-dom";
 import SummaryPopover from "../dashboard/src/components/SummaryPopover";
+
+const mockedUseNavigate = vi.mocked(useNavigate);
+const navigateSpy = vi.fn();
+
+beforeEach(() => {
+  navigateSpy.mockReset();
+  mockedUseNavigate.mockReturnValue(navigateSpy);
+});
 
 function renderPopover(props: {
   summary: string | null;
@@ -72,7 +86,9 @@ describe("SummaryPopover — per-word reveal (motion contract)", () => {
     expect(Array.from(words).map((w) => w.textContent)).toEqual(["Three", "short", "words."]);
   });
 
-  it("staggers each word's animation-delay by 30ms (caps total reveal at the AI-shine timing)", () => {
+  it("staggers each word's animation-delay at 30ms while under the 800ms total-reveal clamp", () => {
+    // 5 words → per-word budget = min(30, 800/5) = min(30, 160) = 30. Stagger
+    // stays at 30ms because the clamp doesn't bind for short summaries.
     const summary = "Alpha bravo charlie delta echo.";
     const { container } = renderPopover({ summary, loading: false });
     const words = container.querySelectorAll<HTMLElement>(
@@ -85,10 +101,25 @@ describe("SummaryPopover — per-word reveal (motion contract)", () => {
     expect(words[3].style.animationDelay).toBe("90ms");
     expect(words[4].style.animationDelay).toBe("120ms");
   });
+
+  it("clamps total reveal at ≤800ms regardless of summary length (long summaries shrink per-word delay)", () => {
+    // 50-word summary → naive 30ms × 50 = 1500ms total. Clamp uses
+    // min(30, 800/50) = 16ms per word → last word's delay = 16 × 49 = 784ms
+    // ≤ 800ms. Locks the regression where long LLM outputs would reveal at a
+    // sluggish ~1500ms wall-clock.
+    const summary = Array.from({ length: 50 }, (_, i) => `word${i}`).join(" ");
+    const { container } = renderPopover({ summary, loading: false });
+    const words = container.querySelectorAll<HTMLElement>(
+      "[data-cl-summary-body] .cl-summary-word",
+    );
+    expect(words.length).toBe(50);
+    const lastDelayMs = parseFloat(words[49].style.animationDelay);
+    expect(lastDelayMs).toBeLessThanOrEqual(800);
+  });
 });
 
 describe("SummaryPopover — chrome", () => {
-  it("uses the .cl-card chrome with cl-depth-pop shadow + page-fade-in entrance", () => {
+  it("uses the .cl-card chrome with cl-depth-pop shadow and the cl-pop-in-up keyframe", () => {
     const { container } = renderPopover({
       summary: "Anything to make it render.",
       loading: false,
@@ -97,7 +128,9 @@ describe("SummaryPopover — chrome", () => {
     expect(pop).not.toBeNull();
     expect(pop!.className).toMatch(/\bcl-card\b/);
     expect(pop!.style.boxShadow ?? "").toMatch(/--cl-depth-pop/);
-    expect(pop!.style.animation ?? "").toMatch(/page-fade-in/);
+    // Linear-style spring entrance, anchored above the trigger so the keyframe
+    // rises up into rest (cl-pop-in-up, not cl-pop-in which drops down).
+    expect(pop!.style.animation ?? "").toMatch(/cl-pop-in-up/);
   });
 
   it("anchors above + flush-right of the trigger (bottom: calc(100% + 6px); right: 0)", () => {
@@ -131,17 +164,76 @@ describe("SummaryPopover — chrome", () => {
   });
 });
 
-describe("SummaryPopover — Open agent footer link", () => {
-  it("renders an `Open agent →` Link to /agent/{agentId}", () => {
+describe("SummaryPopover — paint regressions (#25)", () => {
+  it("renders zero <a> elements (locks out the nested-anchor regression)", () => {
+    // SummaryPopover mounts inside the card's outer <Link to=/agent/:id> — any
+    // <a> in the popover tree is invalid HTML and trips real-browser repair
+    // races (the outer card navigation can win the click). Same regression #18
+    // fixed in RiskMixPopover.
+    const { container } = renderPopover({
+      summary: "Anchor regression probe.",
+      loading: false,
+    });
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+  });
+
+  it("uses the dedicated --cl-bg-popover token for backgroundColor", () => {
+    // JSDOM doesn't resolve CSS-var fallback chains against our stylesheet, so
+    // we assert the literal var() string. Locks out the prior bug where the
+    // fallback chain (--cl-bg-card → --cl-bg) blended into the page canvas.
+    const { container } = renderPopover({
+      summary: "Background probe.",
+      loading: false,
+    });
+    const pop = container.querySelector<HTMLElement>("[data-cl-summary-popover]");
+    expect(pop?.style.backgroundColor).toContain("var(--cl-bg-popover)");
+  });
+
+  it("uses the cl-pop-in-up keyframe for entry animation (Linear-style spring, mirrors above-anchored geometry)", () => {
+    const { container } = renderPopover({
+      summary: "Animation probe.",
+      loading: false,
+    });
+    const pop = container.querySelector<HTMLElement>("[data-cl-summary-popover]");
+    expect(pop?.style.animation).toContain("cl-pop-in-up");
+  });
+
+  it("caps content at maxHeight: 220px with overflowY: auto (dynamic-up-to-ceiling, scroll past it)", () => {
+    // Hybrid display: under the 220px ceiling the popover sizes to its content
+    // (no scrollbar visible). Past the ceiling — rare LLM overshoot or longer
+    // multi-sentence outputs — the popover scrolls inside its bounds rather
+    // than clipping or overflowing the viewport.
+    const { container } = renderPopover({
+      summary: "Scroll probe.",
+      loading: false,
+    });
+    const pop = container.querySelector<HTMLElement>("[data-cl-summary-popover]");
+    expect(pop?.style.maxHeight).toBe("220px");
+    expect(pop?.style.overflowY).toBe("auto");
+  });
+});
+
+describe("SummaryPopover — Open agent footer click-through", () => {
+  it("renders an `Open agent →` button (not a link — the popover sits inside the card's outer <a>)", () => {
     const { container } = renderPopover({
       summary: "Footer probe.",
       loading: false,
+    });
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-summary-pop-link]");
+    expect(button).not.toBeNull();
+    expect(button!.textContent ?? "").toMatch(/Open agent/);
+  });
+
+  it("navigates to /agent/{agentId} when the button is clicked", () => {
+    const { container } = renderPopover({
+      summary: "Click-through probe.",
+      loading: false,
       agentId: "social-manager",
     });
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-summary-pop-link]");
-    expect(link).not.toBeNull();
-    expect(link!.getAttribute("href")).toBe("/agent/social-manager");
-    expect(link!.textContent ?? "").toMatch(/Open agent/);
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-summary-pop-link]")!;
+    fireEvent.click(button);
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy).toHaveBeenCalledWith("/agent/social-manager");
   });
 
   it("encodes special characters in the agentId path segment", () => {
@@ -150,8 +242,9 @@ describe("SummaryPopover — Open agent footer link", () => {
       loading: false,
       agentId: "alpha/beta",
     });
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-summary-pop-link]");
-    expect(link!.getAttribute("href")).toBe("/agent/alpha%2Fbeta");
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-summary-pop-link]")!;
+    fireEvent.click(button);
+    expect(navigateSpy).toHaveBeenCalledWith("/agent/alpha%2Fbeta");
   });
 });
 
