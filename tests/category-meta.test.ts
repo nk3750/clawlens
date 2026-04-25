@@ -66,6 +66,16 @@ describe("category palette — no hex-value overlap with risk palette", () => {
     return out;
   }
 
+  it("--cl-cat-scripts is indigo-300 (#a5b4fc) — not slate; distinct from accent + changes", () => {
+    // Slate (#94a3b8) read as "no character"; indigo-300 keeps the cool/magenta
+    // rule (no risk overlap), reads as terminal/plumbing semantics, and stays
+    // visually distinct from both --cl-accent (#7170ff: more saturated, more
+    // violet-pulled) and --cl-cat-changes (#a78bfa: more purple-pulled).
+    const cssPath = path.resolve(__dirname, "..", "dashboard", "src", "index.css");
+    const css = fs.readFileSync(cssPath, "utf8");
+    expect(css).toMatch(/--cl-cat-scripts\s*:\s*#a5b4fc/i);
+  });
+
   it("category and risk hex sets are disjoint", () => {
     const cssPath = path.resolve(__dirname, "..", "dashboard", "src", "index.css");
     const css = fs.readFileSync(cssPath, "utf8");

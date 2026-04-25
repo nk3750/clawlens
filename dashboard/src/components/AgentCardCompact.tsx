@@ -216,13 +216,17 @@ export default function AgentCard({ agent, needsAttention }: Props) {
                   fetchSummary();
                 }}
                 style={{
+                  // backgroundColor longhand only — the `background` shorthand
+                  // would reset background-image and kill the .cl-ai-shine
+                  // gradient (with color: transparent that renders the text
+                  // fully invisible, leaving only the SparklesIcon visible).
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 4,
                   fontFamily: "var(--cl-font-mono)",
                   fontFeatureSettings: "normal",
                   fontSize: 12,
-                  background: "none",
+                  backgroundColor: "transparent",
                   border: "none",
                   cursor: "pointer",
                   padding: 0,

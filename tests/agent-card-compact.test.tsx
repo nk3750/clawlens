@@ -459,6 +459,21 @@ describe("AgentCardCompact — summarize button is an AI affordance (agent-card-
     expect(btn.className).toMatch(/\bcl-ai-shine\b/);
   });
 
+  it("does NOT use the `background` shorthand inline (would clobber cl-ai-shine's gradient)", () => {
+    // Regression guard for the "summarize text invisible" bug: the .cl-ai-shine
+    // class sets `background-image: linear-gradient(...)` and `color: transparent`.
+    // If the inline style sets `background: none` (or the shorthand at all),
+    // it resets background-image, the gradient never paints, and the
+    // background-clip: text leaves the text fully transparent — only the
+    // sparkles SVG remains visible. Use `background-color` longhand instead.
+    const { container } = renderCard(withSession());
+    const btn = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    )!;
+    expect(btn.style.background ?? "").not.toBe("none");
+    expect(btn.style.backgroundImage ?? "").not.toBe("none");
+  });
+
   it("does NOT set inline color via mouse handlers (would conflict with background-clip: text)", () => {
     // Spec §4 note: with `color: transparent` on the .cl-ai-shine class, the
     // legacy onMouseEnter/onMouseLeave color setters would erase the gradient
