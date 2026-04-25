@@ -43,17 +43,29 @@ export default function Nav() {
           <svg
             width="24"
             height="24"
-            viewBox="0 0 28 28"
+            viewBox="0 0 64 64"
+            fill="none"
             aria-hidden="true"
             style={{ flexShrink: 0 }}
           >
-            <polygon
-              points="14,1 25.5,7.5 25.5,20.5 14,27 2.5,20.5 2.5,7.5"
-              fill="none"
+            <circle cx="24" cy="32" r="13" stroke="currentColor" strokeWidth="2.5" />
+            <circle cx="24" cy="32" r="7" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="24" cy="32" r="2.5" fill="currentColor" />
+            <path
+              d="M37 32 Q42 18 54 16 Q58 22 52 28 Q46 32 41 33"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            <circle cx="14" cy="14" r="3" fill="currentColor" />
+            <path
+              d="M37 32 Q42 46 54 48 Q58 42 52 36 Q46 32 41 31"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle cx="37" cy="32" r="1.8" fill="currentColor" />
           </svg>
           <span
             style={{
