@@ -1,7 +1,4 @@
-import { useApi } from "../hooks/useApi";
-import { formatAuditAge, formatGatewayUptime, formatVersionLabel } from "../lib/footerStatus";
-import type { StatsResponse } from "../lib/types";
-import HealthIndicator from "./fleetheader/HealthIndicator";
+import { formatGatewayUptime, formatVersionLabel } from "../lib/footerStatus";
 
 const HELP_URL = "https://github.com/openclaw/openclaw#readme";
 
@@ -11,14 +8,8 @@ interface Props {
 }
 
 export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
-  // Self-fetch /api/stats so the footer is decoupled from the page tree.
-  // /api/stats is small and the gateway returns it in <10ms — the cost is
-  // dominated by per-page payloads, not this poll.
-  const { data: stats } = useApi<StatsResponse>("api/stats");
-
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
   const versionLabel = formatVersionLabel(version);
-  const auditLabel = formatAuditAge(stats?.lastEntryTimestamp ?? null, Date.now());
   const uptimeLabel = formatGatewayUptime(gatewayUptimeMs);
 
   const reload = () => {
@@ -44,14 +35,6 @@ export default function PageFooter({ gatewayUptimeMs }: Props = {}) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span>{versionLabel}</span>
-        <Separator />
-        <HealthIndicator
-          variant="footer"
-          lastEntryIso={stats?.lastEntryTimestamp ?? null}
-          llmStatus={stats?.llmHealth?.status ?? null}
-        />
-        <Separator />
-        <span>{auditLabel}</span>
         <span className="cl-wide-only">
           <Separator />
         </span>

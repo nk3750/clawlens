@@ -5,23 +5,6 @@ export function formatVersionLabel(version: string | undefined | null): string {
 }
 
 /**
- * Age of the last audit entry vs. now. Phase A has no backend source for this
- * so the caller passes undefined and we surface an em dash. Phase B
- * (homepage-v3-stats-strip-spec) adds stats.lastEntryTimestamp and we wire
- * the real value in here.
- */
-export function formatAuditAge(lastEntryIso: string | undefined | null, nowMs: number): string {
-  if (!lastEntryIso) return "audit —";
-  const then = Date.parse(lastEntryIso);
-  if (Number.isNaN(then)) return "audit —";
-  const diff = Math.max(0, Math.floor((nowMs - then) / 1000));
-  if (diff < 60) return `audit ${diff}s old`;
-  if (diff < 3600) return `audit ${Math.floor(diff / 60)}m old`;
-  if (diff < 86400) return `audit ${Math.floor(diff / 3600)}h old`;
-  return `audit ${Math.floor(diff / 86400)}d old`;
-}
-
-/**
  * Gateway uptime display. Phase A has no backend source; "—" placeholder.
  * Shaped to accept ms so Phase B can pass a real value without changing the
  * formatter API.

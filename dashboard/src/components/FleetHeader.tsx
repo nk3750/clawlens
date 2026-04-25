@@ -1,17 +1,8 @@
-import { useEffect, useState } from "react";
 import { useTotalFlash } from "../hooks/useTotalFlash";
-import { useSSEStatus } from "../hooks/useSSEStatus";
 import type { StatsResponse } from "../lib/types";
 import DateChip from "./fleetheader/DateChip";
 import RiskMixDonut from "./fleetheader/RiskMixDonut";
-import {
-  computeHealthState,
-  computeTrend,
-  formatLagShort,
-  lagSeconds,
-  type RangeOption,
-  splitAgentsRunning,
-} from "./fleetheader/utils";
+import { computeTrend, type RangeOption, splitAgentsRunning } from "./fleetheader/utils";
 
 interface Props {
   stats: StatsResponse;
@@ -32,14 +23,12 @@ interface Props {
 
 /**
  * Linear-adjacent fleet header — two stacked strips.
- *   Top:    TODAY chip + "last updated Ns ago"
+ *   Top:    TODAY chip + (right) selected-date controls
  *   Bottom: 4-card stat grid — ACTIONS / AGENTS RUNNING / PENDING APPROVAL / RISK MIX · 24H
  *
- * Keeps all temporal chrome + stats data pathways. Range-pill selection lives
- * on the FleetChart header (issue #16). Drops the old dense single-row
- * layout, BlockedChip, PostureChip, OverflowMenu, and HealthIndicator's pill
- * variant — health surfaces in the top strip's "last updated" label
- * (reconnecting state tinted medium).
+ * Range-pill selection lives on the FleetChart header (issue #16). Liveness
+ * is surfaced by the nav-bar gateway-health dot (issue #19); this header
+ * no longer carries an SSE-status label.
  */
 export default function FleetHeader({
   stats,
@@ -58,8 +47,6 @@ export default function FleetHeader({
         onDateChange={onDateChange}
         onRangeChange={onRangeChange}
         retention={retention}
-        lastEntryIso={stats.lastEntryTimestamp ?? null}
-        llmStatus={stats.llmHealth?.status ?? null}
       />
       <div
         className="cl-fleet-stat-grid"
@@ -93,8 +80,6 @@ interface RangeChromeProps {
   onDateChange: (date: string | null) => void;
   onRangeChange: (range: RangeOption) => void;
   retention?: string | null;
-  lastEntryIso: string | null;
-  llmStatus: StatsResponse["llmHealth"]["status"] | null;
 }
 
 function RangeChromeStrip({
@@ -102,8 +87,6 @@ function RangeChromeStrip({
   onDateChange,
   onRangeChange,
   retention,
-  lastEntryIso,
-  llmStatus,
 }: RangeChromeProps) {
   return (
     <div
@@ -121,58 +104,7 @@ function RangeChromeStrip({
         onRangeChange={onRangeChange}
         retention={retention ?? null}
       />
-      <div style={{ marginLeft: "auto" }}>
-        <LastUpdatedLabel lastEntryIso={lastEntryIso} llmStatus={llmStatus} />
-      </div>
     </div>
-  );
-}
-
-function LastUpdatedLabel({
-  lastEntryIso,
-  llmStatus,
-}: {
-  lastEntryIso: string | null;
-  llmStatus: StatsResponse["llmHealth"]["status"] | null;
-}) {
-  const sseStatus = useSSEStatus();
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const state = computeHealthState({
-    sseStatus,
-    lastEntryIso: lastEntryIso ?? undefined,
-    llmStatus: llmStatus ?? undefined,
-    nowMs: now,
-  });
-  const lag = lagSeconds(lastEntryIso, now);
-
-  let text = "—";
-  let color: string = "var(--cl-text-muted)";
-  if (state === "reconnecting") {
-    text = "reconnecting…";
-    color = "var(--cl-risk-medium)";
-  } else if (state === "offline") {
-    text = "offline";
-    color = "var(--cl-risk-high)";
-  } else if (state === "llm_degraded") {
-    text = "LLM degraded";
-    color = "var(--cl-risk-medium)";
-  } else if (state === "stale") {
-    text = `stale · ${formatLagShort(lag ?? 0)} lag`;
-    color = "var(--cl-risk-medium)";
-  } else if (state === "live") {
-    text = lag == null ? "live" : `last updated ${formatLagShort(lag)} ago`;
-  }
-
-  return (
-    <span className="label-mono" style={{ color }}>
-      {text}
-    </span>
   );
 }
 
