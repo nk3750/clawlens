@@ -124,12 +124,27 @@ Tool calls:
 ${toolLines}${riskySection}`;
 }
 /**
- * Hard-cap summary at 140 chars on a word boundary. Guards against LLM
- * overshoot — the prompt + max_tokens constrain length but models
- * occasionally exceed. The boundary search only accepts a space within the
- * last 30 chars of the cut so pathological no-space input still terminates.
+ * Content-shaped summary cap. Prefer cutting at the last sentence terminator
+ * (`.`, `!`, `?`) so the popover lands on a complete thought. Fall back to a
+ * word-boundary char-cap with `…` only when there's no usable terminator AND
+ * the raw response runs past `max` (panic-stop, ~400 chars). The 40-char guard
+ * on the terminator cut prevents a leading "Yes." from chopping the rest of
+ * the response.
+ *
+ * Exported for direct unit-testing — internal helper otherwise.
  */
-function capSummaryLength(raw, max = 140) {
+export function capSummaryLength(raw, max = 400) {
+    // Search BACKWARD from end: the last terminator gives the longest valid
+    // sentence-cap. If it fails the 40-char guard, all earlier terminators
+    // produce shorter slices that also fail — so we can stop.
+    for (let i = raw.length - 1; i >= 0; i--) {
+        const ch = raw[i];
+        if (ch === "." || ch === "!" || ch === "?") {
+            if (i + 1 >= 40)
+                return raw.slice(0, i + 1);
+            break;
+        }
+    }
     if (raw.length <= max)
         return raw;
     const cut = raw.slice(0, max);
@@ -221,7 +236,7 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
     const systemPrompt = [
         "Describe what this agent has been up to in ONE plain-text sentence.",
         "Present tense. Pattern-focused, not event-by-event.",
-        "MAXIMUM 140 characters. One sentence. No markdown, no bullets, no follow-up.",
+        "Aim for ≤200 characters in one sentence — a complete thought matters more than the count. No markdown, no bullets, no follow-up.",
         "If any actions had elevated risk, briefly note them in the same sentence.",
         "Do not mention policy decisions, approvals, or blocking.",
         "Output the sentence directly. Nothing else.",
@@ -244,7 +259,7 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
                     provider: provider || undefined,
                     model: model || undefined,
                     disableTools: true,
-                    streamParams: { maxTokens: 48 },
+                    streamParams: { maxTokens: 100 },
                 });
                 const text = collectEmbeddedText(result.payloads);
                 if (text) {
@@ -291,9 +306,11 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
     }
     if (!apiKey)
         return null;
-    // Summary path: cap upstream tokens at ~140 chars worth (~48 tokens). Eval
-    // path's default of 512 is preserved by the optional-arg signature.
-    const text = await callLlmApi(provider, apiKey, model, systemPrompt, prompt, undefined, 48);
+    // Summary path: cap upstream tokens at ~100 — enough headroom for the soft
+    // ≤200-char target to land on a sentence terminator instead of running into
+    // the upstream cap mid-word. Eval path's default of 512 is preserved by the
+    // optional-arg signature.
+    const text = await callLlmApi(provider, apiKey, model, systemPrompt, prompt, undefined, 100);
     if (!text)
         return null;
     return {

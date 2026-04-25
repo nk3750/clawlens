@@ -17,6 +17,17 @@ export type SessionSummaryResult = {
     message: string;
 };
 /**
+ * Content-shaped summary cap. Prefer cutting at the last sentence terminator
+ * (`.`, `!`, `?`) so the popover lands on a complete thought. Fall back to a
+ * word-boundary char-cap with `…` only when there's no usable terminator AND
+ * the raw response runs past `max` (panic-stop, ~400 chars). The 40-char guard
+ * on the terminator cut prevents a leading "Yes." from chopping the rest of
+ * the response.
+ *
+ * Exported for direct unit-testing — internal helper otherwise.
+ */
+export declare function capSummaryLength(raw: string, max?: number): string;
+/**
  * Get or generate a session summary.
  *
  * Returns `{ ok: true, summary }` for any session with entries — either the
