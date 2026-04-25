@@ -605,6 +605,104 @@ describe("getAgents — todayRiskMix aggregation", () => {
     });
   });
 
+  it("buckets unscored decision=block entries as critical (guardrail-block backfill)", () => {
+    // logGuardrailMatch writes audit rows with decision=block but no riskScore
+    // for entries written before A landed. They were silently dropped from
+    // todayRiskMix while still counting in todayToolCalls, leaving an empty
+    // segment on the per-agent risk-mix bar. Treat them as critical — a fired
+    // user-defined block is the strongest risk signal we have.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "exec",
+        decision: "block",
+        agentId: "baddie",
+        sessionKey: "agent:baddie:main",
+        // no riskScore — historical guardrail-match row
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 1,
+    });
+  });
+
+  it("buckets unscored decision=approval_required entries as high (guardrail-approval backfill)", () => {
+    // Same shape as block, but the approval branch sits one tier below — the
+    // user gated the action but didn't outright forbid it.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "exec",
+        decision: "approval_required",
+        agentId: "baddie",
+        sessionKey: "agent:baddie:main",
+        // no riskScore — historical guardrail-match row
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 0,
+      high: 1,
+      critical: 0,
+    });
+  });
+
+  it("does NOT backfill unscored decision=allow entries (no useful signal — preserves existing behavior)", () => {
+    // Regression lock for the existing "ignores entries with no risk score"
+    // test above: the backfill must only fire on block / approval_required.
+    // An unscored allow entry still has nothing meaningful to bucket, so we
+    // continue dropping it from the mix.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "exec",
+        decision: "allow",
+        agentId: "baddie",
+        sessionKey: "agent:baddie:main",
+        // no riskScore
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 0,
+    });
+  });
+
+  it("scored entries take precedence over the decision-based fallback (no double-count)", () => {
+    // An entry with both decision=block AND a real riskScore must bucket by
+    // the score (here medium=40), not the decision-based critical fallback.
+    // Locks the implementation into "fallback only when score undefined".
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: "2026-03-29T10:00:00Z",
+        toolName: "exec",
+        decision: "block",
+        agentId: "baddie",
+        sessionKey: "agent:baddie:main",
+        riskScore: 40,
+      }),
+    ];
+
+    const agents = getAgents(entries);
+    expect(agents[0].todayRiskMix).toEqual({
+      low: 0,
+      medium: 1,
+      high: 0,
+      critical: 0,
+    });
+  });
+
   it("prefers LLM-adjusted score over raw riskScore for tier binning", () => {
     // Tier 1 scored at 40 (medium); LLM eval bumps it to 85 (critical). The
     // todayRiskMix bucket must reflect the final adjusted score, matching how

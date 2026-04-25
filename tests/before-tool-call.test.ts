@@ -501,3 +501,99 @@ describe("require_approval wrap — PendingApprovalStore integration", () => {
     expect(store.put).not.toHaveBeenCalled();
   });
 });
+
+describe("guardrail match audit row carries the action's risk score", () => {
+  // Closes the dashboard's risk-mix bar gap: previously logGuardrailMatch wrote
+  // an audit row with a `decision` but no `riskScore`, so the row counted in
+  // todayToolCalls (denominator) but never bucketed into todayRiskMix
+  // (numerator), leaving 1−sum(mix)/total empty space on the per-agent bar.
+  // Computing the risk score eagerly (cheap, pure) and persisting it on the
+  // guardrail-match row closes the gap for new entries — old entries fall
+  // back via the api.ts decision-based bucketing.
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function approvalGuardrail() {
+    return {
+      id: "gr_appr",
+      tool: "exec",
+      identityKey: "exec:curl https://example.com",
+      matchMode: "exact" as const,
+      action: { type: "require_approval" as const },
+      agentId: "test-agent",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc_src", sessionKey: "test-session", agentId: "test-agent" },
+      description: "Needs review",
+      riskScore: 70,
+    };
+  }
+
+  function blockGuardrail() {
+    return {
+      id: "gr_block",
+      tool: "exec",
+      identityKey: "exec:rm -rf /",
+      matchMode: "exact" as const,
+      action: { type: "block" as const },
+      agentId: "test-agent",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc_src", sessionKey: "test-session", agentId: "test-agent" },
+      description: "Blocked",
+      riskScore: 95,
+    };
+  }
+
+  it("writes the computed riskScore on the require_approval audit row", async () => {
+    mockComputeRiskScore.mockReturnValue(highRisk()); // score = 65
+    const auditLogger = mockAuditLogger();
+    const deps = makeDeps({
+      auditLogger: auditLogger as unknown as BeforeToolCallDeps["auditLogger"],
+      guardrailStore: mockGuardrailStore(
+        approvalGuardrail(),
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    await handler(makeEvent({ toolCallId: "tc-appr-001" }), ctx);
+
+    expect(auditLogger.logGuardrailMatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: "tc-appr-001",
+        guardrailId: "gr_appr",
+        riskScore: 65,
+        riskTier: "high",
+      }),
+    );
+  });
+
+  it("writes the computed riskScore on the block audit row", async () => {
+    mockComputeRiskScore.mockReturnValue({
+      score: 90,
+      tier: "critical",
+      tags: ["destructive"],
+      breakdown: { base: 90, modifiers: [] },
+      needsLlmEval: false,
+    });
+    const auditLogger = mockAuditLogger();
+    const deps = makeDeps({
+      auditLogger: auditLogger as unknown as BeforeToolCallDeps["auditLogger"],
+      guardrailStore: mockGuardrailStore(
+        blockGuardrail(),
+      ) as unknown as BeforeToolCallDeps["guardrailStore"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+    const result = await handler(makeEvent({ toolCallId: "tc-block-001" }), ctx);
+
+    // Block branch returns block:true with a reason — sanity check we're on the
+    // right code path, then assert the audit row carries the risk score.
+    expect(result?.block).toBe(true);
+    expect(auditLogger.logGuardrailMatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: "tc-block-001",
+        guardrailId: "gr_block",
+        riskScore: 90,
+        riskTier: "critical",
+      }),
+    );
+  });
+});

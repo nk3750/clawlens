@@ -108,6 +108,13 @@ export declare class AuditLogger extends EventEmitter {
         identityKey: string;
         agentId: string;
         sessionKey?: string;
+        /** Risk fields are optional for back-compat; when supplied (always in
+         *  production after the before-tool-call refactor) they let the dashboard
+         *  bucket guardrail-blocked rows into the per-agent risk-mix bar instead
+         *  of leaving an empty segment for "decided but unscored" entries. */
+        riskScore?: number;
+        riskTier?: "low" | "medium" | "high" | "critical";
+        riskTags?: string[];
     }): void;
     /** Log a guardrail approval resolution. */
     logGuardrailResolution(data: {

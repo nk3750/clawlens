@@ -767,8 +767,15 @@ describe("before_tool_call guardrail enforcement", () => {
     expect(result?.block).toBe(true);
     expect(result?.blockReason).toContain("blocked");
     expect(auditLogger.logGuardrailMatch).toHaveBeenCalledOnce();
-    // Risk scoring should NOT have been called (blocked before scoring)
-    expect(mockComputeRiskScore).not.toHaveBeenCalled();
+    // Risk scoring runs eagerly — pure + fast — so the guardrail-match audit
+    // row carries the action's score. Closes the dashboard's risk-mix bar gap
+    // where guardrail-blocked rows counted in todayToolCalls but vanished from
+    // todayRiskMix. The score is captured on the audit row; the guardrail
+    // still short-circuits before LLM eval.
+    expect(mockComputeRiskScore).toHaveBeenCalledTimes(1);
+    expect(auditLogger.logGuardrailMatch).toHaveBeenCalledWith(
+      expect.objectContaining({ riskScore: expect.any(Number) }),
+    );
   });
 
   it("returns requireApproval when guardrail action is 'require_approval'", async () => {

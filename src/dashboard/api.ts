@@ -1460,14 +1460,27 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
     // Today-scoped tier mix for the per-card risk microbar. Same thresholds as
     // riskProfile above; also mirrors `riskTierFromScore` in utils.ts — if
     // those boundaries ever move, update all three in lockstep.
+    //
+    // Decision-based fallback: pre-fix guardrail-match rows wrote the audit
+    // row with a `decision` but no `riskScore`, so they counted in
+    // todayToolCalls (denominator) but vanished from the mix (numerator),
+    // leaving an empty segment on the bar. Bucket them by decision instead
+    // of dropping: block → critical (rule fired, action denied), approval_required
+    // → high (gated, awaiting decision). New entries carry a real score after
+    // the before-tool-call refactor; this branch is the historical backfill.
     const todayRiskMix: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     for (const e of todayDecisions) {
       const score = getEffectiveScore(e, evalIdx);
-      if (score === undefined) continue;
-      if (score > 75) todayRiskMix.critical++;
-      else if (score > 50) todayRiskMix.high++;
-      else if (score > 25) todayRiskMix.medium++;
-      else todayRiskMix.low++;
+      if (score !== undefined) {
+        if (score > 75) todayRiskMix.critical++;
+        else if (score > 50) todayRiskMix.high++;
+        else if (score > 25) todayRiskMix.medium++;
+        else todayRiskMix.low++;
+      } else if (e.decision === "block") {
+        todayRiskMix.critical++;
+      } else if (e.decision === "approval_required") {
+        todayRiskMix.high++;
+      }
     }
 
     let currentSession: AgentInfo["currentSession"];

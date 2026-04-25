@@ -11,6 +11,14 @@ export function createBeforeToolCallHandler(deps) {
         const sessionKey = ctx?.sessionKey || "default";
         const agentId = ctx?.agentId || "unknown";
         try {
+            // Compute risk score eagerly. Pure + fast (no LLM); cheap enough to
+            // run on every call so the guardrail-match audit row carries the
+            // action's actual score, not just a bare decision. Closes the
+            // dashboard's risk-mix bar gap where guardrail-blocked rows counted
+            // in todayToolCalls (denominator) but never bucketed into
+            // todayRiskMix (numerator). LLM eval still only fires post-guardrail
+            // for the allow branch — no point evaluating something that won't run.
+            const risk = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
             // ── Guardrail check (before risk scoring) ──────────
             if (guardrailStore) {
                 const identityKey = extractIdentityKey(toolName, params);
@@ -25,6 +33,9 @@ export function createBeforeToolCallHandler(deps) {
                         identityKey,
                         agentId,
                         sessionKey: sessionKey !== "default" ? sessionKey : undefined,
+                        riskScore: risk.score,
+                        riskTier: risk.tier,
+                        riskTags: risk.tags,
                     });
                     if (matched.action.type === "block") {
                         return {
@@ -87,8 +98,6 @@ export function createBeforeToolCallHandler(deps) {
                     }
                 }
             }
-            // Compute risk score
-            const risk = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
             // Record in session context
             sessionContext.record(sessionKey, {
                 toolName,

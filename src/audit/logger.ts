@@ -247,6 +247,13 @@ export class AuditLogger extends EventEmitter {
     identityKey: string;
     agentId: string;
     sessionKey?: string;
+    /** Risk fields are optional for back-compat; when supplied (always in
+     *  production after the before-tool-call refactor) they let the dashboard
+     *  bucket guardrail-blocked rows into the per-agent risk-mix bar instead
+     *  of leaving an empty segment for "decided but unscored" entries. */
+    riskScore?: number;
+    riskTier?: "low" | "medium" | "high" | "critical";
+    riskTags?: string[];
   }): void {
     this.append({
       timestamp: data.timestamp,
@@ -263,6 +270,9 @@ export class AuditLogger extends EventEmitter {
           : data.action.type === "require_approval"
             ? "approval_required"
             : "allow",
+      riskScore: data.riskScore,
+      riskTier: data.riskTier,
+      riskTags: data.riskTags,
       agentId: data.agentId,
       sessionKey: data.sessionKey,
     });

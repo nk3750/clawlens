@@ -329,4 +329,56 @@ describe("AuditLogger", () => {
     expect(entries[0].userResponse).toBe("denied");
     expect(AuditLogger.verifyChain(entries).valid).toBe(true);
   });
+
+  it("logGuardrailMatch persists riskScore + riskTier + riskTags when supplied (closes the dashboard mix-bar gap)", async () => {
+    // Before the fix the guardrail-match row carried no risk fields, so the
+    // per-agent risk-mix bar in the dashboard couldn't bucket guardrail-blocked
+    // entries (counted in todayToolCalls but absent from todayRiskMix). Pass
+    // the upstream-computed score through so the row buckets naturally.
+    logger.logGuardrailMatch({
+      timestamp: "2026-04-25T10:00:00Z",
+      toolCallId: "tc_gm_1",
+      toolName: "exec",
+      guardrailId: "gr_block",
+      action: { type: "block" },
+      identityKey: "exec:rm -rf /",
+      agentId: "baddie",
+      sessionKey: "session-xyz",
+      riskScore: 90,
+      riskTier: "critical",
+      riskTags: ["destructive"],
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].decision).toBe("block");
+    expect(entries[0].riskScore).toBe(90);
+    expect(entries[0].riskTier).toBe("critical");
+    expect(entries[0].riskTags).toEqual(["destructive"]);
+    expect(AuditLogger.verifyChain(entries).valid).toBe(true);
+  });
+
+  it("logGuardrailMatch still writes a valid entry without risk fields (back-compat for callers that don't supply them)", async () => {
+    logger.logGuardrailMatch({
+      timestamp: "2026-04-25T10:00:00Z",
+      toolCallId: "tc_gm_2",
+      toolName: "exec",
+      guardrailId: "gr_appr",
+      action: { type: "require_approval" },
+      identityKey: "exec:curl https://example.com",
+      agentId: "baddie",
+    });
+
+    await logger.flush();
+
+    const entries = new AuditLogger(logPath).readEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].decision).toBe("approval_required");
+    expect(entries[0].riskScore).toBeUndefined();
+    expect(entries[0].riskTier).toBeUndefined();
+    expect(entries[0].riskTags).toBeUndefined();
+    expect(AuditLogger.verifyChain(entries).valid).toBe(true);
+  });
 });

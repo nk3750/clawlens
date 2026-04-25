@@ -171,6 +171,9 @@ export class AuditLogger extends EventEmitter {
                 : data.action.type === "require_approval"
                     ? "approval_required"
                     : "allow",
+            riskScore: data.riskScore,
+            riskTier: data.riskTier,
+            riskTags: data.riskTags,
             agentId: data.agentId,
             sessionKey: data.sessionKey,
         });
