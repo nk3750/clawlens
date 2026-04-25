@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLiveApi } from "../../hooks/useLiveApi";
 import { toolNamespace } from "../../lib/eventFormat";
@@ -9,13 +9,12 @@ import type {
 } from "../../lib/types";
 import type { RangeOption } from "../fleetheader/utils";
 import {
-  bucketEntriesByHour,
+  bucketCountsByTier,
   clampTooltipX,
   CRIT_THRESHOLD,
-  HIGH_THRESHOLD,
   makeTimeToX,
-  midpointLinearAreaPath,
-  yForScore,
+  tierStackedPaths,
+  yForCount,
 } from "./utils";
 import { buildDayTicks, buildHourTicks, cullLabelsForWidth } from "../FleetActivityChart/utils";
 
@@ -41,8 +40,10 @@ const NOW_LINE_INSET = 4;
 const TOOLTIP_W = 220;
 
 // ── Tier color tokens ────────────────────────────────────────
-// MEDIUM_COLOR (amber) is the sparkline middle band — distinct hue from the
-// salmon-red HIGH_COLOR (which now only paints tape dots). Don't conflate.
+// 4-tier system-wide vocabulary. The chart's HIGH band uses HIGH_COLOR
+// (salmon) — same token as the tape HIGH lane below — for cross-component
+// color parity. The chart's MEDIUM band (amber) and LOW band (green) have no
+// tape equivalent (tape only surfaces score >= 50).
 const CRIT_COLOR = "var(--cl-risk-critical)";
 const HIGH_COLOR = "var(--cl-risk-high)";
 const MEDIUM_COLOR = "var(--cl-risk-medium)";
@@ -109,10 +110,10 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
   );
   const timeToX = useCallback((ms: number) => PLOT_LEFT + timeToXLocal(ms), [timeToXLocal]);
 
-  // ── Sparkline buckets ───────────────────────────────────────
+  // ── Sparkline buckets — 4-tier counts per hour (volume-area spec) ─
   const buckets = useMemo(() => {
     const bucketCount = range === "7d" ? 7 : 24;
-    return bucketEntriesByHour({
+    return bucketCountsByTier({
       entries: activity?.entries ?? [],
       startMs,
       endMs,
@@ -120,10 +121,19 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
     });
   }, [activity, range, startMs, endMs]);
 
-  const sparkPath = useMemo(
-    () => midpointLinearAreaPath({ buckets, timeToX, plotHeight: SPARK_H }),
-    [buckets, timeToX],
+  // Floor the y-scale at 5 so a tiny-fleet day with one decision doesn't
+  // over-zoom into a chart-filling stack.
+  const maxVolume = useMemo(
+    () => Math.max(5, ...buckets.map((b) => b.total)),
+    [buckets],
   );
+
+  const stackedPaths = useMemo(
+    () => tierStackedPaths({ buckets, maxVolume, timeToX, plotHeight: SPARK_H }),
+    [buckets, maxVolume, timeToX],
+  );
+
+  const isEmpty = buckets.length > 0 && buckets.every((b) => b.total === 0);
 
   // ── Tape events (score >= 50) ───────────────────────────────
   const tapeEvents = useMemo(() => {
@@ -172,15 +182,25 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
       ? (index as FleetRiskIndexResponse)
       : { current: 0, baselineP50: 0, delta: 0, critCount: 0, highCount: 0, totalElevated: 0 };
 
-  const critY = yForScore(CRIT_THRESHOLD, SPARK_H);
-  const highY = yForScore(HIGH_THRESHOLD, SPARK_H);
-  const baselineY = yForScore(hero.baselineP50, SPARK_H);
-
-  // ── Hover tooltip (spec §6.6) ───────────────────────────────
+  // ── Hover state ─────────────────────────────────────────────
+  // Tape-dot tooltip (per-event, score-axis tape) and bucket tooltip
+  // (per-hour, volume-axis chart) are independent overlays — both use
+  // foreignObject + HTML, but they target separate hit zones.
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const hovered = tapeEvents.find(
     (ev) => (ev.entry.toolCallId ?? ev.entry.timestamp) === hoverKey,
   );
+
+  const [hoverBucketIdx, setHoverBucketIdx] = useState<number | null>(null);
+  // Clear bucket hover when the buckets array refreshes (SSE refetch). An
+  // index pointing at a stale bucket would surface incorrect counts.
+  useEffect(() => {
+    setHoverBucketIdx(null);
+  }, [buckets]);
+  const hoveredBucket =
+    hoverBucketIdx !== null && hoverBucketIdx < buckets.length
+      ? buckets[hoverBucketIdx]
+      : null;
 
   const onDotClick = useCallback(
     (entry: EntryResponse) => {
@@ -297,7 +317,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
               color: TEXT_SUBDUED,
             }}
           >
-            baseline = p50 of last 7 days
+            baseline = p50 score over last 7 days
           </span>
         </div>
       </div>
@@ -318,118 +338,161 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
         height={VIEW_H}
         style={{ overflow: "visible" }}
       >
-        <defs>
-          {/* Three bands, threshold-relative (#23). yForScore inverts the y
-              axis (lower score = higher y), so:
-                - low:  y ∈ [highY, SPARK_H]  — score < 50, paints green
-                - high: y ∈ [critY, highY]    — score 50–74, paints amber
-                - crit: y ∈ [0, critY]        — score ≥ 75, paints red
-              Color transitions at y=50 and y=75 are themselves the threshold
-              markers — no dashed lines. */}
-          <clipPath id="cl-frt-low-clip">
-            <rect
-              x={PLOT_LEFT}
-              y={highY}
-              width={PLOT_WIDTH}
-              height={Math.max(0, SPARK_H - highY)}
-            />
-          </clipPath>
-          <clipPath id="cl-frt-high-clip">
-            <rect
-              x={PLOT_LEFT}
-              y={critY}
-              width={PLOT_WIDTH}
-              height={Math.max(0, highY - critY)}
-            />
-          </clipPath>
-          <clipPath id="cl-frt-crit-clip">
-            <rect x={PLOT_LEFT} y={0} width={PLOT_WIDTH} height={critY} />
-          </clipPath>
-        </defs>
-
-        {/* Sparkline layer ── y in [0, 100]. Tier-weighted fill opacity:
-            cooler hues need more weight to read above --cl-bg-02 (green at
-            0.08 vanishes; reds carry fine). DO NOT unify — see #23. */}
+        {/* Sparkline layer — 4-tier stacked volume area (volume-area spec).
+            Render order low → medium → high → crit so crit paints on top
+            whenever any critical decisions occurred. Y axis = volume, not
+            score. Stroke top-line per band gives clean band separation
+            without depending on adjacent fills. */}
         <g>
-          <path
-            data-cl-fleet-risk-sparkline="low"
-            d={sparkPath}
-            fill={LOW_COLOR}
-            fillOpacity={0.12}
-            stroke={LOW_COLOR}
-            strokeWidth={1.5}
-            clipPath="url(#cl-frt-low-clip)"
-          />
-          <path
-            data-cl-fleet-risk-sparkline="high"
-            d={sparkPath}
-            fill={MEDIUM_COLOR}
-            fillOpacity={0.1}
-            stroke={MEDIUM_COLOR}
-            strokeWidth={1.5}
-            clipPath="url(#cl-frt-high-clip)"
-          />
-          <path
-            data-cl-fleet-risk-sparkline="crit"
-            d={sparkPath}
-            fill={CRIT_COLOR}
-            fillOpacity={0.08}
-            stroke={CRIT_COLOR}
-            strokeWidth={1.5}
-            clipPath="url(#cl-frt-crit-clip)"
-          />
+          {!isEmpty && (
+            <>
+              <path
+                data-cl-fleet-risk-sparkline="low"
+                d={stackedPaths.low}
+                fill={LOW_COLOR}
+                fillOpacity={0.85}
+                stroke="none"
+              />
+              <path
+                data-cl-fleet-risk-sparkline="medium"
+                d={stackedPaths.medium}
+                fill={MEDIUM_COLOR}
+                fillOpacity={0.85}
+                stroke="none"
+              />
+              <path
+                data-cl-fleet-risk-sparkline="high"
+                d={stackedPaths.high}
+                fill={HIGH_COLOR}
+                fillOpacity={0.85}
+                stroke="none"
+              />
+              <path
+                data-cl-fleet-risk-sparkline="critical"
+                d={stackedPaths.critical}
+                fill={CRIT_COLOR}
+                fillOpacity={0.85}
+                stroke="none"
+              />
+              <path
+                data-cl-fleet-risk-sparkline-line="low"
+                d={stackedPaths.lowTopLine}
+                fill="none"
+                stroke={LOW_COLOR}
+                strokeWidth={1}
+                strokeLinejoin="miter"
+              />
+              <path
+                data-cl-fleet-risk-sparkline-line="medium"
+                d={stackedPaths.mediumTopLine}
+                fill="none"
+                stroke={MEDIUM_COLOR}
+                strokeWidth={1}
+                strokeLinejoin="miter"
+              />
+              <path
+                data-cl-fleet-risk-sparkline-line="high"
+                d={stackedPaths.highTopLine}
+                fill="none"
+                stroke={HIGH_COLOR}
+                strokeWidth={1}
+                strokeLinejoin="miter"
+              />
+              <path
+                data-cl-fleet-risk-sparkline-line="critical"
+                d={stackedPaths.critTopLine}
+                fill="none"
+                stroke={CRIT_COLOR}
+                strokeWidth={1}
+                strokeLinejoin="miter"
+              />
+            </>
+          )}
 
-          {/* Baseline line + "{baselineP50}" label. Label is skipped when
-              baselineP50 < 5 (fresh-deploy guard). Baseline anchors the
-              -N vs 7d baseline delta in the hero. */}
-          <line
-            data-cl-fleet-risk-baseline-line
-            x1={PLOT_LEFT}
-            x2={PLOT_LEFT + PLOT_WIDTH}
-            y1={baselineY}
-            y2={baselineY}
-            stroke={TEXT_MUTED}
-            strokeDasharray="2 4"
-            strokeWidth={1}
-          />
-          {hero.baselineP50 >= 5 && (
+          {isEmpty && (
             <text
-              x={4}
-              y={baselineY + 3}
-              fontSize={10}
+              data-cl-fleet-risk-empty
+              x={VIEW_WIDTH / 2}
+              y={SPARK_H / 2}
+              textAnchor="middle"
+              dominantBaseline="middle"
               fontFamily="var(--cl-font-mono)"
+              fontSize={11}
               fill={TEXT_MUTED}
+              style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}
             >
-              {hero.baselineP50}
+              No fleet activity in last {range}
             </text>
           )}
 
-          {/* NOW dot at the last bucket's midpoint (polish-3 #3). Only on
-              today view — past-day panels have no "now" concept. bg-colored
-              stroke creates a knockout halo so the dot reads crisply over
-              the fill beneath. */}
-          {isToday && buckets.length > 0 && (() => {
-            const last = buckets[buckets.length - 1];
-            const lastX = timeToX((last.startMs + last.endMs) / 2);
-            const lastY = yForScore(last.max, SPARK_H);
-            const lastColor =
-              last.max >= CRIT_THRESHOLD
-                ? CRIT_COLOR
-                : last.max >= HIGH_THRESHOLD
-                  ? MEDIUM_COLOR
-                  : LOW_COLOR;
-            return (
-              <circle
-                data-cl-fleet-risk-now-dot
-                cx={lastX}
-                cy={lastY}
-                r={4}
-                fill={lastColor}
-                stroke="var(--cl-bg)"
-                strokeWidth={2}
-              />
-            );
-          })()}
+          {/* Subtle dashed marker at the hovered bucket's midpoint — anchors
+              the tooltip to its column visually. */}
+          {hoveredBucket && (
+            <line
+              data-cl-fleet-risk-bucket-marker
+              x1={timeToX((hoveredBucket.startMs + hoveredBucket.endMs) / 2)}
+              x2={timeToX((hoveredBucket.startMs + hoveredBucket.endMs) / 2)}
+              y1={0}
+              y2={SPARK_H}
+              stroke="rgba(255,255,255,0.18)"
+              strokeWidth={1}
+              strokeDasharray="2 3"
+            />
+          )}
+
+          {/* Per-bucket invisible hit area for hover tooltip. Suppressed in
+              empty state — tooltip would surface zeros across the board. */}
+          {!isEmpty &&
+            buckets.map((b, i) => {
+              const x = timeToX(b.startMs);
+              const w = Math.max(1, timeToX(b.endMs) - x);
+              return (
+                <rect
+                  key={`bh-${b.startMs}`}
+                  data-cl-fleet-risk-bucket-hover={i}
+                  x={x}
+                  y={0}
+                  width={w}
+                  height={SPARK_H}
+                  fill="transparent"
+                  pointerEvents="all"
+                  style={{ cursor: "crosshair" }}
+                  onMouseEnter={() => setHoverBucketIdx(i)}
+                  onMouseLeave={() => setHoverBucketIdx(null)}
+                />
+              );
+            })}
+
+          {/* NOW dot at top-of-stack (volume-area spec). Color = worst
+              present tier of the last bucket. Hidden when the last bucket
+              has no decisions (empty bucket → no signal to surface). */}
+          {isToday &&
+            buckets.length > 0 &&
+            (() => {
+              const last = buckets[buckets.length - 1];
+              if (last.total === 0) return null;
+              const lastX = timeToX((last.startMs + last.endMs) / 2);
+              const lastY = yForCount(last.total, maxVolume, SPARK_H);
+              const dotColor =
+                last.counts.critical > 0
+                  ? CRIT_COLOR
+                  : last.counts.high > 0
+                    ? HIGH_COLOR
+                    : last.counts.medium > 0
+                      ? MEDIUM_COLOR
+                      : LOW_COLOR;
+              return (
+                <circle
+                  data-cl-fleet-risk-now-dot
+                  cx={lastX}
+                  cy={lastY}
+                  r={4}
+                  fill={dotColor}
+                  stroke="var(--cl-bg)"
+                  strokeWidth={2}
+                />
+              );
+            })()}
         </g>
 
         {/* Tape layer ── translated down by 120 */}
@@ -594,6 +657,74 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
             </div>
           </foreignObject>
         )}
+
+        {/* Per-bucket tooltip (volume-area spec §6) — surfaces the 4-tier
+            breakdown for the hovered hour. All four tier rows render even
+            when zero, so the breakdown reads structurally without scanning
+            for missing rows. */}
+        {hoveredBucket && (() => {
+          const midX = timeToX((hoveredBucket.startMs + hoveredBucket.endMs) / 2);
+          const fmtTime = (ms: number) =>
+            new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const tierRow = (
+            color: string,
+            count: number,
+            label: string,
+          ) => (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  color,
+                  fontWeight: 700,
+                  width: 8,
+                  textAlign: "center",
+                }}
+              >
+                •
+              </span>
+              <span style={{ color: TEXT_PRIMARY }}>{count}</span>
+              <span style={{ color: TEXT_SECONDARY }}>{label}</span>
+            </div>
+          );
+          return (
+            <foreignObject
+              data-cl-fleet-risk-bucket-tooltip
+              x={clampTooltipX(midX, VIEW_WIDTH, TOOLTIP_W)}
+              y={4}
+              width={TOOLTIP_W}
+              height={92}
+              style={{ overflow: "visible", pointerEvents: "none" }}
+            >
+              <div
+                style={{
+                  background: "var(--cl-elevated)",
+                  border: "1px solid var(--cl-border)",
+                  borderRadius: 4,
+                  padding: "6px 10px",
+                  fontFamily: "var(--cl-font-mono)",
+                  fontSize: 11,
+                  color: TEXT_PRIMARY,
+                  lineHeight: 1.45,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <div style={{ color: TEXT_SECONDARY, marginBottom: 2 }}>
+                  <span style={{ color: TEXT_PRIMARY, fontWeight: 600 }}>
+                    {fmtTime(hoveredBucket.startMs)}–{fmtTime(hoveredBucket.endMs)}
+                  </span>
+                  <span style={{ color: TEXT_SUBDUED }}> · </span>
+                  <span style={{ color: TEXT_PRIMARY }}>{hoveredBucket.total}</span>{" "}
+                  actions
+                </div>
+                {tierRow(CRIT_COLOR, hoveredBucket.counts.critical, "crit")}
+                {tierRow(HIGH_COLOR, hoveredBucket.counts.high, "high")}
+                {tierRow(MEDIUM_COLOR, hoveredBucket.counts.medium, "medium")}
+                {tierRow(LOW_COLOR, hoveredBucket.counts.low, "low")}
+              </div>
+            </foreignObject>
+          );
+        })()}
       </svg>
 
       {/* ── Legend footer (spec §6.7) ───────────────────────────── */}

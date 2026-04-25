@@ -220,9 +220,9 @@ describe("FleetRiskTile hero", () => {
 // Sparkline (spec §6.3)
 // ─────────────────────────────────────────────────────────────
 
-describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
-  it("renders exactly 3 paths — low / high / crit tier bands", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+describe("FleetRiskTile sparkline — 4-tier stacked volume area (volume-area spec)", () => {
+  it("renders exactly 4 stacked fill polygons — low / medium / high / critical", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -232,12 +232,12 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
     });
     const { container } = renderTile();
     const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
-    expect(paths.length).toBe(3);
+    expect(paths.length).toBe(4);
     const kinds = Array.from(paths).map((p) => p.getAttribute("data-cl-fleet-risk-sparkline"));
-    expect(new Set(kinds)).toEqual(new Set(["low", "high", "crit"]));
+    expect(new Set(kinds)).toEqual(new Set(["low", "medium", "high", "critical"]));
   });
-  it("has 3 clipPaths — cl-frt-low-clip / cl-frt-high-clip / cl-frt-crit-clip", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+  it("renders 4 stroke top-line paths — low / medium / high / critical", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -246,17 +246,17 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
       totalElevated: 1,
     });
     const { container } = renderTile();
-    expect(container.querySelector("clipPath#cl-frt-low-clip")).not.toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-high-clip")).not.toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-crit-clip")).not.toBeNull();
-    // Old 2-band clip is gone (replaced by 3-band split at 50/75).
-    expect(container.querySelector("clipPath#cl-frt-below-crit-clip")).toBeNull();
+    const lines = container.querySelectorAll("path[data-cl-fleet-risk-sparkline-line]");
+    expect(lines.length).toBe(4);
+    const kinds = Array.from(lines).map((p) => p.getAttribute("data-cl-fleet-risk-sparkline-line"));
+    expect(new Set(kinds)).toEqual(new Set(["low", "medium", "high", "critical"]));
   });
-  it("colors each band with the matching --cl-risk-* token (low=green, high=amber, crit=red)", () => {
-    // The amber band is --cl-risk-medium (#fbbf24), NOT --cl-risk-high
-    // (#f87171). The whole point of the 3-tier split is hue-distinct bands —
-    // reusing salmon-red for both 50–74 and ≥75 was the regression #23 cured.
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+  it("colors the high band with --cl-risk-high (salmon, NOT --cl-risk-medium amber) — locks tape↔chart parity", () => {
+    // The volume-area spec inverts the #23 high-band token so HIGH on the
+    // chart (score 50–74) matches the salmon HIGH lane on the tape directly
+    // below it. Reusing --cl-risk-medium (amber) here was the cross-component
+    // color conflict that motivated this redesign.
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -270,40 +270,36 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
         container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline]"),
       ).map((p) => [p.getAttribute("data-cl-fleet-risk-sparkline"), p] as const),
     );
-    expect(byKind.get("low")?.getAttribute("stroke")).toMatch(/cl-risk-low/);
-    expect(byKind.get("high")?.getAttribute("stroke")).toMatch(/cl-risk-medium/);
-    expect(byKind.get("crit")?.getAttribute("stroke")).toMatch(/cl-risk-critical/);
     expect(byKind.get("low")?.getAttribute("fill")).toMatch(/cl-risk-low/);
-    expect(byKind.get("high")?.getAttribute("fill")).toMatch(/cl-risk-medium/);
-    expect(byKind.get("crit")?.getAttribute("fill")).toMatch(/cl-risk-critical/);
+    expect(byKind.get("medium")?.getAttribute("fill")).toMatch(/cl-risk-medium/);
+    // ↓ The central correctness assertion: HIGH band uses salmon, not amber.
+    expect(byKind.get("high")?.getAttribute("fill")).toMatch(/cl-risk-high/);
+    expect(byKind.get("high")?.getAttribute("fill")).not.toMatch(/cl-risk-medium/);
+    expect(byKind.get("critical")?.getAttribute("fill")).toMatch(/cl-risk-critical/);
   });
-  it("does NOT render the '75' dashed threshold line anymore (polish-3 #2)", () => {
-    mockApis(fleetActivity([]), {
-      current: 80,
+  it("colors each top-line stroke with the matching tier token (high stroke = salmon)", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
+      current: 60,
       baselineP50: 40,
-      delta: 40,
-      critCount: 1,
-      highCount: 0,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
       totalElevated: 1,
     });
     const { container } = renderTile();
-    // Replaced by the color transition at y=75 between orange and red.
-    expect(container.querySelector("[data-cl-fleet-risk-threshold-line]")).toBeNull();
+    const byKind = new Map(
+      Array.from(
+        container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline-line]"),
+      ).map((p) => [p.getAttribute("data-cl-fleet-risk-sparkline-line"), p] as const),
+    );
+    expect(byKind.get("low")?.getAttribute("stroke")).toMatch(/cl-risk-low/);
+    expect(byKind.get("medium")?.getAttribute("stroke")).toMatch(/cl-risk-medium/);
+    expect(byKind.get("high")?.getAttribute("stroke")).toMatch(/cl-risk-high/);
+    expect(byKind.get("high")?.getAttribute("stroke")).not.toMatch(/cl-risk-medium/);
+    expect(byKind.get("critical")?.getAttribute("stroke")).toMatch(/cl-risk-critical/);
   });
-  it("keeps the baseline dashed line (anchors the delta hero)", () => {
-    mockApis(fleetActivity([]), {
-      current: 0,
-      baselineP50: 40,
-      delta: 0,
-      critCount: 0,
-      highCount: 0,
-      totalElevated: 0,
-    });
-    const { container } = renderTile();
-    expect(container.querySelector("[data-cl-fleet-risk-baseline-line]")).not.toBeNull();
-  });
-  it("uses a 1.5px stroke on all 3 tier paths (line-dominant)", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+  it("uses uniform fill-opacity 0.85 across all 4 bands (stacked, not overlapping)", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -316,34 +312,11 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
       container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline]"),
     );
     for (const p of paths) {
-      expect(p.getAttribute("stroke-width")).toBe("1.5");
+      expect(p.getAttribute("fill-opacity")).toBe("0.85");
     }
   });
-  it("uses tier-weighted fill opacity (0.12 low / 0.10 high / 0.08 crit) — cooler hues need more weight", () => {
-    // Fixed-opacity reds carried fine, but green at the same 0.08 vanished
-    // against --cl-bg-02. The weighting locks the legibility split per tier
-    // — DO NOT unify back to a single value. (#23 design discussion.)
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
-      current: 60,
-      baselineP50: 40,
-      delta: 20,
-      critCount: 0,
-      highCount: 1,
-      totalElevated: 1,
-    });
-    const { container } = renderTile();
-    const byKind = new Map(
-      Array.from(
-        container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline]"),
-      ).map((p) => [p.getAttribute("data-cl-fleet-risk-sparkline"), p] as const),
-    );
-    expect(byKind.get("low")?.getAttribute("fill-opacity")).toBe("0.12");
-    // React serializes 0.10 → "0.1" (trailing-zero stripped via JS Number→String).
-    expect(byKind.get("high")?.getAttribute("fill-opacity")).toBe("0.1");
-    expect(byKind.get("crit")?.getAttribute("fill-opacity")).toBe("0.08");
-  });
-  it("does NOT render the '75' threshold text label (polish §4)", () => {
-    mockApis(fleetActivity([]), {
+  it("does NOT render the score-baseline dashed line (volume-axis chart, not score-axis)", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "critical", riskScore: 80 })]), {
       current: 80,
       baselineP50: 40,
       delta: 40,
@@ -352,12 +325,12 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
       totalElevated: 1,
     });
     const { container } = renderTile();
-    const texts = Array.from(container.querySelectorAll("svg text")).map(
-      (t) => t.textContent?.trim() ?? "",
-    );
-    expect(texts).not.toContain("75");
+    expect(container.querySelector("[data-cl-fleet-risk-baseline-line]")).toBeNull();
   });
-  it("renders the baseline text label for typical baselineP50", () => {
+  it("does NOT render the score-baseline floating text label", () => {
+    // The baseline text used to surface the 7d p50 score on the chart. With a
+    // volume-axis chart, that label is meaningless — the hero footer copy
+    // carries the score-baseline information textually now.
     mockApis(fleetActivity([]), {
       current: 0,
       baselineP50: 42,
@@ -370,9 +343,30 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
     const texts = Array.from(container.querySelectorAll("svg text")).map(
       (t) => t.textContent?.trim() ?? "",
     );
-    expect(texts).toContain("42");
+    expect(texts).not.toContain("42");
   });
-  it("skips the baseline text label when baselineP50 < 5 (polish §4 guard)", () => {
+  it("does NOT render any clipPaths (geometric stacking — clip-based bands replaced by polygons)", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    expect(container.querySelector("clipPath#cl-frt-low-clip")).toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-high-clip")).toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-crit-clip")).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Empty-state affordance (volume-area spec §5)
+// ─────────────────────────────────────────────────────────────
+
+describe("FleetRiskTile sparkline — empty state", () => {
+  it("renders the empty-state text when no decisions land in any bucket", () => {
     mockApis(fleetActivity([]), {
       current: 0,
       baselineP50: 0,
@@ -382,10 +376,47 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
       totalElevated: 0,
     });
     const { container } = renderTile();
-    const texts = Array.from(container.querySelectorAll("svg text")).map(
-      (t) => t.textContent?.trim() ?? "",
-    );
-    expect(texts).not.toContain("0");
+    const empty = container.querySelector("[data-cl-fleet-risk-empty]");
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent?.toLowerCase()).toContain("no fleet activity");
+  });
+  it("does NOT render the stacked fill polygons in empty state", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    expect(container.querySelectorAll("path[data-cl-fleet-risk-sparkline]").length).toBe(0);
+    expect(container.querySelectorAll("path[data-cl-fleet-risk-sparkline-line]").length).toBe(0);
+  });
+  it("does NOT render the NOW dot in empty state", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    expect(container.querySelector("[data-cl-fleet-risk-now-dot]")).toBeNull();
+  });
+  it("includes the rangeLabel in the empty-state text", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile({ range: "7d" });
+    const empty = container.querySelector("[data-cl-fleet-risk-empty]");
+    expect(empty?.textContent?.toLowerCase()).toContain("7d");
   });
 });
 
@@ -393,9 +424,9 @@ describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
 // NOW dot on sparkline (polish-3 #3)
 // ─────────────────────────────────────────────────────────────
 
-describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
-  it("renders a NOW dot on today view when buckets have data", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)", () => {
+  it("renders a NOW dot on today view when the last bucket has any classified decisions", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -409,7 +440,7 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     expect(dot?.tagName.toLowerCase()).toBe("circle");
   });
   it("does NOT render the NOW dot on past-day views", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -420,8 +451,8 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     const { container } = renderTile({ selectedDate: "2026-04-01" });
     expect(container.querySelector("[data-cl-fleet-risk-now-dot]")).toBeNull();
   });
-  it("paints the NOW dot red when the last bucket is crit (>= 75)", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 90 })]), {
+  it("colors NOW dot red when the last bucket has any critical entries", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "critical", riskScore: 90 })]), {
       current: 90,
       baselineP50: 40,
       delta: 50,
@@ -433,30 +464,39 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-critical/);
   });
-  it("paints the NOW dot medium-amber when 50 <= last.max < 75 (#23 3-tier mapping)", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 55 })]), {
-      current: 55,
+  it("colors NOW dot salmon (--cl-risk-high) when the last bucket has high but no critical", () => {
+    // Salmon, NOT amber. Worst-present-tier of {low:0, medium:0, high:1, critical:0} is high.
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
+      current: 60,
       baselineP50: 40,
-      delta: 15,
+      delta: 20,
       critCount: 0,
       highCount: 1,
       totalElevated: 1,
     });
     const { container } = renderTile({ selectedDate: null });
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
-    // --cl-risk-medium (amber), NOT --cl-risk-high (salmon-red). The middle
-    // band is its own hue post-#23.
+    expect(dot?.getAttribute("fill")).toMatch(/cl-risk-high/);
+    expect(dot?.getAttribute("fill")).not.toMatch(/cl-risk-medium/);
+  });
+  it("colors NOW dot amber (--cl-risk-medium) when the last bucket has medium but no high/critical", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "medium", riskScore: 30 })]), {
+      current: 30,
+      baselineP50: 40,
+      delta: -10,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-medium/);
   });
-  it("paints the NOW dot low-green when last.max < 50 (calm-fleet baseline reads green)", () => {
-    // Empty fleet → all buckets clamp to the SCORE_FLOOR of 30. last.max=30
-    // is below the high threshold (50), so the dot tier-maps to low-green.
-    // Pre-#23 this painted salmon-red — the user-visible regression that
-    // motivated the issue.
-    mockApis(fleetActivity([]), {
-      current: 0,
-      baselineP50: 0,
-      delta: 0,
+  it("colors NOW dot green (--cl-risk-low) when the last bucket has only low entries", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "low", riskScore: 10 })]), {
+      current: 10,
+      baselineP50: 40,
+      delta: -30,
       critCount: 0,
       highCount: 0,
       totalElevated: 0,
@@ -465,8 +505,24 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-low/);
   });
+  it("positions NOW dot at the top of the stack (cy = yForCount(last.total))", () => {
+    // Only one bucket has a decision (in the last bucket). maxVolume floor is 5
+    // (Math.max(5, ...buckets.map(b => b.total)) — see render call site).
+    // last.total = 1 → cy = SPARK_H * (1 - 1/5) = 100 * 0.8 = 80.
+    mockApis(fleetActivity([mkEntry({ riskTier: "critical", riskScore: 90 })]), {
+      current: 90,
+      baselineP50: 40,
+      delta: 50,
+      critCount: 1,
+      highCount: 0,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
+    expect(dot?.getAttribute("cy")).toBe("80");
+  });
   it("has a bg-colored stroke (knockout halo) so it reads over the fill", () => {
-    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
       delta: 20,
@@ -478,6 +534,126 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("stroke")).toMatch(/cl-bg/);
     expect(dot?.getAttribute("stroke-width")).toBe("2");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Per-bucket hover tooltip (volume-area spec §6)
+// ─────────────────────────────────────────────────────────────
+
+describe("FleetRiskTile sparkline — per-bucket hover tooltip", () => {
+  it("renders one invisible hover rect per bucket (24 for non-7d ranges)", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile({ range: "24h" });
+    const rects = container.querySelectorAll("[data-cl-fleet-risk-bucket-hover]");
+    expect(rects.length).toBe(24);
+  });
+  it("opens a tooltip on mouseenter with all 4 tier rows visible (structural readability)", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "critical", riskScore: 90 })]), {
+      current: 90,
+      baselineP50: 40,
+      delta: 50,
+      critCount: 1,
+      highCount: 0,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    const rects = container.querySelectorAll("[data-cl-fleet-risk-bucket-hover]");
+    expect(rects.length).toBeGreaterThan(0);
+    fireEvent.mouseEnter(rects[rects.length - 1] as Element);
+    const tooltip = container.querySelector("[data-cl-fleet-risk-bucket-tooltip]");
+    expect(tooltip).not.toBeNull();
+    const text = tooltip?.textContent ?? "";
+    // All 4 tier rows render — even when zero — so the breakdown reads structurally.
+    expect(text.toLowerCase()).toContain("crit");
+    expect(text.toLowerCase()).toContain("high");
+    expect(text.toLowerCase()).toContain("medium");
+    expect(text.toLowerCase()).toContain("low");
+  });
+  it("tooltip surfaces the per-tier counts for the hovered bucket", () => {
+    mockApis(
+      fleetActivity([
+        mkEntry({ riskTier: "critical", riskScore: 90 }),
+        mkEntry({ riskTier: "high", riskScore: 60 }),
+        mkEntry({ riskTier: "high", riskScore: 60 }),
+      ]),
+      {
+        current: 90,
+        baselineP50: 40,
+        delta: 50,
+        critCount: 1,
+        highCount: 2,
+        totalElevated: 3,
+      },
+    );
+    const { container } = renderTile();
+    const rects = Array.from(container.querySelectorAll("[data-cl-fleet-risk-bucket-hover]"));
+    fireEvent.mouseEnter(rects[rects.length - 1] as Element);
+    const tooltip = container.querySelector("[data-cl-fleet-risk-bucket-tooltip]");
+    expect(tooltip).not.toBeNull();
+    const text = tooltip?.textContent ?? "";
+    // Total + per-tier counts (1 critical, 2 high, 0 medium, 0 low).
+    expect(text).toContain("3");
+    expect(text).toMatch(/1\s*crit/i);
+    expect(text).toMatch(/2\s*high/i);
+  });
+  it("closes the tooltip on mouseleave", () => {
+    mockApis(fleetActivity([mkEntry({ riskTier: "critical", riskScore: 90 })]), {
+      current: 90,
+      baselineP50: 40,
+      delta: 50,
+      critCount: 1,
+      highCount: 0,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    const rects = container.querySelectorAll("[data-cl-fleet-risk-bucket-hover]");
+    const last = rects[rects.length - 1] as Element;
+    fireEvent.mouseEnter(last);
+    expect(container.querySelector("[data-cl-fleet-risk-bucket-tooltip]")).not.toBeNull();
+    fireEvent.mouseLeave(last);
+    expect(container.querySelector("[data-cl-fleet-risk-bucket-tooltip]")).toBeNull();
+  });
+  it("does NOT render bucket hover overlays in empty state", () => {
+    // When all buckets are zero, the chart shows the empty-state text — the
+    // hover overlay would be misleading there.
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    expect(container.querySelectorAll("[data-cl-fleet-risk-bucket-hover]").length).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Hero footer copy (volume-area spec §7)
+// ─────────────────────────────────────────────────────────────
+
+describe("FleetRiskTile hero footer copy", () => {
+  it("includes 'p50 score' (disambiguates score-axis hero from volume-axis chart)", () => {
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 40,
+      delta: -40,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile();
+    const text = container.querySelector("[data-cl-fleet-risk-hero]")?.textContent ?? "";
+    expect(text.toLowerCase()).toContain("p50 score over last 7 days");
   });
 });
 
