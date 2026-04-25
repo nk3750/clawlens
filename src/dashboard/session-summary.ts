@@ -161,7 +161,7 @@ function buildSummaryPrompt(
 
   const riskySection = riskyActions ? `\n\nElevated risk actions:\n${riskyActions}` : "";
 
-  return `Summarize in 1-2 plain-text sentences. What did the agent accomplish? If any elevated risk actions are listed, mention them briefly. No markdown. No mention of approvals, policy, or blocking.
+  return `Describe this agent's activity pattern in one present-tense sentence (≤140 characters).
 
 Session: ${sessionKey}
 Duration: ${durationStr}
@@ -170,6 +170,20 @@ Avg risk: ${avgRisk}, Peak: ${peakRisk}
 
 Tool calls:
 ${toolLines}${riskySection}`;
+}
+
+/**
+ * Hard-cap summary at 140 chars on a word boundary. Guards against LLM
+ * overshoot — the prompt + max_tokens constrain length but models
+ * occasionally exceed. The boundary search only accepts a space within the
+ * last 30 chars of the cut so pathological no-space input still terminates.
+ */
+function capSummaryLength(raw: string, max = 140): string {
+  if (raw.length <= max) return raw;
+  const cut = raw.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  const boundary = lastSpace > max - 30 ? lastSpace : max;
+  return `${cut.slice(0, boundary).trimEnd()}…`;
 }
 
 /**
@@ -287,12 +301,12 @@ async function generateLlmSummary(
   const needsDirectApi = model && PROVIDER_ENDPOINTS[provider];
 
   const systemPrompt = [
-    "Return ONLY 1-2 plain-text sentences summarizing this agent session.",
-    "Focus on what the agent accomplished.",
-    "If any actions had elevated risk, briefly note them.",
-    "Rules: no markdown, no headers, no bullet points, no follow-up questions, no commentary.",
+    "Describe what this agent has been up to in ONE plain-text sentence.",
+    "Present tense. Pattern-focused, not event-by-event.",
+    "MAXIMUM 140 characters. One sentence. No markdown, no bullets, no follow-up.",
+    "If any actions had elevated risk, briefly note them in the same sentence.",
     "Do not mention policy decisions, approvals, or blocking.",
-    "Output the sentences directly, nothing else.",
+    "Output the sentence directly. Nothing else.",
   ].join(" ");
 
   // Path 1: Embedded agent (handles auth internally)
@@ -313,14 +327,14 @@ async function generateLlmSummary(
           provider: provider || undefined,
           model: model || undefined,
           disableTools: true,
-          streamParams: { maxTokens: 80 },
+          streamParams: { maxTokens: 48 },
         });
         const text = collectEmbeddedText(result.payloads);
         if (text) {
           llmHealthTracker.recordAttempt(true);
           return {
             sessionKey,
-            summary: stripMarkdown(text),
+            summary: capSummaryLength(stripMarkdown(text)),
             generatedAt: new Date().toISOString(),
             isLlmGenerated: true,
           };
@@ -361,12 +375,14 @@ async function generateLlmSummary(
 
   if (!apiKey) return null;
 
-  const text = await callLlmApi(provider, apiKey, model!, systemPrompt, prompt);
+  // Summary path: cap upstream tokens at ~140 chars worth (~48 tokens). Eval
+  // path's default of 512 is preserved by the optional-arg signature.
+  const text = await callLlmApi(provider, apiKey, model!, systemPrompt, prompt, undefined, 48);
   if (!text) return null;
 
   return {
     sessionKey,
-    summary: stripMarkdown(text),
+    summary: capSummaryLength(stripMarkdown(text)),
     generatedAt: new Date().toISOString(),
     isLlmGenerated: true,
   };

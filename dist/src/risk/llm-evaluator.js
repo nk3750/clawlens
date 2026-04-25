@@ -92,7 +92,7 @@ export function collectEmbeddedText(payloads) {
  *
  * Returns raw text response or null on failure. Callers parse the result.
  */
-export async function callLlmApi(provider, apiKey, model, systemPrompt, userMessage, logger) {
+export async function callLlmApi(provider, apiKey, model, systemPrompt, userMessage, logger, maxTokens = 512) {
     const baseUrl = PROVIDER_ENDPOINTS[provider];
     if (!baseUrl) {
         logger?.warn(`ClawLens: Unknown provider "${provider}", no endpoint mapped`);
@@ -113,7 +113,7 @@ export async function callLlmApi(provider, apiKey, model, systemPrompt, userMess
             };
             body = JSON.stringify({
                 model,
-                max_tokens: 512,
+                max_tokens: maxTokens,
                 system: systemPrompt,
                 messages: [{ role: "user", content: userMessage }],
             });
@@ -127,7 +127,7 @@ export async function callLlmApi(provider, apiKey, model, systemPrompt, userMess
             };
             body = JSON.stringify({
                 model,
-                max_tokens: 512,
+                max_tokens: maxTokens,
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userMessage },

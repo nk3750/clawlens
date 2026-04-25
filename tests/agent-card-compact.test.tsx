@@ -4,6 +4,20 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Hoisted spy used to swap useSessionSummary's return value per-test (loading,
+// loaded, idle). Defining it via vi.hoisted keeps it visible inside vi.mock.
+const useSessionSummaryMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    summary: null as string | null,
+    isLlmGenerated: false,
+    loading: false,
+    generate: vi.fn(),
+  })),
+);
+vi.mock("../dashboard/src/hooks/useSessionSummary", () => ({
+  useSessionSummary: useSessionSummaryMock,
+}));
+
 import AgentCardCompact from "../dashboard/src/components/AgentCardCompact";
 import type { AgentInfo } from "../dashboard/src/lib/types";
 
@@ -57,6 +71,12 @@ function renderCard(agent: AgentInfo, needsAttention?: boolean) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(NOW_ISO));
+  useSessionSummaryMock.mockReturnValue({
+    summary: null,
+    isLlmGenerated: false,
+    loading: false,
+    generate: vi.fn(),
+  });
 });
 
 afterEach(() => {
@@ -64,10 +84,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guard)", () => {
-  it("keeps bar fills + tracks monochrome (no --cl-cat-* color tokens on bar backgrounds)", () => {
-    // Active agent with several category buckets — all six surfaced at least once so the
-    // legacy code path would have rendered the full rainbow.
+describe("AgentCardCompact — category bars + icons (agent-card-polish §2)", () => {
+  it("tints the bar fill with the row's category color (75% mix on rgba(255,255,255,0.04) track)", () => {
+    // Spec §2: every category row reads as a single tinted bar so the icon stroke
+    // and the bar fill share one hue. Track is a flat translucent-white step;
+    // only the inner fill carries the category var.
     const agent = makeAgent({
       todayActivityBreakdown: {
         exploring: 4,
@@ -80,15 +101,27 @@ describe("AgentCardCompact — de-rainbow activity bars (Stage C regression guar
     });
     const { container } = renderCard(agent);
 
-    // Bars = the two inline-styled <div>s nested inside each category row. The Phase-1
-    // review called these out as the "AI-slop rainbow" — they must stay monochrome.
-    // Icons (SVG stroke) are allowed to carry category hue for subtle differentiation.
-    const rows = container.querySelectorAll("[data-cl-cat-row]");
+    const rows = container.querySelectorAll<HTMLElement>("[data-cl-cat-row]");
     expect(rows.length).toBeGreaterThan(0);
+
     for (const row of rows) {
-      for (const div of row.querySelectorAll("div")) {
-        expect((div as HTMLElement).style.backgroundColor ?? "").not.toMatch(/--cl-cat-/);
-      }
+      const cat = row.querySelector<SVGElement>("svg")?.getAttribute("stroke") ?? "";
+      // Track = the .flex-1 div; fill = its only inline-styled child div.
+      const track = row.querySelector<HTMLElement>("div.flex-1");
+      expect(track, "track div present").not.toBeNull();
+      expect(track!.style.backgroundColor ?? "").not.toMatch(/--cl-cat-/);
+
+      const fill = track!.querySelector<HTMLElement>("div");
+      expect(fill, "fill div present").not.toBeNull();
+      const fillBg = fill!.style.backgroundColor ?? "";
+      // Fill must reference the SAME category token as the icon stroke, at 75%
+      // via color-mix. Locks "icon and bar share one hue" against drift.
+      expect(fillBg).toMatch(/--cl-cat-/);
+      expect(fillBg).toMatch(/75%/);
+      // Icon stroke and fill must reference the same --cl-cat-{name} token.
+      const iconToken = cat.match(/--cl-cat-[a-z]+/)?.[0] ?? "";
+      expect(iconToken).not.toBe("");
+      expect(fillBg).toContain(iconToken);
     }
   });
 
@@ -385,5 +418,80 @@ describe("AgentCardCompact — microbar popover wiring", () => {
     expect(observed.search).toContain("agent=seo-growth");
     // Guard against the silent-failure case where the outer Link "wins":
     expect(observed.pathname).not.toBe("/agent/seo-growth");
+  });
+});
+
+describe("AgentCardCompact — summarize button is an AI affordance (agent-card-polish §4)", () => {
+  // The summarize button is the user's "this is an AI feature" surface on the
+  // card. The icon + shimmer class are the genre conventions (Copilot, Linear,
+  // Notion, Raycast) — they materially change how a reviewer reads the button.
+  // Regressions here turn it back into a quiet text label that undersells the
+  // generative action behind it.
+
+  function withSession(): AgentInfo {
+    // sessionKey is what gates the summary block + summarize button render.
+    return makeAgent({ lastSessionKey: "alpha:s1" });
+  }
+
+  it("renders both a sparkles SVG and the literal text 'summarize' inside the button", () => {
+    const { container } = renderCard(withSession());
+    const btn = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    );
+    expect(btn, "summarize button present").not.toBeUndefined();
+    // Icon — present at rest, signals "this is an AI feature".
+    const svg = btn!.querySelector("svg");
+    expect(svg, "summarize button has an icon").not.toBeNull();
+    // Stroke must reference the accent token — keeps the icon legible against
+    // the gradient-clipped text on hover.
+    expect(svg!.getAttribute("stroke") ?? "").toContain("--cl-accent");
+    // Text — the existing label stays for screen-reader and keyboard users.
+    expect(btn!.textContent ?? "").toMatch(/summarize/);
+  });
+
+  it("applies the cl-ai-shine class on the summarize button (not the SVG)", () => {
+    // The shimmer animates the text via background-clip; the SVG sibling stays
+    // solid. Locks the class onto the button element specifically.
+    const { container } = renderCard(withSession());
+    const btn = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    )!;
+    expect(btn.className).toMatch(/\bcl-ai-shine\b/);
+  });
+
+  it("does NOT set inline color via mouse handlers (would conflict with background-clip: text)", () => {
+    // Spec §4 note: with `color: transparent` on the .cl-ai-shine class, the
+    // legacy onMouseEnter/onMouseLeave color setters would erase the gradient
+    // text. Removed in commit 2 — this guard fails if they come back.
+    const { container } = renderCard(withSession());
+    const btn = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    )!;
+    fireEvent.mouseEnter(btn);
+    expect(btn.style.color).not.toMatch(/--cl-accent/);
+    fireEvent.mouseLeave(btn);
+    expect(btn.style.color).not.toMatch(/--cl-accent/);
+  });
+
+  it("during summary loading, the sparkles SVG carries cl-ai-pulse (text node sits next to it, unanimated)", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: null,
+      isLlmGenerated: false,
+      loading: true,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    // The label "Summarizing…" is rendered alongside a sparkles icon; the
+    // pulse class lives on the SVG so only the icon animates.
+    const span = Array.from(container.querySelectorAll("span")).find((s) =>
+      (s.textContent ?? "").includes("Summarizing"),
+    );
+    expect(span, "summarizing span present").not.toBeUndefined();
+    const svg = span!.querySelector("svg");
+    expect(svg, "summarizing span has a sparkles icon").not.toBeNull();
+    expect(svg!.getAttribute("class") ?? svg!.classList.value).toMatch(/\bcl-ai-pulse\b/);
+    // Defensive: the cl-ai-pulse class belongs only on the SVG, never on the
+    // outer span (the spec wants the icon pulsing, not the whole label).
+    expect(span!.className ?? "").not.toMatch(/\bcl-ai-pulse\b/);
   });
 });

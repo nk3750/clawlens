@@ -117,6 +117,7 @@ export async function callLlmApi(
   systemPrompt: string,
   userMessage: string,
   logger?: PluginLogger,
+  maxTokens = 512,
 ): Promise<string | null> {
   const baseUrl = PROVIDER_ENDPOINTS[provider];
   if (!baseUrl) {
@@ -141,7 +142,7 @@ export async function callLlmApi(
       };
       body = JSON.stringify({
         model,
-        max_tokens: 512,
+        max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],
       });
@@ -154,7 +155,7 @@ export async function callLlmApi(
       };
       body = JSON.stringify({
         model,
-        max_tokens: 512,
+        max_tokens: maxTokens,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },

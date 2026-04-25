@@ -2,6 +2,8 @@
 // These assertions lock the canonical short-lowercase label form so drift
 // back to verbose labels (e.g. "Making changes", "Web & APIs") fails CI.
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CATEGORY_META } from "../dashboard/src/lib/utils";
 
@@ -39,5 +41,62 @@ describe("CATEGORY_META.color — token names match bucket names", () => {
     for (const meta of Object.values(CATEGORY_META)) {
       expect(meta.color).toMatch(/^var\(--cl-cat-[a-z]+\)$/);
     }
+  });
+});
+
+// Spec: agent-card-polish §1 — risk reserves the warm-to-green spectrum;
+// categories must not share a hex value with any risk token. Reading the
+// CSS file directly keeps this guard load-bearing across future palette
+// shifts (a value swap that re-introduces collision will fail here in CI
+// without anyone needing to remember the rule).
+describe("category palette — no hex-value overlap with risk palette", () => {
+  function tokenMap(css: string): Record<string, string> {
+    // Parse `--token-name: #hex;` pairs in :root. Permissive whitespace; we
+    // only care about the 6 cat + 4 risk lines, all of which use plain hex.
+    const out: Record<string, string> = {};
+    const root = css.match(/:root\s*\{([\s\S]*?)\}/);
+    if (!root) throw new Error("Could not find :root block in index.css");
+    const re = /--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;/g;
+    let m: RegExpExecArray | null;
+    m = re.exec(root[1]);
+    while (m !== null) {
+      out[m[1]] = m[2].toLowerCase();
+      m = re.exec(root[1]);
+    }
+    return out;
+  }
+
+  it("category and risk hex sets are disjoint", () => {
+    const cssPath = path.resolve(__dirname, "..", "dashboard", "src", "index.css");
+    const css = fs.readFileSync(cssPath, "utf8");
+    const tokens = tokenMap(css);
+
+    const catNames = [
+      "cl-cat-exploring",
+      "cl-cat-changes",
+      "cl-cat-git",
+      "cl-cat-web",
+      "cl-cat-comms",
+      "cl-cat-scripts",
+    ];
+    const riskNames = ["cl-risk-low", "cl-risk-medium", "cl-risk-high", "cl-risk-critical"];
+
+    // Sanity: every token resolved.
+    for (const name of [...catNames, ...riskNames]) {
+      expect(tokens[name], `expected ${name} in :root`).toBeDefined();
+    }
+
+    const catHex = catNames.map((n) => tokens[n]);
+    const riskHex = new Set(riskNames.map((n) => tokens[n]));
+
+    for (const name of catNames) {
+      expect(
+        riskHex.has(tokens[name]),
+        `${name} (${tokens[name]}) collides with a risk token`,
+      ).toBe(false);
+    }
+
+    // Bonus: cat values are themselves unique.
+    expect(new Set(catHex).size).toBe(catHex.length);
   });
 });

@@ -115,7 +115,9 @@ export default function AgentCard({ agent, needsAttention }: Props) {
         </div>
       )}
 
-      {/* Category breakdown bars — Stage C monochrome (no --cl-cat-* tokens) */}
+      {/* Category breakdown bars — fill tinted with the row's category color
+          at 75% over a flat translucent-white track. Icon stroke + bar share
+          the same hue (agent-card-polish §2). */}
       {hasActivity && (
         <div className="mt-2.5 mb-1">
           <CategoryBreakdown breakdown={agent.todayActivityBreakdown} />
@@ -191,6 +193,9 @@ export default function AgentCard({ agent, needsAttention }: Props) {
             {summaryLoading ? (
               <span
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
                   color: "var(--cl-text-muted)",
                   fontFamily: "var(--cl-font-mono)",
                   fontFeatureSettings: "normal",
@@ -198,18 +203,22 @@ export default function AgentCard({ agent, needsAttention }: Props) {
                   fontStyle: "italic",
                 }}
               >
+                <SparklesIcon className="cl-ai-pulse" />
                 Summarizing…
               </span>
             ) : (
               <button
                 type="button"
+                className="cl-ai-shine"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   fetchSummary();
                 }}
                 style={{
-                  color: "var(--cl-text-muted)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
                   fontFamily: "var(--cl-font-mono)",
                   fontFeatureSettings: "normal",
                   fontSize: 12,
@@ -217,15 +226,9 @@ export default function AgentCard({ agent, needsAttention }: Props) {
                   border: "none",
                   cursor: "pointer",
                   padding: 0,
-                  transition: "color var(--cl-dur-fast) var(--cl-ease)",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.color = "var(--cl-accent)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.color = "var(--cl-text-muted)";
                 }}
               >
+                <SparklesIcon />
                 summarize
               </button>
             )}
@@ -233,6 +236,31 @@ export default function AgentCard({ agent, needsAttention }: Props) {
         )}
       </div>
     </Link>
+  );
+}
+
+// Lucide `sparkles` — the AI-affordance icon. Stroke is set on the element
+// (not via background-clip), so it renders solid even when a sibling text
+// node uses background-clip: text. Caller may pass `className="cl-ai-pulse"`
+// to opt-in to the loading-state pulse animation.
+function SparklesIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--cl-accent)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z" />
+      <path d="M19 3v4" />
+      <path d="M17 5h4" />
+    </svg>
   );
 }
 
@@ -286,7 +314,7 @@ function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, 
               style={{
                 height: 4,
                 borderRadius: 2,
-                backgroundColor: "color-mix(in srgb, var(--cl-text-muted) 12%, transparent)",
+                backgroundColor: "rgba(255,255,255,0.04)",
               }}
             >
               <div
@@ -294,7 +322,7 @@ function CategoryBreakdown({ breakdown }: { breakdown: Record<ActivityCategory, 
                   width: `${pct}%`,
                   height: 4,
                   borderRadius: 2,
-                  backgroundColor: "color-mix(in srgb, var(--cl-text-muted) 20%, transparent)",
+                  backgroundColor: `color-mix(in srgb, ${meta.color} 75%, transparent)`,
                 }}
               />
             </div>

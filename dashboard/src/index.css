@@ -50,14 +50,16 @@
     --cl-risk-high:     #f87171;
     --cl-risk-critical: #ef4444;
 
-    /* Activity-category palette — still used by /activity and /agent/:id. The
-       homepage agent grid stops using these in Stage C (monochrome bars). */
-    --cl-cat-exploring: #60a5fa;
-    --cl-cat-changes:   #fbbf24;
-    --cl-cat-git:       #a78bfa;
-    --cl-cat-web:       #22d3ee;
-    --cl-cat-comms:     #4ade80;
-    --cl-cat-scripts:   #fb923c;
+    /* Activity-category palette — strict cool/magenta. Risk owns the warm-to-
+       green spectrum; categories never share a hex with a risk token. The
+       category-meta hex-overlap test in tests/category-meta.test.ts enforces
+       this rule against future drift. */
+    --cl-cat-exploring: #60a5fa; /* blue-400   — exploring */
+    --cl-cat-changes:   #a78bfa; /* violet-400 — changes  */
+    --cl-cat-git:       #f472b6; /* pink-400   — git      */
+    --cl-cat-web:       #22d3ee; /* cyan-400   — web      */
+    --cl-cat-comms:     #2dd4bf; /* teal-400   — comms    */
+    --cl-cat-scripts:   #94a3b8; /* slate-400  — scripts  */
 
     /* Radii ladder */
     --cl-r-xs:   2px;
@@ -298,6 +300,52 @@ code, .code {
 .cl-btn-primary:hover {
   background: var(--cl-accent-hover);
   border-color: transparent;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AI AFFORDANCE — sparkles + shimmer for buttons that invoke a
+   generative AI action (agent-card-polish §4). The sparkle SVG
+   carries its own stroke; the .cl-ai-shine class gradient-clips the
+   text so rest stays muted and hover sweeps in the accent color.
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-ai-shine {
+  background-image: linear-gradient(
+    90deg,
+    var(--cl-text-muted) 0%,
+    var(--cl-text-muted) 35%,
+    var(--cl-accent) 50%,
+    var(--cl-text-muted) 65%,
+    var(--cl-text-muted) 100%
+  );
+  background-size: 250% 100%;
+  background-position: 150% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  transition: background-position var(--cl-dur-med) var(--cl-ease);
+}
+.cl-ai-shine:hover {
+  animation: cl-ai-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes cl-ai-shimmer {
+  0%   { background-position: 150% 0; }
+  100% { background-position: -50% 0; }
+}
+
+.cl-ai-pulse {
+  animation: cl-ai-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cl-ai-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Drop the sweep; fall back to a static accent on hover so the
+     "this is AI" affordance is still legible without motion. */
+  .cl-ai-shine:hover { animation: none; color: var(--cl-accent); }
+  .cl-ai-pulse { animation: none; opacity: 0.75; }
 }
 
 /* ══════════════════════════════════════════════════════════════

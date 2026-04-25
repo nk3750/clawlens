@@ -222,3 +222,134 @@ describe("getSessionSummary", () => {
     expect(getSummaryCacheSize()).toBe(0);
   });
 });
+
+// agent-card-polish §3: card slot is 2 lines × ~70 chars. The prompt asks the
+// LLM for ≤140 chars; the server-side cap is the safety net for overshoot.
+// These tests pin the cap behavior + the persona/length framing in the prompt
+// so future drift surfaces in CI.
+describe("getSessionSummary — LLM length cap (agent-card-polish §3)", () => {
+  function manyEntries(): AuditEntry[] {
+    return Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+  }
+
+  let originalKey: string | undefined;
+  let mockFetch: ReturnType<typeof vi.fn>;
+  // Captured user message from the most recent fetch call. Use this to assert
+  // the prompt's persona/length framing instead of patching internals.
+  let lastUserMessage = "";
+  let lastMaxTokens: number | undefined;
+
+  beforeEach(() => {
+    clearSummaryCache();
+    originalKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-key";
+
+    lastUserMessage = "";
+    lastMaxTokens = undefined;
+    mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    if (originalKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+    } else {
+      process.env.ANTHROPIC_API_KEY = originalKey;
+    }
+    vi.unstubAllGlobals();
+  });
+
+  function setLlmResponse(text: string): void {
+    mockFetch.mockImplementation(async (_url: string, opts: { body: string }) => {
+      const body = JSON.parse(opts.body);
+      lastUserMessage = body.messages?.[0]?.content ?? "";
+      lastMaxTokens = body.max_tokens;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ content: [{ type: "text", text }] }),
+      } as Response;
+    });
+  }
+
+  it("truncates a 200-char overshoot at a word boundary and ends with `…`", async () => {
+    // 200-char single-line response (well past the 140 limit). The cap should
+    // trim to ≤141 chars total (140 + ellipsis), break on a space, and end on
+    // a non-space char before the ellipsis.
+    const overshoot =
+      "This agent has been actively triaging customer support requests across telephony and email channels, escalating two high-risk billing disputes and quietly resolving routine refunds";
+    expect(overshoot.length).toBeGreaterThan(160);
+    setLlmResponse(overshoot);
+
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmModel: "claude-haiku-4-5-20251001",
+      llmApiKeyEnv: "ANTHROPIC_API_KEY",
+      provider: "anthropic",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const out = result.summary.summary;
+    expect(out.length).toBeLessThanOrEqual(141);
+    // Must end on a non-whitespace char immediately before the ellipsis (word
+    // boundary, not mid-word).
+    expect(out).toMatch(/[^\s]…$/);
+  });
+
+  it("passes through a 90-char response untouched (no `…` appended)", async () => {
+    const short =
+      "This agent is running scheduled health checks across the production search pipelines.";
+    expect(short.length).toBeLessThan(140);
+    setLlmResponse(short);
+
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmModel: "claude-haiku-4-5-20251001",
+      llmApiKeyEnv: "ANTHROPIC_API_KEY",
+      provider: "anthropic",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summary).toBe(short);
+    expect(result.summary.summary).not.toMatch(/…$/);
+  });
+
+  it("sends `one present-tense sentence` and `140 characters` framing in the prompt", async () => {
+    // Locks the persona/cap framing against drift — the card slot exists
+    // because of these phrases. If a future PR softens them, this fails.
+    setLlmResponse("ok");
+
+    await getSessionSummary("s1", manyEntries(), {
+      llmModel: "claude-haiku-4-5-20251001",
+      llmApiKeyEnv: "ANTHROPIC_API_KEY",
+      provider: "anthropic",
+    });
+
+    expect(lastUserMessage).toContain("one present-tense sentence");
+    expect(lastUserMessage).toContain("140 characters");
+  });
+
+  it("requests max_tokens=48 on the direct-API call (~140 chars + margin)", async () => {
+    // Explicit cap on the upstream side. Spec §3 lowers this from the eval
+    // path's default (512) so the model can't ramble even before the helper
+    // truncates.
+    setLlmResponse("ok");
+
+    await getSessionSummary("s1", manyEntries(), {
+      llmModel: "claude-haiku-4-5-20251001",
+      llmApiKeyEnv: "ANTHROPIC_API_KEY",
+      provider: "anthropic",
+    });
+
+    expect(lastMaxTokens).toBe(48);
+  });
+});

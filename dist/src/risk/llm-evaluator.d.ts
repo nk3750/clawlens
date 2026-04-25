@@ -28,7 +28,7 @@ export declare function collectEmbeddedText(payloads?: Array<{
  *
  * Returns raw text response or null on failure. Callers parse the result.
  */
-export declare function callLlmApi(provider: string, apiKey: string, model: string, systemPrompt: string, userMessage: string, logger?: PluginLogger): Promise<string | null>;
+export declare function callLlmApi(provider: string, apiKey: string, model: string, systemPrompt: string, userMessage: string, logger?: PluginLogger, maxTokens?: number): Promise<string | null>;
 /**
  * Resolve the model to use for eval calls.
  * Priority: explicit config override → default for provider → undefined (skip).
