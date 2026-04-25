@@ -344,6 +344,28 @@ code, .code {
   50%      { opacity: 1; }
 }
 
+/* AI-cadence skeleton — accent-tinted shimmer that sweeps right→left at the
+   same 1.2s tempo as cl-ai-pulse / cl-ai-shimmer. Sweep direction is inverted
+   relative to cl-ai-shimmer so the trigger and the popover loading state read
+   as distinct surfaces rather than one continuous animation. Scoped to AI-
+   loading affordances; do not replace the generic .skeleton globally. */
+.cl-skeleton-ai {
+  background: linear-gradient(
+    90deg,
+    var(--cl-surface) 0%,
+    var(--cl-accent-tint) 50%,
+    var(--cl-surface) 100%
+  );
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  border-radius: var(--cl-r-lg);
+  animation: cl-skeleton-ai 1.2s ease-in-out infinite;
+}
+@keyframes cl-skeleton-ai {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+
 /* Per-word fade-in for SummaryPopover body — each word's animation-delay is
    set inline by the component so the reveal staggers ~30ms per word. The
    total reveal for a 20-word sentence stays under the AI-shine timing. */
@@ -362,6 +384,7 @@ code, .code {
   .cl-ai-shine:hover { animation: none; color: var(--cl-accent); }
   .cl-ai-pulse { animation: none; opacity: 0.75; }
   .cl-summary-word { animation: none; opacity: 1; transform: none; }
+  .cl-skeleton-ai { animation: none; background: var(--cl-accent-tint); }
 }
 
 /* ══════════════════════════════════════════════════════════════

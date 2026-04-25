@@ -111,8 +111,8 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
           data-cl-summary-loading
           style={{ display: "flex", flexDirection: "column", gap: 6 }}
         >
-          <div className="skeleton" style={{ height: 10, width: "92%" }} />
-          <div className="skeleton" style={{ height: 10, width: "68%" }} />
+          <div className="cl-skeleton-ai" style={{ height: 10, width: "92%" }} />
+          <div className="cl-skeleton-ai" style={{ height: 10, width: "68%" }} />
         </div>
       ) : (
         <div

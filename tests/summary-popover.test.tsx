@@ -198,6 +198,24 @@ describe("SummaryPopover — paint regressions (#25)", () => {
     expect(pop?.style.animation).toContain("cl-pop-in-up");
   });
 
+  it("uses the AI-cadence shimmer class on loading-state skeleton bars (not the generic .skeleton)", () => {
+    // The trigger button pulses at the cl-ai-pulse cadence (1.2s, 0.45↔1). The
+    // generic .skeleton uses a 2s slow opacity pulse — visually mismatched
+    // against the trigger and reads as a generic loader, not "AI is thinking".
+    // Lock both bars to the dedicated cl-skeleton-ai class so the loading state
+    // matches the rest of the AI-affordance motion grammar.
+    const { container } = renderPopover({ summary: null, loading: true });
+    const bars = container.querySelectorAll("[data-cl-summary-loading] > div");
+    expect(bars.length).toBe(2);
+    for (const bar of Array.from(bars)) {
+      expect(bar.classList.contains("cl-skeleton-ai")).toBe(true);
+      // The literal `skeleton` class is the generic 2s pulse — make sure we
+      // didn't double-class. Use classList.contains so the substring match
+      // inside `cl-skeleton-ai` doesn't trip the assertion.
+      expect(bar.classList.contains("skeleton")).toBe(false);
+    }
+  });
+
   it("caps content at maxHeight: 220px with overflowY: auto (dynamic-up-to-ceiling, scroll past it)", () => {
     // Hybrid display: under the 220px ceiling the popover sizes to its content
     // (no scrollbar visible). Past the ceiling — rare LLM overshoot or longer
