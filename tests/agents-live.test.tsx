@@ -34,7 +34,7 @@ vi.mock("../dashboard/src/hooks/useSSE", () => ({
 }));
 
 import { useLiveApi } from "../dashboard/src/hooks/useLiveApi";
-import type { EntryResponse } from "../dashboard/src/lib/types";
+import type { AgentInfo, EntryResponse, RiskTier } from "../dashboard/src/lib/types";
 import Agents from "../dashboard/src/pages/Agents";
 
 const mockedUseLiveApi = vi.mocked(useLiveApi);
@@ -270,5 +270,183 @@ describe("Agents homepage — Stage C 3-wide grid columns", () => {
     // property on the element's `style` object.
     expect(grid?.style.gridTemplateColumns).toBe("repeat(auto-fill, minmax(340px, 1fr))");
     expect(grid?.style.gap).toBe("10px");
+  });
+});
+
+// ── agent-grid-polish §3 sort + §2(c) collision detection ─────────
+
+const NON_DORMANT_STATS = {
+  total: 5,
+  allowed: 5,
+  approved: 0,
+  blocked: 0,
+  timedOut: 0,
+  pending: 0,
+  riskBreakdown: { low: 5, medium: 0, high: 0, critical: 0 },
+  avgRiskScore: 10,
+  peakRiskScore: 15,
+  activeAgents: 1,
+  activeSessions: 1,
+  riskPosture: "calm" as const,
+  historicDailyMax: 5,
+  yesterdayTotal: 3,
+  weekAverage: 2,
+  llmHealth: { recentAttempts: 0, recentFailures: 0, status: "ok" as const },
+};
+
+function makeAgentFixture(overrides: {
+  id: string;
+  tier?: "low" | "med" | "high" | "crit";
+  lastActive?: string;
+  calls?: number;
+}): AgentInfo {
+  // Map the requested tier to a todayRiskMix that lands on it via the
+  // worstMeaningfulTier compound rule (any crit → CRIT; ≥2 high → HIGH; ≥5%
+  // med → MED; else LOW). Sort branches read worstMeaningfulTier(mix), so
+  // these mixes drive the ranking under test.
+  const tier = overrides.tier ?? "low";
+  const todayRiskMix: Record<RiskTier, number> =
+    tier === "crit"
+      ? { low: 100, medium: 0, high: 0, critical: 1 }
+      : tier === "high"
+        ? { low: 100, medium: 0, high: 2, critical: 0 }
+        : tier === "med"
+          ? { low: 95, medium: 5, high: 0, critical: 0 }
+          : { low: 100, medium: 0, high: 0, critical: 0 };
+  return {
+    id: overrides.id,
+    name: overrides.id,
+    status: "active",
+    todayToolCalls: overrides.calls ?? 10,
+    avgRiskScore: 20,
+    peakRiskScore: 30,
+    lastActiveTimestamp: overrides.lastActive ?? "2026-04-20T12:00:00Z",
+    mode: "interactive",
+    riskPosture: "calm",
+    activityBreakdown: { exploring: 1, changes: 0, git: 0, scripts: 0, web: 0, comms: 0 },
+    todayActivityBreakdown: {
+      exploring: 1,
+      changes: 0,
+      git: 0,
+      scripts: 0,
+      web: 0,
+      comms: 0,
+    },
+    needsAttention: false,
+    blockedCount: 0,
+    riskProfile: { low: 1, medium: 0, high: 0, critical: 0 },
+    todayRiskMix,
+    hourlyActivity: Array.from({ length: 24 }, () => 0),
+  };
+}
+
+function mockHomepage(agents: AgentInfo[]) {
+  mockedUseLiveApi.mockImplementation((path: string) => {
+    if (path.startsWith("api/agents")) {
+      return { data: agents, loading: false, error: null, refetch: vi.fn() };
+    }
+    if (path.startsWith("api/stats")) {
+      return { data: NON_DORMANT_STATS, loading: false, error: null, refetch: vi.fn() };
+    }
+    return defaultLiveApiReturn();
+  });
+}
+
+function agentCardHrefs(container: HTMLElement): string[] {
+  // Active agents grid is the first .grid inside [data-cl-agents-anchor].
+  // Each AgentCardCompact renders a <Link> with href="/agent/<id>".
+  const cards = container.querySelectorAll<HTMLAnchorElement>(
+    "[data-cl-agents-anchor] a[href^='/agent/']",
+  );
+  return Array.from(cards).map((c) => c.getAttribute("href") ?? "");
+}
+
+function avatarLetterFor(container: HTMLElement, agentId: string): string | null {
+  const card = container.querySelector<HTMLElement>(`a[href="/agent/${agentId}"]`);
+  if (!card) return null;
+  const outer = Array.from(card.querySelectorAll<HTMLElement>("div")).find((el) =>
+    el.style.background?.includes("linear-gradient"),
+  );
+  return outer?.querySelector("span")?.textContent ?? null;
+}
+
+describe("Agents homepage — sort policy (agent-grid-polish §3)", () => {
+  it("ranks higher-tier agent above lower-tier agent regardless of activity volume", () => {
+    // Low-volume HIGH (5 calls) vs high-volume MED (100 calls). The pre-fix
+    // sort (todayToolCalls desc) would put MED first; new sort (tier desc)
+    // must put HIGH first because the tier pill is the strongest card signal.
+    const lowVolHigh = makeAgentFixture({ id: "alpha", tier: "high", calls: 5 });
+    const highVolMed = makeAgentFixture({ id: "beta", tier: "med", calls: 100 });
+    mockHomepage([highVolMed, lowVolHigh]); // intentionally unsorted input
+    const { container } = renderHome();
+    expect(agentCardHrefs(container)).toEqual(["/agent/alpha", "/agent/beta"]);
+  });
+
+  it("orders critical > high > medium > low across all four tiers", () => {
+    const low = makeAgentFixture({ id: "agent-low", tier: "low" });
+    const med = makeAgentFixture({ id: "agent-med", tier: "med" });
+    const hi = makeAgentFixture({ id: "agent-hi", tier: "high" });
+    const crit = makeAgentFixture({ id: "agent-crit", tier: "crit" });
+    mockHomepage([low, med, hi, crit]); // intentionally reversed input
+    const { container } = renderHome();
+    expect(agentCardHrefs(container)).toEqual([
+      "/agent/agent-crit",
+      "/agent/agent-hi",
+      "/agent/agent-med",
+      "/agent/agent-low",
+    ]);
+  });
+
+  it("breaks ties within the same tier by lastActiveTimestamp desc (most recent first)", () => {
+    const newer = makeAgentFixture({
+      id: "newer",
+      tier: "low",
+      lastActive: "2026-04-20T15:00:00Z",
+    });
+    const older = makeAgentFixture({
+      id: "older",
+      tier: "low",
+      lastActive: "2026-04-20T10:00:00Z",
+    });
+    mockHomepage([older, newer]);
+    const { container } = renderHome();
+    expect(agentCardHrefs(container)).toEqual(["/agent/newer", "/agent/older"]);
+  });
+});
+
+describe("Agents homepage — avatar letter collision detection (agent-grid-polish §2(c))", () => {
+  it("escalates colliding agents to 2-letter avatars when sharing first character", () => {
+    // baddie + bestie share 'B' → both render BA / BE.
+    // alpha doesn't collide → renders A.
+    const baddie = makeAgentFixture({ id: "baddie" });
+    const bestie = makeAgentFixture({ id: "bestie" });
+    const alpha = makeAgentFixture({ id: "alpha" });
+    mockHomepage([baddie, bestie, alpha]);
+    const { container } = renderHome();
+    expect(avatarLetterFor(container, "baddie")).toBe("BA");
+    expect(avatarLetterFor(container, "bestie")).toBe("BE");
+    expect(avatarLetterFor(container, "alpha")).toBe("A");
+  });
+
+  it("escalates 3+ agents sharing the first letter to 2-letter mode", () => {
+    const baddie = makeAgentFixture({ id: "baddie" });
+    const bestie = makeAgentFixture({ id: "bestie" });
+    const biggie = makeAgentFixture({ id: "biggie" });
+    mockHomepage([baddie, bestie, biggie]);
+    const { container } = renderHome();
+    expect(avatarLetterFor(container, "baddie")).toBe("BA");
+    expect(avatarLetterFor(container, "bestie")).toBe("BE");
+    expect(avatarLetterFor(container, "biggie")).toBe("BI");
+  });
+
+  it("non-colliding agents render single-letter avatars by default", () => {
+    const alpha = makeAgentFixture({ id: "alpha" });
+    const baddie = makeAgentFixture({ id: "baddie" });
+    const charlie = makeAgentFixture({ id: "charlie" });
+    mockHomepage([alpha, baddie, charlie]);
+    const { container } = renderHome();
+    expect(avatarLetterFor(container, "alpha")).toBe("A");
+    expect(avatarLetterFor(container, "baddie")).toBe("B");
+    expect(avatarLetterFor(container, "charlie")).toBe("C");
   });
 });

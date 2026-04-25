@@ -135,15 +135,15 @@ function hashCode(str: string): number {
 }
 
 export function agentGradient(agentId: string): [string, string] {
-  const PALETTE = [
-    "#6366f1", "#8b5cf6", "#ec4899", "#f97316",
-    "#14b8a6", "#06b6d4", "#84cc16", "#f43f5e",
-    "#d4a574", "#60a5fa",
-  ];
-  const h = Math.abs(hashCode(agentId));
-  const c1 = PALETTE[h % PALETTE.length];
-  const c2 = PALETTE[(h * 7 + 3) % PALETTE.length];
-  return [c1, c2 === c1 ? PALETTE[(h + 1) % PALETTE.length] : c2];
+  // Continuous hue from the id hash — 360 slots vs. the old 10-entry palette.
+  // 35° offset between c1 and c2 keeps each agent's gradient monochromatic
+  // (recognisable hue identity) while still producing a visible falloff.
+  // 70/62 + 75/55 saturation/lightness is the "vibrant on dark surface"
+  // sweet spot — readable above --cl-bg-02 without washing out at 20px.
+  const hue = Math.abs(hashCode(agentId)) % 360;
+  const c1 = `hsl(${hue}, 70%, 62%)`;
+  const c2 = `hsl(${(hue + 35) % 360}, 75%, 55%)`;
+  return [c1, c2];
 }
 
 // ── Risk tier color mapping ──

@@ -25,9 +25,12 @@ interface Props {
   agent: AgentInfo;
   /** From AttentionResponse.agentAttention. Prefer this over agent.needsAttention when provided. */
   needsAttention?: boolean;
+  /** 1 by default; bump to 2 when the parent detects a first-character collision
+   *  among rendered fleet agents (agent-grid-polish §2(c)). */
+  avatarLetterCount?: 1 | 2;
 }
 
-export default function AgentCard({ agent, needsAttention }: Props) {
+export default function AgentCard({ agent, needsAttention, avatarLetterCount = 1 }: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
   const attentionFlag = needsAttention ?? agent.needsAttention;
@@ -40,7 +43,7 @@ export default function AgentCard({ agent, needsAttention }: Props) {
   return (
     <Link
       to={`/agent/${encodeURIComponent(agent.id)}`}
-      className="cl-card block"
+      className={`cl-card block${attentionFlag ? " cl-attn-card" : ""}`}
       data-cl-agent-attention={attentionFlag ? "true" : undefined}
       style={{
         padding: "14px 16px",
@@ -51,7 +54,6 @@ export default function AgentCard({ agent, needsAttention }: Props) {
         // card needs to stay visually highlighted even if the cursor is
         // currently over the popover (which sits inside the card's Link).
         backgroundColor: popoverOpen ? "var(--cl-bg-05)" : undefined,
-        boxShadow: attentionFlag ? "inset 2px 0 0 0 var(--cl-risk-medium)" : undefined,
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.backgroundColor = "var(--cl-bg-05)";
@@ -74,7 +76,7 @@ export default function AgentCard({ agent, needsAttention }: Props) {
             />
           )}
         </div>
-        <GradientAvatar agentId={agent.id} size="xs" />
+        <GradientAvatar agentId={agent.id} size="xs" letterCount={avatarLetterCount} />
         <span
           className="truncate"
           style={{
@@ -100,6 +102,27 @@ export default function AgentCard({ agent, needsAttention }: Props) {
             }}
           >
             {triggerLabel}
+          </span>
+        )}
+        {hasActivity && attentionFlag && (
+          <span
+            data-cl-agent-attention-chip
+            className="shrink-0"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              height: 18,
+              padding: "0 6px",
+              borderRadius: "var(--cl-r-pill)",
+              border: "1px solid var(--cl-accent-ring)",
+              color: "var(--cl-accent)",
+              fontFamily: "var(--cl-font-mono)",
+              fontSize: 9,
+              letterSpacing: "0.04em",
+            }}
+            aria-label="Needs attention"
+          >
+            ⚠
           </span>
         )}
         {hasActivity && (

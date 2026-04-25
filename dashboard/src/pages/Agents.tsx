@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useLiveApi } from "../hooks/useLiveApi";
-import type { AgentInfo, AttentionResponse, StatsResponse } from "../lib/types";
+import type { AgentInfo, AttentionResponse, RiskTier, StatsResponse } from "../lib/types";
 import FleetHeader from "../components/FleetHeader";
 import AttentionInbox from "../components/AttentionInbox";
 import AgentRow from "../components/AgentCardCompact";
@@ -14,8 +14,18 @@ import DormantState from "../components/DormantState";
 import { isDormant } from "../lib/homepageState";
 import { isRangeOption, type RangeOption } from "../components/fleetheader/utils";
 import { getPref, PREF_KEYS, setPref } from "../lib/prefs";
+import { worstMeaningfulTier } from "../lib/utils";
 
 const DEFAULT_RANGE: RangeOption = "12h";
+
+// Sort secondary key — aligns the row order with the tier pill the operator
+// is reading. crit > high > med > low. (agent-grid-polish §3)
+const TIER_RANK: Record<RiskTier, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
 
 function readInitialRange(): RangeOption {
   const stored = getPref<string | null>(PREF_KEYS.FLEET_RANGE, null);
@@ -136,16 +146,39 @@ export default function Agents() {
     setPref(PREF_KEYS.FLEET_RANGE, next);
   }, []);
 
-  // Sort: attention-flagged agents first, then by todayToolCalls desc.
+  // Sort (agent-grid-polish §3):
+  //   1. attention-flagged first (operator-action-needed signal),
+  //   2. then by worst-meaningful-tier desc (aligns with the tier pill on each card),
+  //   3. then by recency desc within the same tier.
   const sortedAgents = useMemo(() => {
     if (!agents) return [];
     return [...agents].sort((a, b) => {
       const aFlag = attentionAgentIds.has(a.id);
       const bFlag = attentionAgentIds.has(b.id);
       if (aFlag !== bFlag) return aFlag ? -1 : 1;
-      return b.todayToolCalls - a.todayToolCalls;
+      const aTier = TIER_RANK[worstMeaningfulTier(a.todayRiskMix)];
+      const bTier = TIER_RANK[worstMeaningfulTier(b.todayRiskMix)];
+      if (aTier !== bTier) return bTier - aTier;
+      return (b.lastActiveTimestamp ?? "").localeCompare(a.lastActiveTimestamp ?? "");
     });
   }, [agents, attentionAgentIds]);
+
+  // First-letter collision detection across the whole rendered fleet
+  // (agent-grid-polish §2(c)). When two or more agents share an initial,
+  // bump them to 2-letter avatars so the visual identity holds.
+  const avatarLetterCounts = useMemo(() => {
+    const firstLetterCounts = new Map<string, number>();
+    for (const a of sortedAgents) {
+      const initial = (a.id.charAt(0) || "?").toUpperCase();
+      firstLetterCounts.set(initial, (firstLetterCounts.get(initial) ?? 0) + 1);
+    }
+    const result = new Map<string, 1 | 2>();
+    for (const a of sortedAgents) {
+      const initial = (a.id.charAt(0) || "?").toUpperCase();
+      result.set(a.id, (firstLetterCounts.get(initial) ?? 0) > 1 ? 2 : 1);
+    }
+    return result;
+  }, [sortedAgents]);
 
   const activeAgents = useMemo(() => sortedAgents.filter((a) => a.todayToolCalls > 0), [sortedAgents]);
   const idleAgents = useMemo(() => sortedAgents.filter((a) => a.todayToolCalls === 0), [sortedAgents]);
@@ -248,6 +281,7 @@ export default function Agents() {
                 key={agent.id}
                 agent={agent}
                 needsAttention={attentionAgentIds.has(agent.id)}
+                avatarLetterCount={avatarLetterCounts.get(agent.id) ?? 1}
               />
             ))}
           </div>
@@ -309,6 +343,7 @@ export default function Agents() {
                 key={agent.id}
                 agent={agent}
                 needsAttention={attentionAgentIds.has(agent.id)}
+                avatarLetterCount={avatarLetterCounts.get(agent.id) ?? 1}
               />
                 ))}
               </div>

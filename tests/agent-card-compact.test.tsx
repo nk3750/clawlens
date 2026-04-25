@@ -21,6 +21,15 @@ vi.mock("../dashboard/src/hooks/useSessionSummary", () => ({
 import AgentCardCompact from "../dashboard/src/components/AgentCardCompact";
 import type { AgentInfo, RiskTier } from "../dashboard/src/lib/types";
 
+function avatarLetter(container: HTMLElement): HTMLElement | null {
+  // Avatar's outer div has the linear-gradient inline style; the letter span
+  // sits inside it. Scoped query so we don't catch other spans on the card.
+  const outer = Array.from(container.querySelectorAll<HTMLElement>("div")).find((el) =>
+    el.style.background?.includes("linear-gradient"),
+  );
+  return outer?.querySelector<HTMLElement>("span") ?? null;
+}
+
 const NOW_ISO = "2026-04-20T12:00:00.000Z";
 
 function makeAgent(partial: Partial<AgentInfo> = {}): AgentInfo {
@@ -216,14 +225,58 @@ describe("AgentCardCompact — Linear-adjacent chrome (Stage C skin)", () => {
     expect(anchor?.getAttribute("href")).toBe("/agent/social-manager");
   });
 
-  it("applies an inset 2px --cl-risk-medium box-shadow when needsAttention is true", () => {
+  it("composes the cl-attn-card className on the outer Link when needsAttention is true", () => {
+    // The attention treatment moved from inline `boxShadow: inset 2px ... --cl-risk-medium`
+    // (which collided with #24's medium-tier ribbon vocabulary) to the cl-attn-card
+    // class — accent ring + animated outer glow. Locks the new visual contract.
     const { container } = renderCard(makeAgent(), true);
     const anchor = container.querySelector<HTMLAnchorElement>("a");
     expect(anchor).not.toBeNull();
+    expect(anchor?.className).toMatch(/\bcl-attn-card\b/);
+    // No inline amber inset shadow anymore — the visual treatment lives in CSS.
     const shadow = anchor?.style.boxShadow ?? "";
-    expect(shadow).toMatch(/inset/);
-    expect(shadow).toMatch(/2px/);
-    expect(shadow).toMatch(/--cl-risk-medium/);
+    expect(shadow).not.toMatch(/--cl-risk-medium/);
+  });
+
+  it("does NOT compose cl-attn-card when needsAttention is false", () => {
+    const { container } = renderCard(makeAgent(), false);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor?.className ?? "").not.toMatch(/\bcl-attn-card\b/);
+  });
+
+  it("renders the data-cl-agent-attention-chip with ⚠ when flagged + has activity", () => {
+    const { container } = renderCard(makeAgent(), true);
+    const chip = container.querySelector("[data-cl-agent-attention-chip]");
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent?.trim()).toBe("⚠");
+    // Chip uses indigo accent vocabulary — distinct from tier-pill colors.
+    const style = (chip as HTMLElement | null)?.style;
+    expect(style?.color ?? "").toContain("--cl-accent");
+  });
+
+  it("does NOT render the attention chip when unflagged", () => {
+    const { container } = renderCard(makeAgent(), false);
+    expect(container.querySelector("[data-cl-agent-attention-chip]")).toBeNull();
+  });
+
+  it("does NOT render the attention chip on idle agents (no activity → no chip)", () => {
+    const idle = makeAgent({ todayToolCalls: 0, status: "idle" });
+    const { container } = renderCard(idle, true);
+    expect(container.querySelector("[data-cl-agent-attention-chip]")).toBeNull();
+  });
+
+  it("forwards avatarLetterCount=2 to GradientAvatar (renders 2 uppercase chars)", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={makeAgent({ id: "baddie" })} avatarLetterCount={2} />
+      </MemoryRouter>,
+    );
+    expect(avatarLetter(container)?.textContent).toBe("BA");
+  });
+
+  it("default avatarLetterCount renders a single uppercase char", () => {
+    const { container } = renderCard(makeAgent({ id: "baddie" }));
+    expect(avatarLetter(container)?.textContent).toBe("B");
   });
 
   it("sets data-cl-agent-attention when flagged", () => {

@@ -344,6 +344,40 @@ code, .code {
   50%      { opacity: 1; }
 }
 
+/* ══════════════════════════════════════════════════════════════
+   ATTENTION CARD (agent-grid-polish §1) — static accent ring +
+   animated outer glow. Two box-shadow layers; only the second
+   interpolates between frames so the ring stays rock-solid.
+   3s cadence is intentionally slower than the 2s active-status
+   pulse so the two motions read as distinct rather than competing.
+   ══════════════════════════════════════════════════════════════ */
+
+.cl-attn-card {
+  animation: cl-attn-glow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes cl-attn-glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px var(--cl-accent-ring),
+      0 0 8px -2px rgba(113, 112, 255, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--cl-accent-ring),
+      0 0 14px -2px rgba(113, 112, 255, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-attn-card {
+    animation: none;
+    box-shadow:
+      0 0 0 1px var(--cl-accent-ring),
+      0 0 12px -2px rgba(113, 112, 255, 0.12);
+  }
+}
+
 /* AI-cadence skeleton — accent-tinted shimmer that sweeps right→left at the
    same 1.2s tempo as cl-ai-pulse / cl-ai-shimmer. Sweep direction is inverted
    relative to cl-ai-shimmer so the trigger and the popover loading state read

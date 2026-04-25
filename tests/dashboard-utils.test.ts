@@ -3,7 +3,7 @@
 // §5 relTimeCompact).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deriveTags, relTimeCompact } from "../dashboard/src/lib/utils";
+import { agentGradient, deriveTags, relTimeCompact } from "../dashboard/src/lib/utils";
 
 const NOW_ISO = "2026-04-24T12:00:00.000Z";
 
@@ -130,5 +130,56 @@ describe("relTimeCompact", () => {
     for (const out of outs) {
       expect(out).not.toMatch(/ago/);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// agentGradient — HSL continuous-hue (agent-grid-polish §2(a))
+// ─────────────────────────────────────────────────────────────
+
+describe("agentGradient — HSL continuous-hue", () => {
+  it("returns hsl(N, 70%, 62%) and hsl(M, 75%, 55%) for any agent id", () => {
+    const [c1, c2] = agentGradient("baddie");
+    expect(c1).toMatch(/^hsl\(\d+,\s*70%,\s*62%\)$/);
+    expect(c2).toMatch(/^hsl\(\d+,\s*75%,\s*55%\)$/);
+  });
+
+  it("is deterministic per id (same id → same colors across calls)", () => {
+    expect(agentGradient("baddie")).toEqual(agentGradient("baddie"));
+    expect(agentGradient("seo-growth")).toEqual(agentGradient("seo-growth"));
+  });
+
+  it("c2 hue is offset by 35° (mod 360) from c1 hue", () => {
+    const ids = ["alpha", "baddie", "seo-growth", "x"];
+    for (const id of ids) {
+      const [c1, c2] = agentGradient(id);
+      const h1 = Number(c1.match(/^hsl\((\d+),/)?.[1] ?? "-1");
+      const h2 = Number(c2.match(/^hsl\((\d+),/)?.[1] ?? "-1");
+      expect(h1, id).toBeGreaterThanOrEqual(0);
+      expect(h1, id).toBeLessThan(360);
+      expect(h2, id).toBe((h1 + 35) % 360);
+    }
+  });
+
+  it("produces diverse hues across 100 ids — much better than the old 10-entry palette", () => {
+    // Birthday paradox: 100 keys in 360 buckets → ~86 expected distinct.
+    // Threshold >80 locks the diversity claim against any future refactor
+    // that accidentally narrows the hue space (e.g., %180 instead of %360).
+    const hues = new Set<number>();
+    for (let i = 0; i < 100; i++) {
+      const [c1] = agentGradient(`agent-test-${i}`);
+      const h = Number(c1.match(/^hsl\((\d+),/)?.[1] ?? "-1");
+      hues.add(h);
+    }
+    expect(hues.size).toBeGreaterThan(80);
+  });
+
+  it("the 4 production-fixture agent ids all land on distinct c1 hues", () => {
+    // Regression-lock for the spec's motivating screenshot: baddie / seo-growth /
+    // debugger / social-manager rendered as visually-similar blobs under the
+    // 10-entry palette. Under HSL %360, all four must produce distinct hues.
+    const ids = ["baddie", "seo-growth", "debugger", "social-manager"];
+    const c1s = ids.map((id) => agentGradient(id)[0]);
+    expect(new Set(c1s).size).toBe(ids.length);
   });
 });
