@@ -28,4 +28,4 @@ venv/
 
 # Playwright MCP per-session snapshots + ad-hoc screenshots from review walks
 .playwright-mcp/
-agent-grid-polish-review.png
+*-review.png
