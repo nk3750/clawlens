@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import type { RiskTier } from "../lib/types";
 
 interface Props {
@@ -34,6 +34,7 @@ function worstPresentTier(mix: Record<RiskTier, number>): RiskTier {
  * drowning in JSX.
  */
 export default function RiskMixPopover({ mix, total, agentId }: Props) {
+  const navigate = useNavigate();
   const sum = mix.low + mix.medium + mix.high + mix.critical;
   const denominator = total ?? sum;
   if (denominator <= 0) return null;
@@ -55,10 +56,12 @@ export default function RiskMixPopover({ mix, total, agentId }: Props) {
         padding: "10px 12px",
         borderRadius: "var(--cl-r-md)",
         boxShadow: "var(--cl-depth-pop)",
-        backgroundColor: "var(--cl-bg-card, var(--cl-bg))",
+        backgroundColor: "var(--cl-bg-popover)",
         border: "1px solid var(--cl-border)",
-        zIndex: "var(--cl-z-tooltip)" as unknown as number,
-        animation: "page-fade-in 120ms var(--cl-ease) both",
+        // mirrors --cl-z-tooltip in index.css; numeric literal avoids the string-cast
+        zIndex: 80,
+        animation: "cl-pop-in 160ms cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        transformOrigin: "top left",
       }}
     >
       <div
@@ -164,14 +167,15 @@ export default function RiskMixPopover({ mix, total, agentId }: Props) {
         Peak tier today: {worst}
       </div>
 
-      <Link
+      <button
+        type="button"
         data-cl-risk-mix-pop-link
-        to={targetHref}
         // stopPropagation prevents the wrapping card <Link to="/agent/:id">
-        // from also firing — the popover's click-through must be the only
-        // navigation that happens. See AgentCardCompact's outer Link.
+        // from also firing. <button> avoids the nested-anchor HTML invalid
+        // state that <Link> created here (validateDOMNesting + repair races).
         onClick={(e) => {
           e.stopPropagation();
+          navigate(targetHref);
         }}
         style={{
           color: "var(--cl-accent)",
@@ -180,10 +184,14 @@ export default function RiskMixPopover({ mix, total, agentId }: Props) {
           fontSize: 11,
           textDecoration: "none",
           display: "inline-block",
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
         }}
       >
         View filtered activity →
-      </Link>
+      </button>
     </div>
   );
 }

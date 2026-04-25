@@ -2,10 +2,24 @@
 
 import { fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return { ...actual, useNavigate: vi.fn() };
+});
+
+import { useNavigate } from "react-router-dom";
 import RiskMixPopover from "../dashboard/src/components/RiskMixPopover";
 import type { RiskTier } from "../dashboard/src/lib/types";
+
+const mockedUseNavigate = vi.mocked(useNavigate);
+const navigateSpy = vi.fn();
+
+beforeEach(() => {
+  navigateSpy.mockReset();
+  mockedUseNavigate.mockReturnValue(navigateSpy);
+});
 
 function mix(partial: Partial<Record<RiskTier, number>>): Record<RiskTier, number> {
   return { low: 0, medium: 0, high: 0, critical: 0, ...partial };
@@ -126,17 +140,16 @@ describe("RiskMixPopover — header + narrative", () => {
 });
 
 describe("RiskMixPopover — click-through drill", () => {
-  it("renders a link to /activity?agent=<id>&tier=<worstPresentTier>", () => {
+  it("navigates to /activity?agent=<id>&tier=<worstPresentTier> on click", () => {
     const { container } = renderPop({
       agentId: "seo-growth",
       mix: mix({ low: 10, medium: 5, high: 1 }),
     });
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]");
-    expect(link).not.toBeNull();
-    const href = link?.getAttribute("href") ?? "";
-    expect(href).toContain("/activity");
-    expect(href).toContain("agent=seo-growth");
-    expect(href).toContain("tier=high");
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-risk-mix-pop-link]");
+    expect(button).not.toBeNull();
+    fireEvent.click(button!);
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy).toHaveBeenCalledWith("/activity?agent=seo-growth&tier=high");
   });
 
   it("worst-tier picks critical when any crit is present", () => {
@@ -144,8 +157,10 @@ describe("RiskMixPopover — click-through drill", () => {
       agentId: "baddie",
       mix: mix({ low: 4, medium: 11, high: 7, critical: 2 }),
     });
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]");
-    expect(link?.getAttribute("href") ?? "").toContain("tier=critical");
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-risk-mix-pop-link]");
+    fireEvent.click(button!);
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy.mock.calls[0][0]).toContain("tier=critical");
   });
 
   it("URL-encodes agentIds with special characters", () => {
@@ -153,14 +168,15 @@ describe("RiskMixPopover — click-through drill", () => {
       agentId: "agent/with spaces",
       mix: mix({ low: 1 }),
     });
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]");
-    const href = link?.getAttribute("href") ?? "";
-    expect(href).toContain("agent=agent%2Fwith%20spaces");
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-risk-mix-pop-link]");
+    fireEvent.click(button!);
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy.mock.calls[0][0]).toContain("agent=agent%2Fwith%20spaces");
   });
 
   it("stops propagation on click so the wrapping card Link doesn't also fire", () => {
     // Simulate the card-level outer <Link> click handler by attaching a listener
-    // at a parent element; confirm that clicking the popover link does NOT
+    // at a parent element; confirm that clicking the popover button does NOT
     // bubble to the parent. This is the guard the card relies on — without it,
     // users would get navigated to /agent/:id instead of /activity?tier=....
     const outerHandler = vi.fn();
@@ -173,9 +189,37 @@ describe("RiskMixPopover — click-through drill", () => {
         </div>
       </MemoryRouter>,
     );
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]");
-    fireEvent.click(link!);
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-risk-mix-pop-link]");
+    fireEvent.click(button!);
     expect(outerHandler).not.toHaveBeenCalled();
+  });
+});
+
+describe("RiskMixPopover — paint regressions (issue #18)", () => {
+  it("renders zero <a> elements (locks out the nested-anchor regression)", () => {
+    // Outer card wrapper at AgentCardCompact is a <Link> → <a>. The popover
+    // mounts inside that anchor, so any <a> in the popover tree is invalid
+    // HTML (browsers repair this unpredictably and the click-through can
+    // lose the race to the outer card navigation).
+    const { container } = renderPop({ mix: mix({ low: 5, high: 1 }) });
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+  });
+
+  it("uses the dedicated --cl-bg-popover token for backgroundColor", () => {
+    // JSDOM doesn't resolve CSS-var fallback chains against our stylesheet,
+    // so we assert the source declaration (the literal var() string) rather
+    // than the computed RGB value. Locks out the prior bug where both
+    // fallback tokens were undefined and the popover painted transparent.
+    const { container } = renderPop({ mix: mix({ low: 5, high: 1 }) });
+    const popover = container.querySelector<HTMLElement>("[data-cl-risk-mix-popover]");
+    expect(popover).not.toBeNull();
+    expect(popover?.style.backgroundColor).toContain("var(--cl-bg-popover)");
+  });
+
+  it("uses the cl-pop-in keyframe for entry animation (Linear-style spring)", () => {
+    const { container } = renderPop({ mix: mix({ low: 5, high: 1 }) });
+    const popover = container.querySelector<HTMLElement>("[data-cl-risk-mix-popover]");
+    expect(popover?.style.animation).toContain("cl-pop-in");
   });
 });
 

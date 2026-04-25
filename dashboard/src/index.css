@@ -25,6 +25,9 @@
     --cl-bg-05: rgba(255, 255, 255, 0.05);
     --cl-bg-08: rgba(255, 255, 255, 0.08);
 
+    /* Solid popover surface — opaque, sits above the translucent ladder */
+    --cl-bg-popover: #1c1d20;
+
     /* Text ladder */
     --cl-text-primary:   #f7f8f8;
     --cl-text-secondary: #d0d6e0;
@@ -500,6 +503,11 @@ code, .code {
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cl-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
 }
 
 /* Focus rings — indigo accent. */

@@ -443,19 +443,31 @@ describe("AgentCardCompact — microbar popover wiring", () => {
     expect(container.querySelector("[data-cl-risk-mix-popover]")).toBeNull();
   });
 
-  it("threads agentId into the popover so the click-through link targets the right agent", () => {
+  it("threads agentId into the popover so the click-through navigates to the right agent", () => {
     // Regression guard: if AgentCardCompact forgets to pass agentId, the
-    // popover renders without a Link target and the drill-through silently
-    // breaks. Assert the href explicitly.
-    const { container } = renderCard(makeAgent({ id: "seo-growth" }));
+    // popover renders without a navigate target and the drill-through silently
+    // breaks. The popover button has no href to inspect (it uses useNavigate),
+    // so we verify the actual navigation result via a LocationProbe.
+    const observed: { search: string } = { search: "" };
+    function LocationProbe() {
+      observed.search = useLocation().search;
+      return null;
+    }
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={makeAgent({ id: "seo-growth" })} />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
     const wrap = container.querySelector<HTMLElement>("[data-cl-risk-mix-wrapper]")!;
     fireEvent.mouseEnter(wrap);
     act(() => {
       vi.advanceTimersByTime(150);
     });
-    const link = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]");
-    expect(link).not.toBeNull();
-    expect(link?.getAttribute("href") ?? "").toContain("agent=seo-growth");
+    const button = container.querySelector<HTMLButtonElement>("button[data-cl-risk-mix-pop-link]");
+    expect(button).not.toBeNull();
+    fireEvent.click(button!);
+    expect(observed.search).toContain("agent=seo-growth");
   });
 
   it("clicking the popover link navigates to /activity, not to the card's /agent/:id", () => {
@@ -484,8 +496,10 @@ describe("AgentCardCompact — microbar popover wiring", () => {
     act(() => {
       vi.advanceTimersByTime(150);
     });
-    const popLink = container.querySelector<HTMLAnchorElement>("[data-cl-risk-mix-pop-link]")!;
-    fireEvent.click(popLink);
+    const popButton = container.querySelector<HTMLButtonElement>(
+      "button[data-cl-risk-mix-pop-link]",
+    )!;
+    fireEvent.click(popButton);
 
     expect(observed.pathname).toBe("/activity");
     expect(observed.search).toContain("agent=seo-growth");
