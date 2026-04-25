@@ -326,6 +326,41 @@ function getEffectiveScore(
   return entry.riskScore;
 }
 
+/**
+ * Single source of truth for tier lookup across every dashboard aggregation
+ * that buckets entries by tier (todayRiskMix, riskProfile, fleet-risk crit/
+ * high counts, enhanced-stats per-tier counts). Centralizing closes the
+ * "numbers don't reconcile across surfaces" class of bug — a row counted as
+ * critical on the agent card was previously dropped from the homepage donut.
+ *
+ * Resolution order:
+ *   1. LLM-eval entry's persisted riskTier (LLM-adjusted wins, mirrors
+ *      getEffectiveScore precedence)
+ *   2. Raw entry's persisted riskTier
+ *   3. decision === "block" → "critical" (rule fired, action denied)
+ *   4. decision === "approval_required" → "high" (gated, awaiting decision)
+ *   5. otherwise undefined (caller drops from histograms)
+ *
+ * Deliberately does NOT bucket from score — riskTier is set in lockstep with
+ * riskScore in production (both come from the same RiskScore object in
+ * computeRiskScore), so deriving here would duplicate the scorer's threshold
+ * logic and create a drift risk. If a fixture passes riskScore without
+ * riskTier, set the tier explicitly in the fixture.
+ */
+export function getEffectiveTier(
+  entry: AuditEntry,
+  evalIdx: Map<string, AuditEntry>,
+): RiskTierLabel | undefined {
+  if (entry.toolCallId) {
+    const evalEntry = evalIdx.get(entry.toolCallId);
+    if (evalEntry?.riskTier) return evalEntry.riskTier;
+  }
+  if (entry.riskTier) return entry.riskTier;
+  if (entry.decision === "block") return "critical";
+  if (entry.decision === "approval_required") return "high";
+  return undefined;
+}
+
 export function mapEntry(
   entry: AuditEntry,
   evalIndex?: Map<string, AuditEntry>,
@@ -1040,8 +1075,7 @@ export function computeFleetRiskIndex(entries: AuditEntry[]): FleetRiskIndexResp
     const age = now - t;
     if (age >= 0 && age <= ONE_HOUR && score > current) current = score;
     if (t >= startOfToday && t <= now) {
-      const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
-      const tier = evalEntry?.riskTier ?? e.riskTier;
+      const tier = getEffectiveTier(e, evalIdx);
       if (tier === "critical") critCount++;
       else if (tier === "high") highCount++;
     }
@@ -1269,7 +1303,7 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
   for (const e of windowDecisions) {
     const evalEntry = e.toolCallId ? evalIdx.get(e.toolCallId) : undefined;
     const effectiveScore = evalEntry?.llmEvaluation?.adjustedScore ?? e.riskScore;
-    const effectiveTier = evalEntry?.riskTier ?? e.riskTier;
+    const effectiveTier = getEffectiveTier(e, evalIdx);
 
     if (effectiveTier === "low") low++;
     else if (effectiveTier === "medium") medium++;
@@ -1443,6 +1477,11 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
     let riskSum = 0;
     let riskCount = 0;
     let peakRisk = 0;
+    // riskProfile is the all-time tier histogram. Score-based aggregates
+    // (riskSum / riskCount / peakRisk) stay score-driven — they need
+    // numbers, not buckets. Tier counts go through getEffectiveTier so
+    // historical guardrail rows (decision but no score) bucket consistently
+    // with the homepage donut and per-agent mix bar.
     const riskProfile: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     for (const e of agentEntries) {
       const score = getEffectiveScore(e, evalIdx);
@@ -1450,37 +1489,19 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
         riskSum += score;
         riskCount++;
         if (score > peakRisk) peakRisk = score;
-        if (score > 75) riskProfile.critical++;
-        else if (score > 50) riskProfile.high++;
-        else if (score > 25) riskProfile.medium++;
-        else riskProfile.low++;
       }
+      const tier = getEffectiveTier(e, evalIdx);
+      if (tier) riskProfile[tier]++;
     }
 
-    // Today-scoped tier mix for the per-card risk microbar. Same thresholds as
-    // riskProfile above; also mirrors `riskTierFromScore` in utils.ts — if
-    // those boundaries ever move, update all three in lockstep.
-    //
-    // Decision-based fallback: pre-fix guardrail-match rows wrote the audit
-    // row with a `decision` but no `riskScore`, so they counted in
-    // todayToolCalls (denominator) but vanished from the mix (numerator),
-    // leaving an empty segment on the bar. Bucket them by decision instead
-    // of dropping: block → critical (rule fired, action denied), approval_required
-    // → high (gated, awaiting decision). New entries carry a real score after
-    // the before-tool-call refactor; this branch is the historical backfill.
+    // Today-scoped tier mix for the per-card risk microbar. Bucketing
+    // delegated to getEffectiveTier so this site, riskProfile above,
+    // computeFleetRiskIndex.crit/highCount, and computeEnhancedStats.{tier}
+    // all reconcile against the same lookup.
     const todayRiskMix: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     for (const e of todayDecisions) {
-      const score = getEffectiveScore(e, evalIdx);
-      if (score !== undefined) {
-        if (score > 75) todayRiskMix.critical++;
-        else if (score > 50) todayRiskMix.high++;
-        else if (score > 25) todayRiskMix.medium++;
-        else todayRiskMix.low++;
-      } else if (e.decision === "block") {
-        todayRiskMix.critical++;
-      } else if (e.decision === "approval_required") {
-        todayRiskMix.high++;
-      }
+      const tier = getEffectiveTier(e, evalIdx);
+      if (tier) todayRiskMix[tier]++;
     }
 
     let currentSession: AgentInfo["currentSession"];

@@ -240,6 +240,28 @@ export declare function localToday(): string;
 export declare function localDateOf(isoTimestamp: string): string;
 /** Compute the effective user-facing decision for an entry. */
 export declare function getEffectiveDecision(entry: AuditEntry): string;
+/**
+ * Single source of truth for tier lookup across every dashboard aggregation
+ * that buckets entries by tier (todayRiskMix, riskProfile, fleet-risk crit/
+ * high counts, enhanced-stats per-tier counts). Centralizing closes the
+ * "numbers don't reconcile across surfaces" class of bug — a row counted as
+ * critical on the agent card was previously dropped from the homepage donut.
+ *
+ * Resolution order:
+ *   1. LLM-eval entry's persisted riskTier (LLM-adjusted wins, mirrors
+ *      getEffectiveScore precedence)
+ *   2. Raw entry's persisted riskTier
+ *   3. decision === "block" → "critical" (rule fired, action denied)
+ *   4. decision === "approval_required" → "high" (gated, awaiting decision)
+ *   5. otherwise undefined (caller drops from histograms)
+ *
+ * Deliberately does NOT bucket from score — riskTier is set in lockstep with
+ * riskScore in production (both come from the same RiskScore object in
+ * computeRiskScore), so deriving here would duplicate the scorer's threshold
+ * logic and create a drift risk. If a fixture passes riskScore without
+ * riskTier, set the tier explicitly in the fixture.
+ */
+export declare function getEffectiveTier(entry: AuditEntry, evalIdx: Map<string, AuditEntry>): RiskTierLabel | undefined;
 export declare function mapEntry(entry: AuditEntry, evalIndex?: Map<string, AuditEntry>, guardrailStore?: GuardrailStore): EntryResponse;
 /** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
 export declare function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry>;

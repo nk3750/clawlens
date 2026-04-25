@@ -4,9 +4,11 @@ import type { AuditEntry } from "../src/audit/logger";
 import {
   checkHealth,
   computeEnhancedStats,
+  computeFleetRiskIndex,
   computeStats,
   getAgents,
   getEffectiveDecision,
+  getEffectiveTier,
   getRecentEntries,
   resolveSplitKeyForEntry,
 } from "../src/dashboard/api";
@@ -20,12 +22,31 @@ import {
 
 /** Build a minimal AuditEntry with overrides. */
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
+  // Production audit rows always carry riskTier alongside riskScore — both
+  // come from the same RiskScore object in computeRiskScore. Mirror that
+  // invariant here so fixtures opting into a score automatically get a
+  // matching tier (canonical thresholds from src/risk/scorer.ts:265-270:
+  // >=80 critical, >=60 high, >=30 medium, else low). Avoids salting every
+  // fixture with a tier field that's really an implementation detail of the
+  // scorer. Explicit overrides.riskTier still wins via the spread below.
+  const score = overrides.riskScore;
+  const defaultTier: AuditEntry["riskTier"] | undefined =
+    score === undefined
+      ? undefined
+      : score >= 80
+        ? "critical"
+        : score >= 60
+          ? "high"
+          : score >= 30
+            ? "medium"
+            : "low";
   return {
     timestamp: new Date().toISOString(),
     toolName: "exec",
     params: {},
     prevHash: "0",
     hash: "abc",
+    ...(defaultTier ? { riskTier: defaultTier } : {}),
     ...overrides,
   };
 }
@@ -58,6 +79,149 @@ describe("getEffectiveDecision", () => {
 
   it("returns unknown for entries with no decision info", () => {
     expect(getEffectiveDecision(entry())).toBe("unknown");
+  });
+});
+
+describe("getEffectiveTier", () => {
+  // Single source of truth for tier lookup across getAgents.todayRiskMix /
+  // .riskProfile, computeFleetRiskIndex.{critCount,highCount}, and
+  // computeEnhancedStats.{low,medium,high,critical}. Resolution order:
+  //   1. LLM-eval entry's persisted riskTier (LLM-adjusted wins, mirrors
+  //      getEffectiveScore precedence)
+  //   2. Raw entry's persisted riskTier
+  //   3. decision === "block"            → "critical"
+  //   4. decision === "approval_required" → "high"
+  //   5. otherwise undefined (caller drops from histograms)
+  // Helper deliberately does NOT bucket from score — riskTier is set in
+  // lockstep with riskScore in production, so deriving tier here would
+  // duplicate computeRiskScore's threshold logic and create drift risk.
+
+  it("uses the eval entry's riskTier when present (LLM-adjusted wins)", () => {
+    const evalIdx = new Map<string, AuditEntry>([
+      ["tc-1", entry({ refToolCallId: "tc-1", riskTier: "critical", llmEvaluation: undefined })],
+    ]);
+    const raw = entry({ toolCallId: "tc-1", decision: "allow", riskTier: "low" });
+    expect(getEffectiveTier(raw, evalIdx)).toBe("critical");
+  });
+
+  it("falls back to raw entry's riskTier when no eval entry exists", () => {
+    const raw = entry({ toolCallId: "tc-2", decision: "allow", riskTier: "high" });
+    expect(getEffectiveTier(raw, new Map())).toBe("high");
+  });
+
+  it("falls back to raw entry's riskTier when eval entry has no tier", () => {
+    const evalIdx = new Map<string, AuditEntry>([
+      ["tc-3", entry({ refToolCallId: "tc-3" })], // no riskTier on eval
+    ]);
+    const raw = entry({ toolCallId: "tc-3", decision: "allow", riskTier: "medium" });
+    expect(getEffectiveTier(raw, evalIdx)).toBe("medium");
+  });
+
+  it("buckets unscored decision=block as critical (guardrail-block fallback)", () => {
+    const raw = entry({ decision: "block" });
+    delete raw.riskTier;
+    delete raw.riskScore;
+    expect(getEffectiveTier(raw, new Map())).toBe("critical");
+  });
+
+  it("buckets unscored decision=approval_required as high (guardrail-approval fallback)", () => {
+    const raw = entry({ decision: "approval_required" });
+    delete raw.riskTier;
+    delete raw.riskScore;
+    expect(getEffectiveTier(raw, new Map())).toBe("high");
+  });
+
+  it("returns undefined for unscored decision=allow (no useful tier signal)", () => {
+    const raw = entry({ decision: "allow" });
+    delete raw.riskTier;
+    delete raw.riskScore;
+    expect(getEffectiveTier(raw, new Map())).toBeUndefined();
+  });
+
+  it("returns undefined for unscored userResponse=timeout (no useful tier signal)", () => {
+    // Approval that timed out without a stored tier — no signal, drops.
+    const raw = entry({ decision: "approval_required", userResponse: "timeout" });
+    delete raw.riskTier;
+    delete raw.riskScore;
+    // The raw decision is approval_required, so the helper still buckets to
+    // "high" — userResponse doesn't override the decision-based fallback.
+    // This test exists so a future change to look at userResponse won't drift
+    // silently — flip the expected to undefined the day we want it to.
+    expect(getEffectiveTier(raw, new Map())).toBe("high");
+  });
+
+  it("returns undefined for an entry with no decision and no risk fields", () => {
+    const raw = entry({}); // result entries, heartbeats, eval-only writes
+    delete raw.riskTier;
+    delete raw.riskScore;
+    delete raw.decision;
+    expect(getEffectiveTier(raw, new Map())).toBeUndefined();
+  });
+});
+
+describe("getEffectiveTier — cross-aggregation reconciliation", () => {
+  // The whole point of centralizing the helper: every aggregation that buckets
+  // by tier (todayRiskMix, riskProfile, fleet-risk-index counts, enhanced-stats
+  // counts) produces consistent numbers for the same fixture. If a row is
+  // bucketed as critical in one place and dropped in another, the dashboard
+  // shows numbers that don't reconcile (the bug fd94778 fixed for one site).
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("counts the same critical/high totals across getAgents, computeFleetRiskIndex, and computeEnhancedStats", () => {
+    // Fixture: 3 today-decisions for the same agent — one block (no riskTier
+    // → critical via fallback), one approval_required (no riskTier → high),
+    // one allow with explicit riskTier=critical. Expected per-tier counts:
+    //   critical = 2 (block fallback + explicit critical)
+    //   high     = 1 (approval_required fallback)
+    const todayIso = new Date(2026, 2, 29, 13, 0, 0).toISOString();
+    const blockRow = entry({
+      timestamp: todayIso,
+      toolName: "exec",
+      decision: "block",
+      agentId: "baddie",
+      sessionKey: "agent:baddie:main",
+    });
+    delete blockRow.riskScore;
+    delete blockRow.riskTier;
+    const apprRow = entry({
+      timestamp: todayIso,
+      toolName: "exec",
+      decision: "approval_required",
+      agentId: "baddie",
+      sessionKey: "agent:baddie:main",
+    });
+    delete apprRow.riskScore;
+    delete apprRow.riskTier;
+    const critRow = entry({
+      timestamp: todayIso,
+      toolName: "exec",
+      decision: "allow",
+      agentId: "baddie",
+      sessionKey: "agent:baddie:main",
+      riskScore: 90,
+      riskTier: "critical",
+    });
+    const entries: AuditEntry[] = [blockRow, apprRow, critRow];
+
+    const agents = getAgents(entries);
+    expect(agents).toHaveLength(1);
+    expect(agents[0].todayRiskMix).toEqual({ low: 0, medium: 0, high: 1, critical: 2 });
+    // riskProfile is all-time; with three entries today it equals todayRiskMix.
+    expect(agents[0].riskProfile).toEqual({ low: 0, medium: 0, high: 1, critical: 2 });
+
+    const fleet = computeFleetRiskIndex(entries);
+    expect(fleet.critCount).toBe(2);
+    expect(fleet.highCount).toBe(1);
+    expect(fleet.totalElevated).toBe(3);
+
+    const stats = computeEnhancedStats(entries);
+    expect(stats.riskBreakdown).toEqual({ low: 0, medium: 0, high: 1, critical: 2 });
   });
 });
 
@@ -511,18 +675,23 @@ describe("getAgents — todayRiskMix aggregation", () => {
     vi.useRealTimers();
   });
 
-  it("bins today's decisions into tiers using the same thresholds as riskTierFromScore", () => {
-    // Boundaries: >75 critical, >50 high, >25 medium, else low.
-    // 26 is lowest medium (>25), 51 lowest high (>50), 76 lowest critical (>75).
-    // 25 is the highest `low` value — regression guard for off-by-one.
+  it("bins today's decisions into tiers using the canonical scorer thresholds", () => {
+    // Canonical boundaries (src/risk/scorer.ts:265-270, mirrored by the test
+    // fixture's auto-derived riskTier above): >=80 critical, >=60 high,
+    // >=30 medium, else low. The bucketing comes from the persisted riskTier
+    // via getEffectiveTier — no inline score thresholds in api.ts. Values
+    // chosen to land exactly at each boundary:
+    //   29 is the highest `low`; 30 is the lowest `medium`;
+    //   59 is the highest `medium`; 60 is the lowest `high`;
+    //   79 is the highest `high`;   80 is the lowest `critical`.
     const scores: Array<{ score: number; tier: "low" | "medium" | "high" | "critical" }> = [
       { score: 10, tier: "low" },
-      { score: 25, tier: "low" },
-      { score: 26, tier: "medium" },
-      { score: 50, tier: "medium" },
-      { score: 51, tier: "high" },
-      { score: 75, tier: "high" },
-      { score: 76, tier: "critical" },
+      { score: 29, tier: "low" },
+      { score: 30, tier: "medium" },
+      { score: 59, tier: "medium" },
+      { score: 60, tier: "high" },
+      { score: 79, tier: "high" },
+      { score: 80, tier: "critical" },
       { score: 95, tier: "critical" },
     ];
     const entries: AuditEntry[] = scores.map((s, i) =>
@@ -722,6 +891,10 @@ describe("getAgents — todayRiskMix aggregation", () => {
         toolName: "__llm_evaluation__",
         agentId: "bot",
         refToolCallId: "tc-1",
+        // Production writes riskTier alongside adjustedScore on eval entries
+        // (src/hooks/before-tool-call.ts:191-195, 232, 243, 283). getEffectiveTier
+        // reads the persisted tier directly — mirror the production invariant.
+        riskTier: "critical",
         llmEvaluation: {
           adjustedScore: 85,
           reasoning: "actually destructive",
