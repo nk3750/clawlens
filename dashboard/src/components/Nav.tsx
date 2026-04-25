@@ -40,33 +40,15 @@ export default function Nav() {
             flexShrink: 0,
           }}
         >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 64 64"
-            fill="none"
+          <img
+            src="/plugins/clawlens/logo-32.png"
+            srcSet="/plugins/clawlens/logo-32.png 1x, /plugins/clawlens/logo-64.png 2x"
+            width={24}
+            height={24}
+            alt=""
             aria-hidden="true"
-            style={{ flexShrink: 0 }}
-          >
-            <circle cx="24" cy="32" r="13" stroke="currentColor" strokeWidth="2.5" />
-            <circle cx="24" cy="32" r="7" stroke="currentColor" strokeWidth="1.5" />
-            <circle cx="24" cy="32" r="2.5" fill="currentColor" />
-            <path
-              d="M37 32 Q42 18 54 16 Q58 22 52 28 Q46 32 41 33"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M37 32 Q42 46 54 48 Q58 42 52 36 Q46 32 41 31"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <circle cx="37" cy="32" r="1.8" fill="currentColor" />
-          </svg>
+            style={{ flexShrink: 0, display: "block" }}
+          />
           <span
             style={{
               fontFamily: "var(--cl-font-sans)",
