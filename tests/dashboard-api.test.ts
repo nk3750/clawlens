@@ -403,6 +403,28 @@ describe("checkHealth", () => {
     expect(result.brokenAt).toBe(1);
     expect(result.totalEntries).toBe(2);
   });
+
+  it("leaves lastEntryTimestamp undefined when log is empty", () => {
+    const result = checkHealth([]);
+    expect(result.lastEntryTimestamp).toBeUndefined();
+  });
+
+  it("populates lastEntryTimestamp with the newest entry's timestamp", () => {
+    // Newest is the middle entry. Order should not matter — checkHealth
+    // takes a max scan.
+    const entries: AuditEntry[] = [
+      entry({ timestamp: "2026-04-01T10:00:00.000Z" }),
+      entry({ timestamp: "2026-04-01T11:30:00.000Z" }),
+      entry({ timestamp: "2026-04-01T09:15:00.000Z" }),
+    ];
+    const result = checkHealth(entries);
+    expect(result.lastEntryTimestamp).toBe("2026-04-01T11:30:00.000Z");
+  });
+
+  it("returns the lone entry's timestamp when the log has a single row", () => {
+    const entries: AuditEntry[] = [entry({ timestamp: "2026-04-01T08:00:00.000Z" })];
+    expect(checkHealth(entries).lastEntryTimestamp).toBe("2026-04-01T08:00:00.000Z");
+  });
 });
 
 // ── categories.ts tests ────────────────────────────

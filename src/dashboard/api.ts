@@ -169,6 +169,8 @@ export interface HealthResponse {
   valid: boolean;
   brokenAt?: number;
   totalEntries: number;
+  /** Max timestamp across all audit entries. undefined when log is empty. */
+  lastEntryTimestamp?: string;
 }
 
 export interface AgentInfo {
@@ -1246,10 +1248,19 @@ export function resolveSplitKeyForEntry(
 /** Verify the hash chain integrity of all entries. */
 export function checkHealth(entries: AuditEntry[]): HealthResponse {
   const result = AuditLogger.verifyChain(entries);
+  // Mirror the max-timestamp scan in computeEnhancedStats so the gateway-health
+  // poll has a single, authoritative source for "newest entry I've seen".
+  let lastEntryTimestamp: string | undefined;
+  for (const e of entries) {
+    if (lastEntryTimestamp === undefined || e.timestamp > lastEntryTimestamp) {
+      lastEntryTimestamp = e.timestamp;
+    }
+  }
   return {
     valid: result.valid,
     brokenAt: result.brokenAt,
     totalEntries: entries.length,
+    lastEntryTimestamp,
   };
 }
 

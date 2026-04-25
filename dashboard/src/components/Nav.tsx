@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import GatewayHealthDot from "./GatewayHealthDot";
 
 export default function Nav() {
   const location = useLocation();
@@ -66,18 +67,27 @@ export default function Nav() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: 12,
           }}
         >
-          <NavLink to="/" active={isActive("/")}>
-            Agents
-          </NavLink>
-          <NavLink to="/activity" active={isActive("/activity")}>
-            Activity
-          </NavLink>
-          <NavLink to="/guardrails" active={isActive("/guardrails")}>
-            Guardrails
-          </NavLink>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            <NavLink to="/" active={isActive("/")}>
+              Agents
+            </NavLink>
+            <NavLink to="/activity" active={isActive("/activity")}>
+              Activity
+            </NavLink>
+            <NavLink to="/guardrails" active={isActive("/guardrails")}>
+              Guardrails
+            </NavLink>
+          </div>
+          <GatewayHealthDot />
         </div>
       </div>
     </nav>

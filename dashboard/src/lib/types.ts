@@ -21,6 +21,15 @@ export interface LlmHealthSnapshot {
   status: LlmHealthStatus;
 }
 
+// Mirror of src/dashboard/api.ts::HealthResponse. Keep in sync.
+export interface HealthResponse {
+  valid: boolean;
+  brokenAt?: number;
+  totalEntries: number;
+  /** Max timestamp across all audit entries. undefined when log is empty. */
+  lastEntryTimestamp?: string;
+}
+
 export interface StatsResponse {
   total: number;
   allowed: number;

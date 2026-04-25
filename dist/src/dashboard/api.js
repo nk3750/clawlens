@@ -907,10 +907,19 @@ export function resolveSplitKeyForEntry(allEntries, entry) {
 /** Verify the hash chain integrity of all entries. */
 export function checkHealth(entries) {
     const result = AuditLogger.verifyChain(entries);
+    // Mirror the max-timestamp scan in computeEnhancedStats so the gateway-health
+    // poll has a single, authoritative source for "newest entry I've seen".
+    let lastEntryTimestamp;
+    for (const e of entries) {
+        if (lastEntryTimestamp === undefined || e.timestamp > lastEntryTimestamp) {
+            lastEntryTimestamp = e.timestamp;
+        }
+    }
     return {
         valid: result.valid,
         brokenAt: result.brokenAt,
         totalEntries: entries.length,
+        lastEntryTimestamp,
     };
 }
 // ── New v2 functions ────────────────────────────────────

@@ -150,6 +150,8 @@ export interface HealthResponse {
     valid: boolean;
     brokenAt?: number;
     totalEntries: number;
+    /** Max timestamp across all audit entries. undefined when log is empty. */
+    lastEntryTimestamp?: string;
 }
 export interface AgentInfo {
     id: string;
