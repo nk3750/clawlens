@@ -18,6 +18,12 @@ vi.stubGlobal("ResizeObserver", ResizeObserverShim);
 vi.mock("../dashboard/src/hooks/useApi", () => ({
   useApi: vi.fn(),
 }));
+// useLiveApi (introduced in #23) wraps useApi + useSSE. Mocking useSSE to a
+// no-op keeps the existing useApi-shaped mocks below working without spinning
+// up an EventSource against a fake JSDOM URL.
+vi.mock("../dashboard/src/hooks/useSSE", () => ({
+  useSSE: vi.fn(),
+}));
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return { ...actual, useNavigate: vi.fn() };
@@ -214,8 +220,8 @@ describe("FleetRiskTile hero", () => {
 // Sparkline (spec §6.3)
 // ─────────────────────────────────────────────────────────────
 
-describe("FleetRiskTile sparkline — 2-tier crit vs below-crit (polish-3 #1, #2)", () => {
-  it("renders exactly 2 paths — one below-crit orange, one crit red", () => {
+describe("FleetRiskTile sparkline — 3-tier band-weighted fill (#23)", () => {
+  it("renders exactly 3 paths — low / high / crit tier bands", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
@@ -226,11 +232,11 @@ describe("FleetRiskTile sparkline — 2-tier crit vs below-crit (polish-3 #1, #2
     });
     const { container } = renderTile();
     const paths = container.querySelectorAll("path[data-cl-fleet-risk-sparkline]");
-    expect(paths.length).toBe(2);
+    expect(paths.length).toBe(3);
     const kinds = Array.from(paths).map((p) => p.getAttribute("data-cl-fleet-risk-sparkline"));
-    expect(new Set(kinds)).toEqual(new Set(["below-crit", "crit"]));
+    expect(new Set(kinds)).toEqual(new Set(["low", "high", "crit"]));
   });
-  it("has exactly 2 clipPaths — below-crit and crit", () => {
+  it("has 3 clipPaths — cl-frt-low-clip / cl-frt-high-clip / cl-frt-crit-clip", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
@@ -240,12 +246,36 @@ describe("FleetRiskTile sparkline — 2-tier crit vs below-crit (polish-3 #1, #2
       totalElevated: 1,
     });
     const { container } = renderTile();
-    // Gone — replaced by 2 simpler clips.
-    expect(container.querySelector("clipPath#cl-frt-below-baseline-clip")).toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-between-clip")).toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-above-crit-clip")).toBeNull();
-    expect(container.querySelector("clipPath#cl-frt-below-crit-clip")).not.toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-low-clip")).not.toBeNull();
+    expect(container.querySelector("clipPath#cl-frt-high-clip")).not.toBeNull();
     expect(container.querySelector("clipPath#cl-frt-crit-clip")).not.toBeNull();
+    // Old 2-band clip is gone (replaced by 3-band split at 50/75).
+    expect(container.querySelector("clipPath#cl-frt-below-crit-clip")).toBeNull();
+  });
+  it("colors each band with the matching --cl-risk-* token (low=green, high=amber, crit=red)", () => {
+    // The amber band is --cl-risk-medium (#fbbf24), NOT --cl-risk-high
+    // (#f87171). The whole point of the 3-tier split is hue-distinct bands —
+    // reusing salmon-red for both 50–74 and ≥75 was the regression #23 cured.
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    const byKind = new Map(
+      Array.from(
+        container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline]"),
+      ).map((p) => [p.getAttribute("data-cl-fleet-risk-sparkline"), p] as const),
+    );
+    expect(byKind.get("low")?.getAttribute("stroke")).toMatch(/cl-risk-low/);
+    expect(byKind.get("high")?.getAttribute("stroke")).toMatch(/cl-risk-medium/);
+    expect(byKind.get("crit")?.getAttribute("stroke")).toMatch(/cl-risk-critical/);
+    expect(byKind.get("low")?.getAttribute("fill")).toMatch(/cl-risk-low/);
+    expect(byKind.get("high")?.getAttribute("fill")).toMatch(/cl-risk-medium/);
+    expect(byKind.get("crit")?.getAttribute("fill")).toMatch(/cl-risk-critical/);
   });
   it("does NOT render the '75' dashed threshold line anymore (polish-3 #2)", () => {
     mockApis(fleetActivity([]), {
@@ -272,7 +302,7 @@ describe("FleetRiskTile sparkline — 2-tier crit vs below-crit (polish-3 #1, #2
     const { container } = renderTile();
     expect(container.querySelector("[data-cl-fleet-risk-baseline-line]")).not.toBeNull();
   });
-  it("uses a 1.5px stroke + 0.08 fillOpacity on both paths (line-dominant)", () => {
+  it("uses a 1.5px stroke on all 3 tier paths (line-dominant)", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
       current: 60,
       baselineP50: 40,
@@ -287,8 +317,30 @@ describe("FleetRiskTile sparkline — 2-tier crit vs below-crit (polish-3 #1, #2
     );
     for (const p of paths) {
       expect(p.getAttribute("stroke-width")).toBe("1.5");
-      expect(p.getAttribute("fill-opacity")).toBe("0.08");
     }
+  });
+  it("uses tier-weighted fill opacity (0.12 low / 0.10 high / 0.08 crit) — cooler hues need more weight", () => {
+    // Fixed-opacity reds carried fine, but green at the same 0.08 vanished
+    // against --cl-bg-02. The weighting locks the legibility split per tier
+    // — DO NOT unify back to a single value. (#23 design discussion.)
+    mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {
+      current: 60,
+      baselineP50: 40,
+      delta: 20,
+      critCount: 0,
+      highCount: 1,
+      totalElevated: 1,
+    });
+    const { container } = renderTile();
+    const byKind = new Map(
+      Array.from(
+        container.querySelectorAll<SVGPathElement>("path[data-cl-fleet-risk-sparkline]"),
+      ).map((p) => [p.getAttribute("data-cl-fleet-risk-sparkline"), p] as const),
+    );
+    expect(byKind.get("low")?.getAttribute("fill-opacity")).toBe("0.12");
+    // React serializes 0.10 → "0.1" (trailing-zero stripped via JS Number→String).
+    expect(byKind.get("high")?.getAttribute("fill-opacity")).toBe("0.1");
+    expect(byKind.get("crit")?.getAttribute("fill-opacity")).toBe("0.08");
   });
   it("does NOT render the '75' threshold text label (polish §4)", () => {
     mockApis(fleetActivity([]), {
@@ -381,7 +433,7 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-critical/);
   });
-  it("paints the NOW dot orange when the last bucket is below crit (< 75)", () => {
+  it("paints the NOW dot medium-amber when 50 <= last.max < 75 (#23 3-tier mapping)", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 55 })]), {
       current: 55,
       baselineP50: 40,
@@ -392,7 +444,26 @@ describe("FleetRiskTile sparkline — NOW dot (polish-3 #3)", () => {
     });
     const { container } = renderTile({ selectedDate: null });
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
-    expect(dot?.getAttribute("fill")).toMatch(/cl-risk-high/);
+    // --cl-risk-medium (amber), NOT --cl-risk-high (salmon-red). The middle
+    // band is its own hue post-#23.
+    expect(dot?.getAttribute("fill")).toMatch(/cl-risk-medium/);
+  });
+  it("paints the NOW dot low-green when last.max < 50 (calm-fleet baseline reads green)", () => {
+    // Empty fleet → all buckets clamp to the SCORE_FLOOR of 30. last.max=30
+    // is below the high threshold (50), so the dot tier-maps to low-green.
+    // Pre-#23 this painted salmon-red — the user-visible regression that
+    // motivated the issue.
+    mockApis(fleetActivity([]), {
+      current: 0,
+      baselineP50: 0,
+      delta: 0,
+      critCount: 0,
+      highCount: 0,
+      totalElevated: 0,
+    });
+    const { container } = renderTile({ selectedDate: null });
+    const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
+    expect(dot?.getAttribute("fill")).toMatch(/cl-risk-low/);
   });
   it("has a bg-colored stroke (knockout halo) so it reads over the fill", () => {
     mockApis(fleetActivity([mkEntry({ riskScore: 60 })]), {

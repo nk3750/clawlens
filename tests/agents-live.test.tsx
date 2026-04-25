@@ -79,18 +79,23 @@ function renderHome() {
 }
 
 describe("Agents homepage — useLiveApi subscriptions", () => {
-  it("subscribes to three homepage endpoints via useLiveApi", () => {
+  it("subscribes to five homepage endpoints via useLiveApi", () => {
     // Phase 2 stage B dropped the /api/guardrails subscription along with the
     // OverflowMenu that consumed its count. Guardrails management still lives
-    // on /guardrails and wires its own fetch there.
+    // on /guardrails and wires its own fetch there. #23 added the two
+    // FleetRiskTile aggregate endpoints so its sparkline + hero refresh on
+    // SSE arrivals instead of going stale at page-load.
     renderHome();
     const paths = mockedUseLiveApi.mock.calls.map((call) => call[0]);
     expect(paths).toContain("api/stats");
     expect(paths).toContain("api/agents");
     // attention path includes optional ?date= suffix; today (default) has none.
     expect(paths.some((p) => p.startsWith("api/attention"))).toBe(true);
+    // fleet-activity carries a query string (range=24h&...); fleet-risk-index is bare.
+    expect(paths.some((p) => p.startsWith("api/fleet-activity"))).toBe(true);
+    expect(paths).toContain("api/fleet-risk-index");
     expect(paths).not.toContain("api/guardrails");
-    expect(paths).toHaveLength(3);
+    expect(paths).toHaveLength(5);
   });
 
   it("passes a filter predicate only on the attention subscription", () => {

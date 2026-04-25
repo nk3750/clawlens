@@ -4,7 +4,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bucketEntriesByHour,
+  CRIT_THRESHOLD,
   clampTooltipX,
+  HIGH_THRESHOLD,
   midpointLinearAreaPath,
   yForScore,
 } from "../dashboard/src/components/FleetRiskTile/utils";
@@ -34,6 +36,19 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────
 // yForScore
 // ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// Tier thresholds (#23 — both names exported for clipPath math)
+// ─────────────────────────────────────────────────────────────
+
+describe("tier thresholds", () => {
+  it("HIGH_THRESHOLD is 50 (high tier starts at score 50)", () => {
+    expect(HIGH_THRESHOLD).toBe(50);
+  });
+  it("CRIT_THRESHOLD is 75 (crit tier starts at score 75) — locked alongside HIGH for symmetry", () => {
+    expect(CRIT_THRESHOLD).toBe(75);
+  });
+});
 
 describe("yForScore — maps [30, 100] into [plotHeight, 0]", () => {
   it("score 100 → y = 0 (top of plot)", () => {

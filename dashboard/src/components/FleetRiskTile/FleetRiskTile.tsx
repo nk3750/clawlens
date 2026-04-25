@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useApi } from "../../hooks/useApi";
+import { useLiveApi } from "../../hooks/useLiveApi";
 import { toolNamespace } from "../../lib/eventFormat";
 import type {
   EntryResponse,
@@ -12,6 +12,7 @@ import {
   bucketEntriesByHour,
   clampTooltipX,
   CRIT_THRESHOLD,
+  HIGH_THRESHOLD,
   makeTimeToX,
   midpointLinearAreaPath,
   yForScore,
@@ -40,8 +41,12 @@ const NOW_LINE_INSET = 4;
 const TOOLTIP_W = 220;
 
 // ── Tier color tokens ────────────────────────────────────────
+// MEDIUM_COLOR (amber) is the sparkline middle band — distinct hue from the
+// salmon-red HIGH_COLOR (which now only paints tape dots). Don't conflate.
 const CRIT_COLOR = "var(--cl-risk-critical)";
 const HIGH_COLOR = "var(--cl-risk-high)";
+const MEDIUM_COLOR = "var(--cl-risk-medium)";
+const LOW_COLOR = "var(--cl-risk-low)";
 const ACCENT = "var(--cl-accent)";
 const TEXT_MUTED = "var(--cl-text-muted)";
 const TEXT_SUBDUED = "var(--cl-text-subdued)";
@@ -79,8 +84,11 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
     return `api/fleet-activity?${params}`;
   }, [range, selectedDate]);
 
-  const { data: activity } = useApi<FleetActivityResponse>(activityPath);
-  const { data: index } = useApi<FleetRiskIndexResponse>("api/fleet-risk-index");
+  // Live: both endpoints are aggregates that move on every entry, so the
+  // default unfiltered useLiveApi (debounced refetch on every SSE arrival) is
+  // the right shape — same return type as useApi, no other refactor.
+  const { data: activity } = useLiveApi<FleetActivityResponse>(activityPath);
+  const { data: index } = useLiveApi<FleetRiskIndexResponse>("api/fleet-risk-index");
 
   const isToday = selectedDate === null;
 
@@ -165,6 +173,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
       : { current: 0, baselineP50: 0, delta: 0, critCount: 0, highCount: 0, totalElevated: 0 };
 
   const critY = yForScore(CRIT_THRESHOLD, SPARK_H);
+  const highY = yForScore(HIGH_THRESHOLD, SPARK_H);
   const baselineY = yForScore(hero.baselineP50, SPARK_H);
 
   // ── Hover tooltip (spec §6.6) ───────────────────────────────
@@ -310,15 +319,27 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
         style={{ overflow: "visible" }}
       >
         <defs>
-          {/* Two bands, crit-threshold-relative (polish-3 #1).
-              - below-crit: y ∈ [critY, SPARK_H] — orange
-              - crit:       y ∈ [0, critY]       — red */}
-          <clipPath id="cl-frt-below-crit-clip">
+          {/* Three bands, threshold-relative (#23). yForScore inverts the y
+              axis (lower score = higher y), so:
+                - low:  y ∈ [highY, SPARK_H]  — score < 50, paints green
+                - high: y ∈ [critY, highY]    — score 50–74, paints amber
+                - crit: y ∈ [0, critY]        — score ≥ 75, paints red
+              Color transitions at y=50 and y=75 are themselves the threshold
+              markers — no dashed lines. */}
+          <clipPath id="cl-frt-low-clip">
+            <rect
+              x={PLOT_LEFT}
+              y={highY}
+              width={PLOT_WIDTH}
+              height={Math.max(0, SPARK_H - highY)}
+            />
+          </clipPath>
+          <clipPath id="cl-frt-high-clip">
             <rect
               x={PLOT_LEFT}
               y={critY}
               width={PLOT_WIDTH}
-              height={Math.max(0, SPARK_H - critY)}
+              height={Math.max(0, highY - critY)}
             />
           </clipPath>
           <clipPath id="cl-frt-crit-clip">
@@ -326,20 +347,28 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
           </clipPath>
         </defs>
 
-        {/* Sparkline layer ── y in [0, 100] */}
+        {/* Sparkline layer ── y in [0, 100]. Tier-weighted fill opacity:
+            cooler hues need more weight to read above --cl-bg-02 (green at
+            0.08 vanishes; reds carry fine). DO NOT unify — see #23. */}
         <g>
-          {/* Below crit — orange */}
           <path
-            data-cl-fleet-risk-sparkline="below-crit"
+            data-cl-fleet-risk-sparkline="low"
             d={sparkPath}
-            fill={HIGH_COLOR}
-            fillOpacity={0.08}
-            stroke={HIGH_COLOR}
+            fill={LOW_COLOR}
+            fillOpacity={0.12}
+            stroke={LOW_COLOR}
             strokeWidth={1.5}
-            clipPath="url(#cl-frt-below-crit-clip)"
+            clipPath="url(#cl-frt-low-clip)"
           />
-          {/* Above crit — red. Color transition at y=75 is itself the
-              threshold marker (polish-3 #2 drops the dashed line). */}
+          <path
+            data-cl-fleet-risk-sparkline="high"
+            d={sparkPath}
+            fill={MEDIUM_COLOR}
+            fillOpacity={0.1}
+            stroke={MEDIUM_COLOR}
+            strokeWidth={1.5}
+            clipPath="url(#cl-frt-high-clip)"
+          />
           <path
             data-cl-fleet-risk-sparkline="crit"
             d={sparkPath}
@@ -383,7 +412,12 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
             const last = buckets[buckets.length - 1];
             const lastX = timeToX((last.startMs + last.endMs) / 2);
             const lastY = yForScore(last.max, SPARK_H);
-            const lastColor = last.max >= CRIT_THRESHOLD ? CRIT_COLOR : HIGH_COLOR;
+            const lastColor =
+              last.max >= CRIT_THRESHOLD
+                ? CRIT_COLOR
+                : last.max >= HIGH_THRESHOLD
+                  ? MEDIUM_COLOR
+                  : LOW_COLOR;
             return (
               <circle
                 data-cl-fleet-risk-now-dot

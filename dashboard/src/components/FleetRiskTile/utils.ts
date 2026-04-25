@@ -7,7 +7,9 @@ export { makeTimeToX } from "../FleetActivityChart/utils";
 /** Visual floor for sparkline Y axis — hours with no events don't collapse. */
 export const SCORE_FLOOR = 30;
 export const SCORE_TOP = 100;
-/** Critical threshold — hard clip split for two-tone fill. */
+/** High threshold — score ≥50 is the "high" tier (green→amber boundary). */
+export const HIGH_THRESHOLD = 50;
+/** Critical threshold — score ≥75 is the "crit" tier (amber→red boundary). */
 export const CRIT_THRESHOLD = 75;
 
 /** yForScore(s) = plotHeight * (1 - (max(s, 30) - 30) / 70)
