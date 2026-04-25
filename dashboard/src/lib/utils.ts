@@ -215,9 +215,6 @@ export function postureLabel(posture: RiskPosture): string {
 
 // ── Category metadata with SVG icon paths ──
 
-// NOTE: `--cl-cat-commands` and `--cl-cat-data` CSS tokens are intentionally
-// retained in index.css — they're repurposed here by `git` and `scripts`, not
-// deleted. Removing them would break the color lookup.
 export const CATEGORY_META: Record<
   ActivityCategory,
   { label: string; color: string; iconPath: string }
@@ -236,8 +233,7 @@ export const CATEGORY_META: Record<
   },
   git: {
     label: "git",
-    // Reuse the existing commands hue — git sits in the same visual lane.
-    color: "var(--cl-cat-commands)",
+    color: "var(--cl-cat-git)",
     // Git-branch icon (Lucide) — shared with `EXTRA_ICON_PATHS.git` below so
     // the card strip and LiveFeed entry icon pipeline stay in sync.
     iconPath:
@@ -245,8 +241,7 @@ export const CATEGORY_META: Record<
   },
   scripts: {
     label: "scripts",
-    // Reuse the existing data hue — freed up by dropping the `data` bucket.
-    color: "var(--cl-cat-data)",
+    color: "var(--cl-cat-scripts)",
     // Code-braces icon (Lucide) — shared with `EXTRA_ICON_PATHS.code`.
     iconPath: "M16 18l6-6-6-6 M8 6l-6 6 6 6",
   },
@@ -378,14 +373,14 @@ const EXEC_ICON_OVERRIDES: Record<string, { path: string; color: string } | unde
   "network-write": { path: CATEGORY_META.web.iconPath, color: CATEGORY_META.web.color },
   "read-only": { path: CATEGORY_META.exploring.iconPath, color: CATEGORY_META.exploring.color },
   search: { path: CATEGORY_META.exploring.iconPath, color: CATEGORY_META.exploring.color },
-  "git-read": { path: EXTRA_ICON_PATHS.git, color: "var(--cl-cat-commands)" },
+  "git-read": { path: EXTRA_ICON_PATHS.git, color: "var(--cl-cat-git)" },
   "git-write": { path: EXTRA_ICON_PATHS.git, color: "var(--cl-cat-changes)" },
   destructive: { path: EXTRA_ICON_PATHS.warning, color: "var(--cl-risk-high)" },
   permissions: { path: EXTRA_ICON_PATHS.shield, color: "var(--cl-risk-medium)" },
-  persistence: { path: EXTRA_ICON_PATHS.repeat, color: "var(--cl-cat-data)" },
+  persistence: { path: EXTRA_ICON_PATHS.repeat, color: "var(--cl-cat-scripts)" },
   remote: { path: EXTRA_ICON_PATHS.server, color: "var(--cl-cat-web)" },
-  scripting: { path: EXTRA_ICON_PATHS.code, color: "var(--cl-cat-commands)" },
-  "package-mgmt": { path: EXTRA_ICON_PATHS.package, color: "var(--cl-cat-commands)" },
+  scripting: { path: EXTRA_ICON_PATHS.code, color: "var(--cl-cat-git)" },
+  "package-mgmt": { path: EXTRA_ICON_PATHS.package, color: "var(--cl-cat-git)" },
   // These fall back to the default category icon/color:
   //   system-info → exploring (eye)
   //   echo / unknown-exec → scripts (code-braces)

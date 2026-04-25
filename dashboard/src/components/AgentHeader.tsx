@@ -139,7 +139,7 @@ export default function AgentHeader({ agent, todayActions, avgRisk, peakRisk, to
       </circle>
     </svg>
   ) : agent.mode === "scheduled" ? (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--cl-cat-commands)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-1.5">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--cl-cat-git)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-1.5">
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
     </svg>

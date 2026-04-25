@@ -196,7 +196,7 @@ describe("FleetActivityChart — dot placement", () => {
     const entries = [mkEntry({ category: "git", toolCallId: "t1" })];
     const { container } = renderChart({ entries });
     const iconSvg = container.querySelector("[data-cl-swarm-dot] svg");
-    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-commands)");
+    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-git)");
     // No fill circle remains — only the transparent hit target + icon path.
     const fillCircles = [...container.querySelectorAll("[data-cl-swarm-dot] > circle")].filter(
       (c) => {
@@ -573,8 +573,8 @@ describe("FleetActivityChart — lane labels (left gutter)", () => {
     const expectedStrokes: Record<string, string> = {
       exploring: "var(--cl-cat-exploring)",
       changes: "var(--cl-cat-changes)",
-      git: "var(--cl-cat-commands)",
-      scripts: "var(--cl-cat-data)",
+      git: "var(--cl-cat-git)",
+      scripts: "var(--cl-cat-scripts)",
       web: "var(--cl-cat-web)",
       comms: "var(--cl-cat-comms)",
     };
@@ -656,7 +656,7 @@ describe("FleetActivityChart — dot icons", () => {
     const dot = container.querySelector('[data-cl-swarm-dot][data-cl-swarm-cluster="false"]');
     expect(dot).not.toBeNull();
     const iconSvg = dot?.querySelector("svg");
-    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-commands)");
+    expect(iconSvg?.getAttribute("stroke")).toBe("var(--cl-cat-git)");
     expect(iconSvg?.querySelector("path")).not.toBeNull();
   });
 

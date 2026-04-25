@@ -54,10 +54,10 @@
        homepage agent grid stops using these in Stage C (monochrome bars). */
     --cl-cat-exploring: #60a5fa;
     --cl-cat-changes:   #fbbf24;
-    --cl-cat-commands:  #a78bfa;
+    --cl-cat-git:       #a78bfa;
     --cl-cat-web:       #22d3ee;
     --cl-cat-comms:     #4ade80;
-    --cl-cat-data:      #fb923c;
+    --cl-cat-scripts:   #fb923c;
 
     /* Radii ladder */
     --cl-r-xs:   2px;

@@ -15,3 +15,29 @@ describe("CATEGORY_META.label", () => {
     expect(CATEGORY_META.comms.label).toBe("comms");
   });
 });
+
+// Token names must match bucket names. Spec: agent-card-polish §1 renames
+// `--cl-cat-commands` → `--cl-cat-git` and `--cl-cat-data` → `--cl-cat-scripts`
+// so a reader doesn't have to remember which bucket consumes which legacy hue.
+describe("CATEGORY_META.color — token names match bucket names", () => {
+  it("git bucket references --cl-cat-git", () => {
+    expect(CATEGORY_META.git.color).toBe("var(--cl-cat-git)");
+  });
+
+  it("scripts bucket references --cl-cat-scripts", () => {
+    expect(CATEGORY_META.scripts.color).toBe("var(--cl-cat-scripts)");
+  });
+
+  it("the four other buckets keep their existing token names", () => {
+    expect(CATEGORY_META.exploring.color).toBe("var(--cl-cat-exploring)");
+    expect(CATEGORY_META.changes.color).toBe("var(--cl-cat-changes)");
+    expect(CATEGORY_META.web.color).toBe("var(--cl-cat-web)");
+    expect(CATEGORY_META.comms.color).toBe("var(--cl-cat-comms)");
+  });
+
+  it("every CATEGORY_META.color resolves to a --cl-cat-* token (no risk-token, no hardcoded hex)", () => {
+    for (const meta of Object.values(CATEGORY_META)) {
+      expect(meta.color).toMatch(/^var\(--cl-cat-[a-z]+\)$/);
+    }
+  });
+});
