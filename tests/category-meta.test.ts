@@ -66,14 +66,21 @@ describe("category palette — no hex-value overlap with risk palette", () => {
     return out;
   }
 
-  it("--cl-cat-scripts is indigo-300 (#a5b4fc) — not slate; distinct from accent + changes", () => {
-    // Slate (#94a3b8) read as "no character"; indigo-300 keeps the cool/magenta
-    // rule (no risk overlap), reads as terminal/plumbing semantics, and stays
-    // visually distinct from both --cl-accent (#7170ff: more saturated, more
-    // violet-pulled) and --cl-cat-changes (#a78bfa: more purple-pulled).
+  it("uses the bolder cool/magenta palette (Option A — Tailwind 500-band)", () => {
+    // Spec: agent-card-polish #14 follow-up — the prior 400-band pastels
+    // crowded the cool/magenta hue space and let `changes`/`scripts` blur,
+    // and `web`/`comms` blur. Bumping to 500-band saturated values opens
+    // visible separation between every adjacent pair while still keeping
+    // every value off the risk spectrum (no warm-to-green).
     const cssPath = path.resolve(__dirname, "..", "dashboard", "src", "index.css");
     const css = fs.readFileSync(cssPath, "utf8");
-    expect(css).toMatch(/--cl-cat-scripts\s*:\s*#a5b4fc/i);
+    const tokens = tokenMap(css);
+    expect(tokens["cl-cat-exploring"]).toBe("#3b82f6"); // blue-500
+    expect(tokens["cl-cat-changes"]).toBe("#8b5cf6"); // violet-500
+    expect(tokens["cl-cat-git"]).toBe("#ec4899"); // pink-500
+    expect(tokens["cl-cat-web"]).toBe("#06b6d4"); // cyan-500
+    expect(tokens["cl-cat-comms"]).toBe("#14b8a6"); // teal-500
+    expect(tokens["cl-cat-scripts"]).toBe("#a855f7"); // purple-500
   });
 
   it("category and risk hex sets are disjoint", () => {
