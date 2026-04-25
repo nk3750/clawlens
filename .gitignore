@@ -25,3 +25,7 @@ venv/
 
 # Orchestrator scratch (design bundles, render probes) — never commit
 .scratch/
+
+# Playwright MCP per-session snapshots + ad-hoc screenshots from review walks
+.playwright-mcp/
+agent-grid-polish-review.png
