@@ -175,22 +175,26 @@ export function mediumSubTierOpacity(score: number): number {
 
 /** Inset box-shadow simulating a risk-colored left border (no layout shift). */
 export function riskLeftBorder(score: number | undefined): string | undefined {
-  if (score == null || score <= 25) return undefined;
+  if (score == null) return undefined;
 
   const tier = riskTierFromScore(score);
   const c = riskColorRaw(tier);
 
   if (tier === "critical") return `inset 3px 0 0 0 ${c}`;
   if (tier === "high") return `inset 3px 0 0 0 ${c}b3`; // 70%
+  if (tier === "low") return `inset 3px 0 0 0 ${c}66`; // ~40%
 
-  // Medium sub-tier
-  const op = mediumSubTierOpacity(score);
-  const hex = Math.round(op * 255).toString(16).padStart(2, "0");
-  if (score >= 46) {
-    // Approaching high — full opacity + subtle glow
-    return `inset 2px 0 0 0 ${c}, inset 6px 0 8px -4px ${c}30`;
+  if (tier === "medium") {
+    const op = mediumSubTierOpacity(score);
+    const hex = Math.round(op * 255).toString(16).padStart(2, "0");
+    if (score >= 46) {
+      // Approaching high — full opacity + subtle glow
+      return `inset 2px 0 0 0 ${c}, inset 6px 0 8px -4px ${c}30`;
+    }
+    return `inset 2px 0 0 0 ${c}${hex}`;
   }
-  return `inset 2px 0 0 0 ${c}${hex}`;
+
+  return undefined; // Exhaustive guard — `tier` narrows to `never` here.
 }
 
 // ── Live entry merging ──

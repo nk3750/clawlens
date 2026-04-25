@@ -190,7 +190,12 @@ describe("LiveFeed — attention-flagged entries", () => {
     expect(shadow).toMatch(/3px/);
   });
 
-  it("does NOT add a left-border shadow on low-risk allow rows", () => {
+  it("adds an inset soft-green left-border shadow on low-risk rows (~40% alpha) — regression-lock for #24", () => {
+    // score 10 → low tier → riskLeftBorder returns `inset 3px 0 0 0 #4ade8066`.
+    // 40% alpha (66 hex) is intentionally softer than the 70% high-tier ribbon
+    // — communicates "healthy" rather than "concerning at any level". The
+    // four tier branches now render parallel ribbons; the dot+ribbon
+    // composition stays consistent across low/medium/high/critical.
     mockInitial([
       entry({
         toolCallId: "lo",
@@ -201,6 +206,9 @@ describe("LiveFeed — attention-flagged entries", () => {
     const row = container.querySelector<HTMLElement>('[data-cl-live-feed-row="lo"]');
     expect(row).not.toBeNull();
     const shadow = row?.style.boxShadow ?? "";
-    expect(shadow).toBe("");
+    expect(shadow).toMatch(/inset/);
+    expect(shadow).toMatch(/3px/);
+    // Tier-resolved low-risk color (#4ade80) + 40%-alpha hex (66)
+    expect(shadow).toMatch(/4ade8066/i);
   });
 });
