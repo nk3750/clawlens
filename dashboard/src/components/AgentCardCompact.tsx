@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { ActivityCategory, AgentInfo, RiskTier } from "../lib/types";
-import { CATEGORY_META, relTime, riskTierFromScore } from "../lib/utils";
+import { CATEGORY_META, relTime, worstMeaningfulTier } from "../lib/utils";
 import { useSessionSummary } from "../hooks/useSessionSummary";
 import GradientAvatar from "./GradientAvatar";
 import RiskMixMicrobar from "./RiskMixMicrobar";
@@ -34,7 +34,7 @@ export default function AgentCard({ agent, needsAttention }: Props) {
   const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode, agent.schedule);
   const sessionKey = agent.lastSessionKey ?? agent.currentSession?.sessionKey ?? null;
   const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
-  const tier = riskTierFromScore(agent.avgRiskScore);
+  const tier = worstMeaningfulTier(agent.todayRiskMix);
   const [popoverOpen, setPopoverOpen] = useState(false);
 
   return (

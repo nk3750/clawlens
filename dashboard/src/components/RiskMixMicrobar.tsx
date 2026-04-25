@@ -43,45 +43,39 @@ const HIDE_DELAY_MS = 300;
 
 type LabelState =
   | { kind: "empty" }
-  | { kind: "all-routine" }
-  | { kind: "elevated"; pct: number }
-  | { kind: "high-risk"; pct: number }
-  | { kind: "critical"; pct: number; critCount: number };
+  | { kind: "low"; count: number }
+  | { kind: "medium"; count: number }
+  | { kind: "high"; count: number }
+  | { kind: "critical"; count: number };
 
 /**
- * Derive the semantic label state from the tier mix.
+ * Derive the count-label state from the tier mix.
  *
- * Priority (top-down, first match wins): critical → high → medium → all-low.
- * `pct` = cumulative (med + high + crit) / denominator, floored at 1% when
- * any non-low tier is present so the label never reads "0% elevated" for a
- * real but sub-percent share.
+ * Priority (top-down, first match wins): critical → high → medium → low.
+ * The label surfaces the *worst tier present* and its count alone (e.g. for
+ * { low: 100, high: 2 } → "2 high", not "102 high"). Vocabulary unified with
+ * the agent-card pill (low/med/high/crit) to lock against future taxonomy
+ * drift back to the legacy `elevated` / `high-risk` / `routine` strings.
  */
-function deriveLabelState(
-  mix: Record<RiskTier, number>,
-  denominator: number,
-): LabelState {
+function deriveLabelState(mix: Record<RiskTier, number>, denominator: number): LabelState {
   if (denominator <= 0) return { kind: "empty" };
-  const nonLow = mix.medium + mix.high + mix.critical;
-  const rawPct = Math.round((nonLow / denominator) * 100);
-  const pct = nonLow > 0 && rawPct === 0 ? 1 : rawPct;
-
-  if (mix.critical > 0) return { kind: "critical", pct, critCount: mix.critical };
-  if (mix.high > 0) return { kind: "high-risk", pct };
-  if (mix.medium > 0) return { kind: "elevated", pct };
-  if (mix.low > 0) return { kind: "all-routine" };
+  if (mix.critical > 0) return { kind: "critical", count: mix.critical };
+  if (mix.high > 0) return { kind: "high", count: mix.high };
+  if (mix.medium > 0) return { kind: "medium", count: mix.medium };
+  if (mix.low > 0) return { kind: "low", count: mix.low };
   return { kind: "empty" };
 }
 
 function labelText(state: LabelState): string | null {
   switch (state.kind) {
     case "critical":
-      return `${state.critCount} critical · ${state.pct}% elevated`;
-    case "high-risk":
-      return `${state.pct}% high-risk`;
-    case "elevated":
-      return `${state.pct}% elevated`;
-    case "all-routine":
-      return "All routine";
+      return `${state.count} ${TIER_SHORT.critical}`;
+    case "high":
+      return `${state.count} ${TIER_SHORT.high}`;
+    case "medium":
+      return `${state.count} ${TIER_SHORT.medium}`;
+    case "low":
+      return `${state.count} ${TIER_SHORT.low}`;
     case "empty":
       return null;
   }
@@ -91,11 +85,11 @@ function labelColor(state: LabelState): string {
   switch (state.kind) {
     case "critical":
       return "var(--cl-risk-critical)";
-    case "high-risk":
+    case "high":
       return "var(--cl-risk-high)";
-    case "elevated":
+    case "medium":
       return "var(--cl-risk-medium)";
-    case "all-routine":
+    case "low":
     case "empty":
       return "var(--cl-risk-low)";
   }

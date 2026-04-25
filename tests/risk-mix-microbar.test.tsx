@@ -162,72 +162,150 @@ describe("RiskMixMicrobar — bar thickness", () => {
   });
 });
 
-describe("RiskMixMicrobar — inline semantic label", () => {
-  it('renders "All routine" in low-tier color for an all-low agent', () => {
-    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 234 })} />);
-    const lbl = queryLabel(container);
-    expect(lbl).not.toBeNull();
-    expect(lbl?.textContent).toBe("All routine");
-    expect(lbl?.style.color).toMatch(/--cl-risk-low/);
-  });
+describe("RiskMixMicrobar — inline count label (tier-symmetric)", () => {
+  // Spec: agent-card-risk-signals — the label is now "N <tier-short>" in the
+  // worst-present tier's color. Vocabulary matches the pill (low/med/high/crit).
+  // No `elevated`, no `high-risk`, no `routine`.
 
-  it('renders "X% elevated" in medium-tier color when medium > 0 and no high/crit', () => {
-    // 20 medium out of 100 → 20% elevated. Color token: --cl-risk-medium.
-    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 80, medium: 20 })} />);
+  it('renders "3 crit" in critical color when any crit is present (priority cascade top)', () => {
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 10, critical: 3 })} />);
     const lbl = queryLabel(container);
-    expect(lbl?.textContent).toBe("20% elevated");
-    expect(lbl?.style.color).toMatch(/--cl-risk-medium/);
-  });
-
-  it('renders "X% high-risk" in high-tier color when high > 0 and no crit', () => {
-    // (med + high + crit) / denominator = (0 + 3 + 0) / 10 → 30% high-risk.
-    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 7, high: 3 })} />);
-    const lbl = queryLabel(container);
-    expect(lbl?.textContent).toBe("30% high-risk");
-    expect(lbl?.style.color).toMatch(/--cl-risk-high/);
-  });
-
-  it('renders "N critical · X% elevated" in critical color when any crit is present', () => {
-    // Crit takes top billing because rare and alarming. Elevated % is the
-    // cumulative non-low share so reviewers see "how much of today was risky."
-    // 2 crit + 7 high + 11 med + 4 low = 24 scored. elevated% = 20/24 = 83%.
-    const { container } = renderBar(
-      <RiskMixMicrobar mix={mix({ low: 4, medium: 11, high: 7, critical: 2 })} />,
-    );
-    const lbl = queryLabel(container);
-    expect(lbl?.textContent).toBe("2 critical · 83% elevated");
+    expect(lbl?.textContent).toBe("3 crit");
     expect(lbl?.style.color).toMatch(/--cl-risk-critical/);
   });
 
-  it("uses `total` as the denominator when given (matches bar width math)", () => {
-    // 10 medium out of 100 total (not just 10 scored) → 10% elevated.
-    // Regression guard: the label must agree with the bar's arc-length math.
-    const { container } = renderBar(<RiskMixMicrobar mix={mix({ medium: 10 })} total={100} />);
-    expect(queryLabel(container)?.textContent).toBe("10% elevated");
+  it('renders "1 crit" singular — no English "s" appended to short tier labels', () => {
+    // Pluralisation lock: the TIER_SHORT vocabulary is mono-form. "1 crit"
+    // not "1 crits", "1 crit" not "1 critical". Matches the pill text.
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 100, critical: 1 })} />);
+    const lbl = queryLabel(container);
+    expect(lbl?.textContent).toBe("1 crit");
+    expect(lbl?.style.color).toMatch(/--cl-risk-critical/);
   });
 
-  it("floors sub-1% non-low shares to 1% instead of displaying 0%", () => {
-    // 1 medium in 500 scored rounds to 0% mathematically; clamp to 1% so the
-    // label doesn't say "0% elevated" when the tier is actually present.
-    // Misleads worse than a small rounding lie.
-    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 499, medium: 1 })} />);
-    expect(queryLabel(container)?.textContent).toBe("1% elevated");
+  it('renders "2 high" in high color when high present and no crit', () => {
+    // High wins the cascade when crit is absent. Count is the high count
+    // alone, not (med + high). Spec lock against ambiguous numerator.
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 10, high: 2 })} />);
+    const lbl = queryLabel(container);
+    expect(lbl?.textContent).toBe("2 high");
+    expect(lbl?.style.color).toMatch(/--cl-risk-high/);
   });
 
-  it("renders no label when denominator is 0", () => {
-    // Empty-state already returns null at component level — this asserts no
-    // regression if someone later splits label rendering from bar rendering.
+  it('renders "5 med" in medium color when medium present and no high/crit', () => {
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 95, medium: 5 })} />);
+    const lbl = queryLabel(container);
+    expect(lbl?.textContent).toBe("5 med");
+    expect(lbl?.style.color).toMatch(/--cl-risk-medium/);
+  });
+
+  it('renders "100 low" in low color when only low is present (positive reassurance)', () => {
+    // Symmetric with the other three tiers — every active card gets a count.
+    // No empty label state for all-low; reviewer sees green bar + green count.
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 100 })} />);
+    const lbl = queryLabel(container);
+    expect(lbl?.textContent).toBe("100 low");
+    expect(lbl?.style.color).toMatch(/--cl-risk-low/);
+  });
+
+  it('renders "1 low" singular — pluralisation lock for low tier too', () => {
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 1 })} />);
+    expect(queryLabel(container)?.textContent).toBe("1 low");
+  });
+
+  it("counts only the worst-present tier (low: 100, high: 2 → '2 high', not '102 high')", () => {
+    // Numerator-source lock: the count is the worst tier's own count, not the
+    // cumulative non-low total. Spec §2 fix for the ambiguous-numerator bug.
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 100, high: 2 })} />);
+    expect(queryLabel(container)?.textContent).toBe("2 high");
+  });
+
+  it("crit count is the crit count alone (low: 4, med: 11, high: 7, crit: 2 → '2 crit')", () => {
+    // Stress test the cascade: med + high + crit all present, label still picks
+    // crit and reports just the crit count.
+    const { container } = renderBar(
+      <RiskMixMicrobar mix={mix({ low: 4, medium: 11, high: 7, critical: 2 })} />,
+    );
+    expect(queryLabel(container)?.textContent).toBe("2 crit");
+  });
+
+  it("renders no label and no microbar when denominator is 0 (empty mix)", () => {
+    // Empty state has no bar, so it has no label either. The whole microbar
+    // element must be absent — regression guard against splitting label
+    // rendering from bar rendering and producing an orphan label.
     const { container } = renderBar(<RiskMixMicrobar mix={mix({})} />);
+    expect(queryBar(container)).toBeNull();
+    expect(queryLabel(container)).toBeNull();
+  });
+
+  it("renders the microbar (no label) when total is provided but mix is all-zero", () => {
+    // total=12 with an all-zero mix means "12 actions today, none scored" —
+    // bar's empty track stays so the card layout is stable, but no tier is
+    // present so the label has no content to surface.
+    const { container } = renderBar(<RiskMixMicrobar mix={mix({})} total={12} />);
+    expect(queryBar(container)).not.toBeNull();
     expect(queryLabel(container)).toBeNull();
   });
 
   it("uses tabular-nums + monospaced font (matches footer stat style)", () => {
-    // Tabular digits prevent percentage values from jitter as the number
-    // changes in live data.
+    // Tabular digits prevent count values from jittering as live data updates.
     const { container } = renderBar(<RiskMixMicrobar mix={mix({ low: 50, medium: 50 })} />);
     const lbl = queryLabel(container);
     expect(lbl?.style.fontFamily).toMatch(/--cl-font-mono/);
     expect(lbl?.style.fontVariantNumeric || lbl?.className || "").toMatch(/tabular-nums|tabular/);
+  });
+});
+
+describe("RiskMixMicrobar — taxonomy lock (no `elevated` / `high-risk` / `routine`)", () => {
+  // Substring sweep across the label state machine. The spec is explicit that
+  // the agent card's risk vocabulary is unified to low/med/high/crit (matching
+  // the pill). Any future PR that re-introduces the legacy `elevated` /
+  // `high-risk` / `routine` strings into the inline label fails this sweep.
+
+  // Representative shapes — every branch of the new state machine plus the
+  // boundary cases that historically produced different vocabularies.
+  const SHAPES: Record<string, Partial<Record<RiskTier, number>>>[] = [
+    [{ "all-low": { low: 100 } }],
+    [{ "single-low": { low: 1 } }],
+    [{ "med-only-5pct": { low: 95, medium: 5 } }],
+    [{ "med-only-20pct": { low: 80, medium: 20 } }],
+    [{ "med-sub-1pct": { low: 499, medium: 1 } }],
+    [{ "high-1": { low: 100, high: 1 } }],
+    [{ "high-2": { low: 10, high: 2 } }],
+    [{ "high-many": { low: 50, high: 7 } }],
+    [{ "crit-1": { low: 100, critical: 1 } }],
+    [{ "crit-many": { low: 10, critical: 3 } }],
+    [{ "all-tiers": { low: 4, medium: 11, high: 7, critical: 2 } }],
+    [{ "issue-fixture": { low: 92, critical: 8 } }],
+    [{ med: { medium: 10 } }],
+    [{ "high-only": { high: 5 } }],
+    [{ "crit-only": { critical: 1 } }],
+  ];
+
+  const FORBIDDEN = ["elevated", "high-risk", "routine"];
+
+  it.each(
+    SHAPES.flatMap((s) => Object.entries(s[0])),
+  )("shape %s → label contains none of: elevated, high-risk, routine", (shapeLabel, partial) => {
+    const { container } = renderBar(<RiskMixMicrobar mix={mix(partial)} />);
+    const text = queryLabel(container)?.textContent ?? "";
+    for (const banned of FORBIDDEN) {
+      expect(text, `shape=${shapeLabel} banned=${banned}`).not.toContain(banned);
+    }
+  });
+
+  it("aria-label on the bar also avoids the legacy vocabulary", () => {
+    // The bar's role=img aria-label is the screen-reader equivalent of the
+    // label. Locking it too keeps a11y output in sync with the visible label.
+    const cases = SHAPES.flatMap((s) => Object.values(s[0]));
+    for (const partial of cases) {
+      const { container, unmount } = renderBar(<RiskMixMicrobar mix={mix(partial)} />);
+      const aria = queryBar(container)?.getAttribute("aria-label") ?? "";
+      for (const banned of FORBIDDEN) {
+        expect(aria, `aria banned=${banned}`).not.toContain(banned);
+      }
+      unmount();
+    }
   });
 });
 

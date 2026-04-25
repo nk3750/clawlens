@@ -19,7 +19,7 @@ vi.mock("../dashboard/src/hooks/useSessionSummary", () => ({
 }));
 
 import AgentCardCompact from "../dashboard/src/components/AgentCardCompact";
-import type { AgentInfo } from "../dashboard/src/lib/types";
+import type { AgentInfo, RiskTier } from "../dashboard/src/lib/types";
 
 const NOW_ISO = "2026-04-20T12:00:00.000Z";
 
@@ -247,17 +247,20 @@ describe("AgentCardCompact — Linear-adjacent chrome (Stage C skin)", () => {
   });
 
   it("maps tier → short suffix: low/med/high/crit", () => {
-    const cases: { score: number; suffix: string }[] = [
-      { score: 10, suffix: "low" },
-      { score: 40, suffix: "med" },
-      { score: 70, suffix: "high" },
-      { score: 90, suffix: "crit" },
+    // Tier badge derivation now flows through worstMeaningfulTier(todayRiskMix),
+    // not riskTierFromScore(avgRiskScore). Each fixture forces the corresponding
+    // branch of the compound rule.
+    const cases: { mix: Record<RiskTier, number>; suffix: string; label: string }[] = [
+      { mix: { low: 100, medium: 0, high: 0, critical: 0 }, suffix: "low", label: "all-low" },
+      { mix: { low: 95, medium: 5, high: 0, critical: 0 }, suffix: "med", label: "med share=5%" },
+      { mix: { low: 100, medium: 0, high: 2, critical: 0 }, suffix: "high", label: "high=2" },
+      { mix: { low: 100, medium: 0, high: 0, critical: 1 }, suffix: "crit", label: "crit=1" },
     ];
-    for (const { score, suffix } of cases) {
-      const { container, unmount } = renderCard(makeAgent({ avgRiskScore: score }));
+    for (const { mix, suffix, label } of cases) {
+      const { container, unmount } = renderCard(makeAgent({ todayRiskMix: mix }));
       const badge = container.querySelector(".cl-tier");
-      expect(badge, `score=${score}`).not.toBeNull();
-      expect(badge?.className, `score=${score}`).toMatch(new RegExp(`\\bcl-tier-${suffix}\\b`));
+      expect(badge, label).not.toBeNull();
+      expect(badge?.className, label).toMatch(new RegExp(`\\bcl-tier-${suffix}\\b`));
       unmount();
     }
   });
@@ -277,6 +280,76 @@ describe("AgentCardCompact — Linear-adjacent chrome (Stage C skin)", () => {
       el.style.background?.includes("linear-gradient"),
     );
     expect(withGradient).toBeDefined();
+  });
+});
+
+describe("AgentCardCompact — pill derivation from todayRiskMix (compound rule)", () => {
+  // Spec: agent-card-risk-signals — pill derivation moved off riskTierFromScore(avg)
+  // to worstMeaningfulTier(mix) so the headline surfaces outliers instead of
+  // hiding them in an average. Each test pins one branch of the compound rule.
+
+  function tierBadgeClass(container: HTMLElement): string {
+    return container.querySelector(".cl-tier")?.className ?? "";
+  }
+
+  it("pill reads CRIT when a single critical action is present (low: 100, critical: 1)", () => {
+    const { container } = renderCard(
+      makeAgent({ todayRiskMix: { low: 100, medium: 0, high: 0, critical: 1 } }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-crit\b/);
+  });
+
+  it("pill reads LOW for a single high action (low: 100, high: 1) — single-call noise filter", () => {
+    // Spec §4 design lock: 1 high doesn't promote on its own; the count label
+    // surfaces it as "1 high" while the pill reports the day kind as LOW.
+    const { container } = renderCard(
+      makeAgent({ todayRiskMix: { low: 100, medium: 0, high: 1, critical: 0 } }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-low\b/);
+  });
+
+  it("pill reads HIGH at the 2-high threshold (low: 100, high: 2)", () => {
+    const { container } = renderCard(
+      makeAgent({ todayRiskMix: { low: 100, medium: 0, high: 2, critical: 0 } }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-high\b/);
+  });
+
+  it("pill reads MED at the 5% medium share boundary (low: 95, medium: 5)", () => {
+    const { container } = renderCard(
+      makeAgent({ todayRiskMix: { low: 95, medium: 5, high: 0, critical: 0 } }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-med\b/);
+  });
+
+  it("pill reads LOW just under the 5% medium share threshold (low: 100, medium: 4)", () => {
+    // 4 / 104 ≈ 3.85% — under 5%, so LOW.
+    const { container } = renderCard(
+      makeAgent({ todayRiskMix: { low: 100, medium: 4, high: 0, critical: 0 } }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-low\b/);
+  });
+
+  it("pill reads CRIT for the failure-mode fixture (low: 92, critical: 8) — closes #17", () => {
+    // Regression lock for the issue reported in #17. The old derivation
+    // (riskTierFromScore(avgRiskScore)) read this as LOW because averaging
+    // diluted 8 crits into a sub-25 mean. The compound rule must surface them.
+    const { container } = renderCard(
+      makeAgent({ todayRiskMix: { low: 92, medium: 0, high: 0, critical: 8 } }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-crit\b/);
+  });
+
+  it("pill reads LOW for the empty-mix fallback (no scored actions)", () => {
+    // Fixture overrides hasActivity-gating with a non-zero todayToolCalls, so
+    // the badge renders even though every tier count is zero. Default branch.
+    const { container } = renderCard(
+      makeAgent({
+        todayToolCalls: 12, // some unscored entries
+        todayRiskMix: { low: 0, medium: 0, high: 0, critical: 0 },
+      }),
+    );
+    expect(tierBadgeClass(container)).toMatch(/\bcl-tier-low\b/);
   });
 });
 

@@ -102,6 +102,28 @@ export function riskTierFromScore(score: number): RiskTier {
   return "low";
 }
 
+// Compound-rule thresholds for `worstMeaningfulTier`. Tuned to filter
+// single-call noise on high-tier (count-based) while keeping medium-tier
+// share-based since medium calls are common.
+const HIGH_TIER_MIN_COUNT = 2;
+const MED_TIER_MIN_SHARE = 0.05;
+
+/**
+ * Derive the "worst meaningful tier" for a card-level headline.
+ * Compound rule: any crit → CRIT; ≥2 high → HIGH; ≥5% med → MED; else LOW.
+ * Unlike `riskTierFromScore(avgRiskScore)`, this surfaces outliers instead of
+ * hiding them in an average — used for agent-card pills where a single rm -rf
+ * in a busy day must drive the headline, not get averaged into oblivion.
+ */
+export function worstMeaningfulTier(mix: Record<RiskTier, number>): RiskTier {
+  const total = mix.low + mix.medium + mix.high + mix.critical;
+  if (total <= 0) return "low";
+  if (mix.critical >= 1) return "critical";
+  if (mix.high >= HIGH_TIER_MIN_COUNT) return "high";
+  if (mix.medium / total >= MED_TIER_MIN_SHARE) return "medium";
+  return "low";
+}
+
 // ── Agent identity (deterministic from ID hash) ──
 
 function hashCode(str: string): number {
