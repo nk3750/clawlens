@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { ActivityCategory, AgentInfo, RiskTier } from "../lib/types";
 import { CATEGORY_META, relTime, riskTierFromScore } from "../lib/utils";
 import { useSessionSummary } from "../hooks/useSessionSummary";
 import GradientAvatar from "./GradientAvatar";
 import RiskMixMicrobar from "./RiskMixMicrobar";
+import SummaryPopover from "./SummaryPopover";
 
 const TIER_SHORT: Record<RiskTier, "low" | "med" | "high" | "crit"> = {
   low: "low",
@@ -33,6 +35,7 @@ export default function AgentCard({ agent, needsAttention }: Props) {
   const sessionKey = agent.lastSessionKey ?? agent.currentSession?.sessionKey ?? null;
   const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
   const tier = riskTierFromScore(agent.avgRiskScore);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   return (
     <Link
@@ -44,12 +47,17 @@ export default function AgentCard({ agent, needsAttention }: Props) {
         opacity: hasActivity ? 1 : 0.35,
         textDecoration: "none",
         transition: "background-color var(--cl-dur-fast) var(--cl-ease)",
+        // Freeze the hover bg while the popover is anchored — the active
+        // card needs to stay visually highlighted even if the cursor is
+        // currently over the popover (which sits inside the card's Link).
+        backgroundColor: popoverOpen ? "var(--cl-bg-05)" : undefined,
         boxShadow: attentionFlag ? "inset 2px 0 0 0 var(--cl-risk-medium)" : undefined,
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.backgroundColor = "var(--cl-bg-05)";
       }}
       onMouseLeave={(e) => {
+        if (popoverOpen) return;
         (e.currentTarget as HTMLElement).style.backgroundColor = "";
       }}
     >
@@ -124,25 +132,6 @@ export default function AgentCard({ agent, needsAttention }: Props) {
         </div>
       )}
 
-      {/* AI Summary — rendered as its own line below the footer when loaded */}
-      {hasActivity && sessionKey && summary && (
-        <p
-          className="mt-2 mb-0.5"
-          style={{
-            color: "var(--cl-text-secondary)",
-            fontFamily: "var(--cl-font-sans)",
-            fontSize: 12,
-            lineHeight: 1.5,
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {summary}
-        </p>
-      )}
-
       {/* Bottom footer: count · time  ·····  Summarize (right-aligned) */}
       <div className="flex items-center gap-2 mt-2">
         <span
@@ -188,53 +177,51 @@ export default function AgentCard({ agent, needsAttention }: Props) {
             </span>
           </>
         )}
-        {hasActivity && sessionKey && !summary && (
-          <span className="ml-auto shrink-0">
-            {summaryLoading ? (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  color: "var(--cl-text-muted)",
-                  fontFamily: "var(--cl-font-mono)",
-                  fontFeatureSettings: "normal",
-                  fontSize: 12,
-                  fontStyle: "italic",
-                }}
-              >
-                <SparklesIcon className="cl-ai-pulse" />
-                Summarizing…
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="cl-ai-shine"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  fetchSummary();
-                }}
-                style={{
-                  // backgroundColor longhand only — the `background` shorthand
-                  // would reset background-image and kill the .cl-ai-shine
-                  // gradient (with color: transparent that renders the text
-                  // fully invisible, leaving only the SparklesIcon visible).
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontFamily: "var(--cl-font-mono)",
-                  fontFeatureSettings: "normal",
-                  fontSize: 12,
-                  backgroundColor: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
-                <SparklesIcon />
-                summarize
-              </button>
+        {hasActivity && sessionKey && (
+          // position: relative anchors SummaryPopover's `position: absolute`
+          // to the trigger column, not the whole card row. Without this the
+          // popover would anchor to the outer card <Link> and slip out of
+          // alignment whenever the bottom row's flex layout shifts.
+          <span className="ml-auto shrink-0" style={{ position: "relative" }}>
+            <button
+              type="button"
+              className="cl-ai-shine"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPopoverOpen(true);
+                // Cached summaries don't refetch — opening the popover with
+                // existing state is enough. Only fire the fetch when there's
+                // nothing in flight and nothing already cached.
+                if (!summary && !summaryLoading) fetchSummary();
+              }}
+              style={{
+                // backgroundColor longhand only — the `background` shorthand
+                // would reset background-image and kill the .cl-ai-shine
+                // gradient (with color: transparent that renders the text
+                // fully invisible, leaving only the SparklesIcon visible).
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontFamily: "var(--cl-font-mono)",
+                fontFeatureSettings: "normal",
+                fontSize: 12,
+                backgroundColor: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              <SparklesIcon className={summaryLoading ? "cl-ai-pulse" : undefined} />
+              summarize
+            </button>
+            {popoverOpen && (
+              <SummaryPopover
+                summary={summary}
+                loading={summaryLoading}
+                agentId={agent.id}
+                onClose={() => setPopoverOpen(false)}
+              />
             )}
           </span>
         )}

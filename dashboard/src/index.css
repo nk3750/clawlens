@@ -341,11 +341,24 @@ code, .code {
   50%      { opacity: 1; }
 }
 
+/* Per-word fade-in for SummaryPopover body — each word's animation-delay is
+   set inline by the component so the reveal staggers ~30ms per word. The
+   total reveal for a 20-word sentence stays under the AI-shine timing. */
+.cl-summary-word {
+  display: inline-block;
+  animation: cl-summary-word var(--cl-dur-fast) var(--cl-ease) both;
+}
+@keyframes cl-summary-word {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Drop the sweep; fall back to a static accent on hover so the
      "this is AI" affordance is still legible without motion. */
   .cl-ai-shine:hover { animation: none; color: var(--cl-accent); }
   .cl-ai-pulse { animation: none; opacity: 0.75; }
+  .cl-summary-word { animation: none; opacity: 1; transform: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════

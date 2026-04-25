@@ -488,7 +488,10 @@ describe("AgentCardCompact — summarize button is an AI affordance (agent-card-
     expect(btn.style.color).not.toMatch(/--cl-accent/);
   });
 
-  it("during summary loading, the sparkles SVG carries cl-ai-pulse (text node sits next to it, unanimated)", () => {
+  it("while loading, the button's sparkles icon carries cl-ai-pulse (popover skeleton shows the actual loading copy)", () => {
+    // Loading state moved into <SummaryPopover>'s skeleton; the button's
+    // SparklesIcon still pulses while the fetch is in flight to keep the
+    // AI-aware feedback on the trigger element.
     useSessionSummaryMock.mockReturnValue({
       summary: null,
       isLlmGenerated: false,
@@ -496,17 +499,193 @@ describe("AgentCardCompact — summarize button is an AI affordance (agent-card-
       generate: vi.fn(),
     });
     const { container } = renderCard(withSession());
-    // The label "Summarizing…" is rendered alongside a sparkles icon; the
-    // pulse class lives on the SVG so only the icon animates.
-    const span = Array.from(container.querySelectorAll("span")).find((s) =>
+    const btn = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    )!;
+    const svg = btn.querySelector("svg");
+    expect(svg, "summarize button has a sparkles icon").not.toBeNull();
+    expect(svg!.getAttribute("class") ?? "").toMatch(/\bcl-ai-pulse\b/);
+    // Defensive: the legacy inline "Summarizing…" span is gone — the popover
+    // owns the loading copy now. If a regression re-adds it, this fails.
+    const summarizingSpan = Array.from(container.querySelectorAll("span")).find((s) =>
       (s.textContent ?? "").includes("Summarizing"),
     );
-    expect(span, "summarizing span present").not.toBeUndefined();
-    const svg = span!.querySelector("svg");
-    expect(svg, "summarizing span has a sparkles icon").not.toBeNull();
-    expect(svg!.getAttribute("class") ?? svg!.classList.value).toMatch(/\bcl-ai-pulse\b/);
-    // Defensive: the cl-ai-pulse class belongs only on the SVG, never on the
-    // outer span (the spec wants the icon pulsing, not the whole label).
-    expect(span!.className ?? "").not.toMatch(/\bcl-ai-pulse\b/);
+    expect(summarizingSpan).toBeUndefined();
+  });
+
+  it("button's sparkles icon does NOT carry cl-ai-pulse at rest (no ambient pulse without a fetch)", () => {
+    const { container } = renderCard(withSession());
+    const btn = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    )!;
+    const svg = btn.querySelector("svg");
+    expect(svg!.getAttribute("class") ?? "").not.toMatch(/\bcl-ai-pulse\b/);
+  });
+});
+
+describe("AgentCardCompact — summary popover wiring (#14 follow-up: card→popover)", () => {
+  // The summary moved out of the inline 2-line clamp on the card body and
+  // into a click-anchored popover. These tests pin the wiring contract:
+  // click→mount, persistence post-load, dismiss machinery, no-inline-<p>,
+  // and hover-bg gated on popoverOpen so the card stays visually anchored
+  // while its popover is open.
+
+  function withSession(): AgentInfo {
+    return makeAgent({ lastSessionKey: "alpha:s1" });
+  }
+
+  function findSummarizeButton(container: HTMLElement): HTMLButtonElement {
+    return Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    ) as HTMLButtonElement;
+  }
+
+  it("does NOT render an inline <p> with the loaded summary text (legacy clamped layout is gone)", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: "A loaded summary that used to be inline.",
+      isLlmGenerated: true,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    // Card body should not contain the summary text in any <p>.
+    const ps = container.querySelectorAll("p");
+    for (const p of ps) {
+      expect(p.textContent ?? "").not.toContain("A loaded summary");
+    }
+  });
+
+  it("does NOT mount the popover at rest (no [data-cl-summary-popover] before click)", () => {
+    const { container } = renderCard(withSession());
+    expect(container.querySelector("[data-cl-summary-popover]")).toBeNull();
+  });
+
+  it("click on summarize mounts the popover and triggers fetchSummary", () => {
+    const generate = vi.fn();
+    useSessionSummaryMock.mockReturnValue({
+      summary: null,
+      isLlmGenerated: false,
+      loading: false,
+      generate,
+    });
+    const { container } = renderCard(withSession());
+    fireEvent.click(findSummarizeButton(container));
+    expect(generate).toHaveBeenCalledTimes(1);
+    // Popover mounts immediately even before the fetch resolves (loading=true
+    // state will paint the skeleton inside the already-mounted chrome).
+    expect(container.querySelector("[data-cl-summary-popover]")).not.toBeNull();
+  });
+
+  it("clicking with a cached summary opens the popover without refetching", () => {
+    const generate = vi.fn();
+    useSessionSummaryMock.mockReturnValue({
+      summary: "Cached summary already in state.",
+      isLlmGenerated: true,
+      loading: false,
+      generate,
+    });
+    const { container } = renderCard(withSession());
+    fireEvent.click(findSummarizeButton(container));
+    expect(generate).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-cl-summary-popover]")).not.toBeNull();
+  });
+
+  it("button stays visible after summary loads (so the user can re-open the popover)", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: "Loaded — re-clickable trigger.",
+      isLlmGenerated: true,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    expect(findSummarizeButton(container)).not.toBeUndefined();
+  });
+
+  it("Escape closes the popover after it has been opened", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: "Escape probe.",
+      isLlmGenerated: true,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    fireEvent.click(findSummarizeButton(container));
+    expect(container.querySelector("[data-cl-summary-popover]")).not.toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(container.querySelector("[data-cl-summary-popover]")).toBeNull();
+  });
+
+  it("outside-click (mousedown on document body) closes the popover", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: "Outside click probe.",
+      isLlmGenerated: true,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    fireEvent.click(findSummarizeButton(container));
+    expect(container.querySelector("[data-cl-summary-popover]")).not.toBeNull();
+    fireEvent.mouseDown(document.body);
+    expect(container.querySelector("[data-cl-summary-popover]")).toBeNull();
+  });
+
+  it("clicking inside the popover does NOT close it", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: "Inside click probe.",
+      isLlmGenerated: true,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    fireEvent.click(findSummarizeButton(container));
+    const pop = container.querySelector<HTMLElement>("[data-cl-summary-popover]")!;
+    fireEvent.mouseDown(pop);
+    expect(container.querySelector("[data-cl-summary-popover]")).not.toBeNull();
+  });
+
+  it("clicking summarize does NOT navigate (preventDefault + stopPropagation preserved)", () => {
+    const observed: { pathname: string } = { pathname: "" };
+    function LocationProbe() {
+      const loc = useLocation();
+      observed.pathname = loc.pathname;
+      return null;
+    }
+    useSessionSummaryMock.mockReturnValue({
+      summary: null,
+      isLlmGenerated: false,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const agent = withSession();
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={agent} />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    const initialPath = observed.pathname;
+    fireEvent.click(findSummarizeButton(container));
+    expect(observed.pathname).toBe(initialPath);
+  });
+
+  it("freezes the card hover background while popover is open (mouseleave does not revert)", () => {
+    useSessionSummaryMock.mockReturnValue({
+      summary: "Hover-freeze probe.",
+      isLlmGenerated: true,
+      loading: false,
+      generate: vi.fn(),
+    });
+    const { container } = renderCard(withSession());
+    const card = container.querySelector<HTMLAnchorElement>("a")!;
+    // Hover lights the card bg.
+    fireEvent.mouseEnter(card);
+    expect(card.style.backgroundColor).toMatch(/--cl-bg-05/);
+    // Open popover.
+    fireEvent.click(findSummarizeButton(container));
+    expect(container.querySelector("[data-cl-summary-popover]")).not.toBeNull();
+    // Mouseleave should NOT clear the bg while the popover is anchored — the
+    // active card needs to stay visually highlighted.
+    fireEvent.mouseLeave(card);
+    expect(card.style.backgroundColor).toMatch(/--cl-bg-05/);
   });
 });
