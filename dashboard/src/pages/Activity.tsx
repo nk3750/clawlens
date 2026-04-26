@@ -6,7 +6,9 @@ import PresetBar from "../components/activity/PresetBar";
 import ErrorCard from "../components/ErrorCard";
 import { ActivityFeedSkeleton } from "../components/Skeleton";
 import { useApi } from "../hooks/useApi";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useSSE } from "../hooks/useSSE";
+import { MEDIA_COMPACT, MEDIA_DRAWER, MEDIA_NARROW } from "../lib/breakpoints";
 import {
   filtersToSearchParams,
   matchesFilters,
@@ -58,6 +60,84 @@ export default function Activity() {
   const filters = useMemo(() => parseFiltersFromURL(searchParams), [searchParams]);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+
+  // Phase 2.9 (#37) — viewport breakpoints. The drawer/compact/narrow flags
+  // drive every responsive condition in the activity tree. Pure boolean
+  // props beat context for the ≤6-hop tree we have.
+  const isMobile = useMediaQuery(MEDIA_DRAWER);
+  const isCompact = useMediaQuery(MEDIA_COMPACT);
+  const isNarrow = useMediaQuery(MEDIA_NARROW);
+
+  // Drawer state — session-only, no persistence.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-close the drawer when the viewport widens past the drawer breakpoint
+  // — leaving it stuck "open" while in desktop layout would lock the body.
+  useEffect(() => {
+    if (!isMobile && drawerOpen) setDrawerOpen(false);
+  }, [isMobile, drawerOpen]);
+
+  // Body overflow lock — prevents iOS scroll-bounce from fighting the drawer
+  // animation, and keeps a long feed from peeking through behind it. The
+  // cleanup restores whatever value was there before (most likely empty).
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [drawerOpen]);
+
+  // ESC closes the drawer. Skip when typing in an input/textarea so we don't
+  // hijack the user's expected escape-to-blur behavior.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
+  // Hand-rolled focus trap inside the drawer (avoids a focus-trap dependency).
+  // Tab from the last focusable wraps to the first; Shift+Tab from the first
+  // wraps to the last. Anything else falls through to the browser.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const drawerEl = drawerRef.current;
+    if (!drawerEl) return;
+    // Focus the first focusable on open so screen readers announce inside.
+    const focusables = drawerEl.querySelectorAll<HTMLElement>(
+      'button, [href], input, [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusables.length > 0) focusables[0].focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const els = drawerEl.querySelectorAll<HTMLElement>(
+        'button, [href], input, [tabindex]:not([tabindex="-1"])',
+      );
+      if (els.length === 0) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    drawerEl.addEventListener("keydown", onKey);
+    return () => drawerEl.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
 
   // Pause toggles SSE-driven insertion; queued entries flush on resume.
   const [paused, setPaused] = useState(false);
@@ -209,6 +289,9 @@ export default function Activity() {
 
   const togglePause = useCallback(() => setPaused((p) => !p), []);
 
+  const toggleDrawer = useCallback(() => setDrawerOpen((open) => !open), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
   // ─── Pagination — Load more handler ──────────────────────
   // Raw fetch (not useApi) so the next page appends instead of replacing.
   // useApi already issued the first 50 on mount; loadMore runs from offset
@@ -232,26 +315,35 @@ export default function Activity() {
     }
   }, [filters, offset, loadingMore, hasMore]);
 
+  const presetWrapperStyle: React.CSSProperties = isCompact
+    ? { overflowX: "auto", whiteSpace: "nowrap" }
+    : {};
+
   return (
     <div className="page-enter" style={{ minHeight: "100vh" }}>
-      <PresetBar filters={filters} onSelect={handlePreset} />
+      <div className={isCompact ? "scrollbar-hide" : undefined} style={presetWrapperStyle}>
+        <PresetBar filters={filters} onSelect={handlePreset} />
+      </div>
 
       <div
+        data-testid="activity-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "244px 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "244px 1fr",
           minHeight: "calc(100vh - 92px)",
           gap: 0,
         }}
       >
-        <FilterRail
-          filters={filters}
-          agents={agents ?? []}
-          countBasis={countBasis}
-          onSelect={handleSelect}
-          onClear={handleClear}
-          onApplyFilters={writeFilters}
-        />
+        {!isMobile && (
+          <FilterRail
+            filters={filters}
+            agents={agents ?? []}
+            countBasis={countBasis}
+            onSelect={handleSelect}
+            onClear={handleClear}
+            onApplyFilters={writeFilters}
+          />
+        )}
 
         {displayedError && entries.length === 0 ? (
           <div style={{ padding: "24px 32px" }}>
@@ -280,9 +372,61 @@ export default function Activity() {
             onChip={handleChip}
             onLoadMore={loadMore}
             onSetQ={handleSetQ}
+            isMobile={isMobile}
+            isCompact={isCompact}
+            isNarrow={isNarrow}
+            onToggleDrawer={toggleDrawer}
           />
         )}
       </div>
+
+      {isMobile && drawerOpen && (
+        <>
+          <div
+            data-testid="activity-drawer-backdrop"
+            onClick={closeDrawer}
+            // Backdrop is decorative; clicks are routed via the explicit
+            // div onClick. role="presentation" keeps it out of the AT tree.
+            role="presentation"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "var(--cl-bg-08)",
+              zIndex: 50,
+            }}
+          />
+          <aside
+            ref={drawerRef}
+            data-testid="activity-drawer"
+            aria-label="Filter drawer"
+            aria-modal="true"
+            role="dialog"
+            style={{
+              position: "fixed",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 280,
+              maxWidth: "85vw",
+              background: "var(--cl-bg-popover)",
+              borderRight: "1px solid var(--cl-border-subtle)",
+              zIndex: 51,
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+            }}
+          >
+            <FilterRail
+              filters={filters}
+              agents={agents ?? []}
+              countBasis={countBasis}
+              onSelect={handleSelect}
+              onClear={handleClear}
+              onApplyFilters={writeFilters}
+              isMobile
+            />
+          </aside>
+        </>
+      )}
     </div>
   );
 }

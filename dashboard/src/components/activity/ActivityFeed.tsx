@@ -34,6 +34,21 @@ interface Props {
   onLoadMore: () => void;
   /** Phase 2.7 (#35) — debounced free-text search → URL state. */
   onSetQ: (q: string) => void;
+  /**
+   * Phase 2.9 (#37) — drawer mode (≤1023px). When true, the feed shows
+   * the hamburger button (drives onToggleDrawer) and hides the header
+   * mini-bar. Activity.tsx hosts the drawer overlay state itself.
+   */
+  isMobile: boolean;
+  /** Phase 2.9 (#37) — compact viewport (<768px). */
+  isCompact: boolean;
+  /** Phase 2.9 (#37) — narrow viewport (<640px). */
+  isNarrow: boolean;
+  /**
+   * Phase 2.9 (#37) — toggle the rail-drawer open/closed. Required when
+   * isMobile is true; ignored otherwise.
+   */
+  onToggleDrawer?: () => void;
 }
 
 interface HourGroup {
@@ -69,6 +84,10 @@ export default function ActivityFeed({
   onChip,
   onLoadMore,
   onSetQ,
+  isMobile,
+  isCompact,
+  isNarrow,
+  onToggleDrawer,
 }: Props) {
   const grouped = useMemo(() => groupByHour(entries), [entries]);
 
@@ -80,15 +99,61 @@ export default function ActivityFeed({
     [],
   );
 
+  // Phase 2.9 (#37) — single-tap row state (analogous to expandedId). Compact
+  // viewport tap-to-reveal swaps tappedId so the strip is single-at-a-time.
+  const [tappedId, setTappedId] = useState<string | null>(null);
+  const toggleTapped = useCallback(
+    (id: string) => setTappedId((prev) => (prev === id ? null : id)),
+    [],
+  );
+
   return (
     <div style={{ padding: "24px 32px", minWidth: 0 }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+        {isMobile && (
+          <button
+            type="button"
+            data-testid="activity-drawer-toggle"
+            aria-label="Open filter drawer"
+            onClick={onToggleDrawer}
+            style={{
+              width: 32,
+              height: 32,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "transparent",
+              border: "1px solid var(--cl-border-subtle)",
+              borderRadius: 6,
+              color: "var(--cl-text-secondary)",
+              cursor: "pointer",
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
         <h1
           style={{
             margin: 0,
             fontWeight: 510,
-            fontSize: 30,
+            fontSize: isNarrow ? 24 : 30,
             letterSpacing: "-0.7px",
             color: "var(--cl-text-primary)",
           }}
@@ -100,6 +165,7 @@ export default function ActivityFeed({
           data-testid="live-pause-toggle"
           onClick={onTogglePause}
           title={paused ? "resume live" : "pause live"}
+          aria-label={paused ? "resume live updates" : "pause live updates"}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -123,18 +189,20 @@ export default function ActivityFeed({
               animation: paused ? "none" : "cl-pulse 2s infinite",
             }}
           />
-          <span
-            className="label-mono"
-            style={{
-              fontSize: 10,
-              color: paused ? "var(--cl-text-muted)" : "var(--cl-text-secondary)",
-            }}
-          >
-            {paused ? "PAUSED" : "LIVE"}
-          </span>
+          {!isCompact && (
+            <span
+              className="label-mono"
+              style={{
+                fontSize: 10,
+                color: paused ? "var(--cl-text-muted)" : "var(--cl-text-secondary)",
+              }}
+            >
+              {paused ? "PAUSED" : "LIVE"}
+            </span>
+          )}
         </button>
         <span style={{ flex: 1 }} />
-        <HeaderMixBar entries={entries} />
+        {!isMobile && <HeaderMixBar entries={entries} />}
         <span
           className="mono"
           data-testid="feed-count"
@@ -222,6 +290,10 @@ export default function ActivityFeed({
                   isLastInGroup={i === group.rows.length - 1}
                   isExpanded={expandedId === id}
                   onToggleExpand={() => toggleExpanded(id)}
+                  isCompact={isCompact}
+                  isNarrow={isNarrow}
+                  isTapped={tappedId === id}
+                  onToggleTapped={() => toggleTapped(id)}
                 />
               );
             })}

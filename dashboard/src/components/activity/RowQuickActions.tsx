@@ -11,6 +11,15 @@ interface Props {
    * managing modal state locally.
    */
   onAddGuardrail: () => void;
+  /**
+   * Phase 2.9 (#37): on touch viewports the row's tap-to-reveal strip
+   * surfaces a 4th button (expand) so operators have a discoverable way
+   * to open the row body without long-pressing. Desktop hover keeps the
+   * 3-button strip — row-click is the desktop expand path.
+   */
+  includeExpand?: boolean;
+  /** Required when `includeExpand` is true. */
+  onExpand?: () => void;
 }
 
 /**
@@ -19,7 +28,12 @@ interface Props {
  * stops propagation so clicking it never toggles the parent row's expanded
  * state (Phase 2.2 — see activity-page-overhaul-spec.md §2.2).
  */
-export default function RowQuickActions({ entry, onAddGuardrail }: Props) {
+export default function RowQuickActions({
+  entry,
+  onAddGuardrail,
+  includeExpand = false,
+  onExpand,
+}: Props) {
   const navigate = useNavigate();
   const command = toolString(entry);
   const sessionKey = entry.sessionKey;
@@ -37,6 +51,11 @@ export default function RowQuickActions({ entry, onAddGuardrail }: Props) {
   const handleOpenSession = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (sessionKey) navigate(`/session/${encodeURIComponent(sessionKey)}`);
+  };
+
+  const handleExpand = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onExpand?.();
   };
 
   return (
@@ -70,6 +89,15 @@ export default function RowQuickActions({ entry, onAddGuardrail }: Props) {
       >
         <ArrowIcon />
       </QuickButton>
+      {includeExpand && (
+        <QuickButton
+          testid="activity-row-quick-expand"
+          title="expand row"
+          onClick={handleExpand}
+        >
+          <ExpandIcon />
+        </QuickButton>
+      )}
     </span>
   );
 }
@@ -161,6 +189,24 @@ function ArrowIcon() {
       aria-hidden="true"
     >
       <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   );
 }

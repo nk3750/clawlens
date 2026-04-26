@@ -793,6 +793,19 @@ button:focus-visible {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   SCROLLBAR HIDE — utility for horizontally-scrollable strips
+   (Phase 2.9, #37 — preset bar at compact viewport)
+   ══════════════════════════════════════════════════════════════ */
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
    REDUCED MOTION
    ══════════════════════════════════════════════════════════════ */
 

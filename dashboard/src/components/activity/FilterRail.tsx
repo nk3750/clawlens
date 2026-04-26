@@ -24,6 +24,13 @@ interface Props {
    * group: clicking a saved row applies its full filter combo at once.
    */
   onApplyFilters: (next: Filters) => void;
+  /**
+   * Phase 2.9 (#37) — drawer mode. When true, the rail is rendered inside
+   * a fixed-position drawer overlay; it drops its own sticky-aside top
+   * offset so the inner content fills the drawer height instead of starting
+   * 48px down from the top.
+   */
+  isMobile?: boolean;
 }
 
 const TIER_ORDER: RiskTier[] = ["critical", "high", "medium", "low"];
@@ -59,6 +66,7 @@ export default function FilterRail({
   onSelect,
   onClear,
   onApplyFilters,
+  isMobile = false,
 }: Props) {
   const [filterSearch, setFilterSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<GroupKey, boolean>>({
@@ -104,10 +112,17 @@ export default function FilterRail({
     );
   };
 
-  return (
-    <aside
-      data-testid="filter-rail"
-      style={{
+  // In drawer mode, Activity.tsx wraps the rail in a fixed-position aside
+  // overlay and applies its own scroll/positioning. The rail's own sticky
+  // behavior would conflict (the outer wrapper is already fixed), so we
+  // drop the sticky offset and run the rail at the natural flow height —
+  // the wrapper provides the scroll viewport.
+  const railStyle: React.CSSProperties = isMobile
+    ? {
+        padding: "18px 14px 28px",
+        height: "100%",
+      }
+    : {
         borderRight: "1px solid var(--cl-border-subtle)",
         padding: "18px 14px 28px",
         position: "sticky",
@@ -115,8 +130,10 @@ export default function FilterRail({
         alignSelf: "start",
         maxHeight: "calc(100vh - 48px)",
         overflowY: "auto",
-      }}
-    >
+      };
+
+  return (
+    <aside data-testid="filter-rail" style={railStyle}>
       {/* Search-within-filters input */}
       <div style={{ position: "relative", marginBottom: 14 }}>
         <svg
