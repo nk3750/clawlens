@@ -1,24 +1,15 @@
 {
   "name": "clawlens",
-  "version": "0.2.0-preview.1",
+  "version": "0.2.0",
   "description": "Agent observatory and governance for OpenClaw",
   "type": "module",
-  "main": "dist/index.js",
-  "files": [
-    "dist/",
-    "dashboard/dist/",
-    "openclaw.plugin.json",
-    "PREVIEW.md",
-    "LICENSE"
-  ],
+  "main": "index.ts",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check src/ index.ts tests/",
     "lint:fix": "biome check --write src/ index.ts tests/",
-    "check": "vitest run && biome check src/ index.ts tests/",
-    "build:preview": "rm -rf dist && tsc -p tsconfig.json --sourceMap false --declarationMap false && cd dashboard && npm run build && cd ..",
-    "pack:preview": "npm run build:preview && npm pack"
+    "check": "vitest run && biome check src/ index.ts tests/"
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
