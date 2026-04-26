@@ -581,6 +581,56 @@ describe("computeEnhancedStats", () => {
   });
 });
 
+describe("getRecentEntries — riskTier filter", () => {
+  // Regression lock for #28: the riskTier filter must compare against the
+  // *effective* tier (LLM-eval override wins, falling back to raw entry's
+  // tier), not the raw audit entry's tier alone. Otherwise the predicate
+  // and the response (mapEntry uses evalEntry?.riskTier ?? entry.riskTier)
+  // disagree and rows of every tier leak through `?riskTier=high`.
+  it("filters by LLM-adjusted tier when an eval entry overrides the raw tier", () => {
+    const raw = entry({
+      toolCallId: "tc-adjusted",
+      decision: "allow",
+      riskTier: "high",
+    });
+    const evalRow = entry({
+      timestamp: "2026-04-25T12:00:01Z",
+      toolName: "__llm_evaluation__",
+      refToolCallId: "tc-adjusted",
+      // Production writes riskTier alongside adjustedScore on eval entries —
+      // mirror the canonical fixture used elsewhere in this file.
+      riskTier: "low",
+      llmEvaluation: {
+        adjustedScore: 10,
+        reasoning: "downgraded by LLM",
+        tags: [],
+        confidence: "high",
+        patterns: [],
+      },
+    });
+    const entries = [raw, evalRow];
+
+    const filteredLow = getRecentEntries(entries, 50, 0, { riskTier: "low" });
+    expect(filteredLow.map((e) => e.toolCallId)).toContain("tc-adjusted");
+
+    const filteredHigh = getRecentEntries(entries, 50, 0, { riskTier: "high" });
+    expect(filteredHigh.map((e) => e.toolCallId)).not.toContain("tc-adjusted");
+  });
+
+  it("filters by raw tier when no eval entry exists", () => {
+    const raw = entry({
+      toolCallId: "tc-raw-only",
+      decision: "allow",
+      riskTier: "critical",
+    });
+    const result = getRecentEntries([raw], 50, 0, { riskTier: "critical" });
+    expect(result.map((e) => e.toolCallId)).toContain("tc-raw-only");
+
+    const negative = getRecentEntries([raw], 50, 0, { riskTier: "low" });
+    expect(negative).toHaveLength(0);
+  });
+});
+
 describe("getRecentEntries — category field", () => {
   it("includes category on each entry; exec routes by sub-category", () => {
     const entries: AuditEntry[] = [

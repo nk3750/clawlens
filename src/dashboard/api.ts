@@ -1174,7 +1174,12 @@ export function getRecentEntries(
     }
     if (filters.riskTier) {
       const tier = filters.riskTier;
-      filtered = filtered.filter((e) => e.riskTier === tier);
+      // Compare against the *effective* tier so the predicate agrees with
+      // what mapEntry surfaces (LLM-eval-adjusted tier wins). The prior
+      // raw-tier comparison leaked rows of every tier when an eval row
+      // overrode the original (#28). Mirrors the decision filter below
+      // which already routes through getEffectiveDecision.
+      filtered = filtered.filter((e) => getEffectiveTier(e, evalIdx) === tier);
     }
     if (filters.decision) {
       const decision = filters.decision;
