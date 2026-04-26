@@ -111,14 +111,15 @@ function Reasoning({ entry }: { entry: EntryResponse }) {
 
   // Static-vs-LLM split: only render when both pieces are present (defensive
   // — types.ts says originalRiskScore is only set when llmEvaluation exists).
+  // The delta is the *raw* signed difference: positive = LLM raised, negative
+  // = LLM lowered, zero = LLM agreed. We render all three branches honestly
+  // because clamping to ≥0 was reading "contributed 0" when the LLM had
+  // actually reduced the score, masking the LLM's signal entirely.
   const hasSplit = entry.llmEvaluation != null && entry.originalRiskScore != null;
-  const llmContribution = hasSplit
-    ? Math.max(
-        0,
-        (entry.riskScore ?? entry.llmEvaluation?.adjustedScore ?? 0) -
-          (entry.originalRiskScore ?? 0),
-      )
-    : null;
+  const delta = hasSplit
+    ? (entry.riskScore ?? entry.llmEvaluation?.adjustedScore ?? 0) -
+      (entry.originalRiskScore ?? 0)
+    : 0;
 
   return (
     <DetailBlock label="risk reasoning">
@@ -142,11 +143,26 @@ function Reasoning({ entry }: { entry: EntryResponse }) {
             <span className="mono" style={{ color: "var(--cl-text-primary)" }}>
               {entry.originalRiskScore}
             </span>
-            , LLM classifier contributed{" "}
-            <span className="mono" style={{ color: "var(--cl-text-primary)" }}>
-              {llmContribution}
-            </span>
-            .
+            ,{" "}
+            {delta > 0 ? (
+              <>
+                LLM classifier contributed{" "}
+                <span className="mono" style={{ color: "var(--cl-text-primary)" }}>
+                  {delta}
+                </span>
+                .
+              </>
+            ) : delta < 0 ? (
+              <>
+                LLM classifier reduced by{" "}
+                <span className="mono" style={{ color: "var(--cl-text-primary)" }}>
+                  {Math.abs(delta)}
+                </span>
+                .
+              </>
+            ) : (
+              <>LLM classifier matched static rules.</>
+            )}
           </>
         ) : null}
       </div>

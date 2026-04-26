@@ -248,6 +248,50 @@ describe("ActivityRow — expanded body content", () => {
     expect(reasoning.textContent).toMatch(/LLM classifier contributed 25/);
   });
 
+  it("renders 'reduced by N' when the LLM lowered the static score", () => {
+    renderRow({
+      entry: entry({
+        riskScore: 72,
+        originalRiskScore: 75,
+        llmEvaluation: {
+          adjustedScore: 72,
+          reasoning: "Lower than static thought",
+          tags: [],
+          confidence: "high",
+          patterns: [],
+        },
+      }),
+      isExpanded: true,
+    });
+    const reasoning = screen.getByTestId("activity-row-reasoning");
+    expect(reasoning.textContent).toMatch(/Static rules contributed 75/);
+    expect(reasoning.textContent).toMatch(/LLM classifier reduced by 3/);
+    // Must not silently degrade to "contributed 0" or any positive-side prose.
+    expect(reasoning.textContent).not.toMatch(/LLM classifier contributed/);
+  });
+
+  it("renders 'matched static rules' when the LLM agreed with the static score", () => {
+    renderRow({
+      entry: entry({
+        riskScore: 50,
+        originalRiskScore: 50,
+        llmEvaluation: {
+          adjustedScore: 50,
+          reasoning: "Concur",
+          tags: [],
+          confidence: "high",
+          patterns: [],
+        },
+      }),
+      isExpanded: true,
+    });
+    const reasoning = screen.getByTestId("activity-row-reasoning");
+    expect(reasoning.textContent).toMatch(/Static rules contributed 50/);
+    expect(reasoning.textContent).toMatch(/LLM classifier matched static rules/);
+    expect(reasoning.textContent).not.toMatch(/LLM classifier contributed/);
+    expect(reasoning.textContent).not.toMatch(/reduced by/);
+  });
+
   it("omits the contribution-split sentence when llmEvaluation is absent", () => {
     renderRow({
       entry: entry({ llmEvaluation: undefined, originalRiskScore: undefined }),
