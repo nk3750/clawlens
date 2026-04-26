@@ -4,12 +4,21 @@
   "description": "Agent observatory and governance for OpenClaw",
   "type": "module",
   "main": "index.ts",
+  "files": [
+    "dist/",
+    "dashboard/dist/",
+    "openclaw.plugin.json",
+    "PREVIEW.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check src/ index.ts tests/",
     "lint:fix": "biome check --write src/ index.ts tests/",
-    "check": "vitest run && biome check src/ index.ts tests/"
+    "check": "vitest run && biome check src/ index.ts tests/",
+    "build:preview": "rm -rf dist && tsc -p tsconfig.json --sourceMap false --declarationMap false && cd dashboard && npm run build && cd ..",
+    "pack:preview": "npm run build:preview && npm pack"
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
