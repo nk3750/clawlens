@@ -159,8 +159,12 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           description: describeAction(entry.toolName, entry.params),
           riskScore: entry.riskScore ?? 0,
         };
-        deps.guardrailStore.add(guardrail);
-        sendJson(res, { ...guardrail, existing: false });
+        try {
+          deps.guardrailStore.add(guardrail);
+          sendJson(res, { ...guardrail, existing: false });
+        } catch (err) {
+          handleStorageError(res, err);
+        }
         return true;
       }
 
@@ -196,13 +200,17 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           );
           return true;
         }
-        const updated = deps.guardrailStore.update(id, patch);
-        if (!updated) {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Guardrail not found" }));
-          return true;
+        try {
+          const updated = deps.guardrailStore.update(id, patch);
+          if (!updated) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Guardrail not found" }));
+            return true;
+          }
+          sendJson(res, updated);
+        } catch (err) {
+          handleStorageError(res, err);
         }
-        sendJson(res, updated);
         return true;
       }
 
@@ -213,13 +221,17 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           return true;
         }
         const id = decodeURIComponent(guardrailIdMatch[1]);
-        const removed = deps.guardrailStore.remove(id);
-        if (!removed) {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Guardrail not found" }));
-          return true;
+        try {
+          const removed = deps.guardrailStore.remove(id);
+          if (!removed) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Guardrail not found" }));
+            return true;
+          }
+          sendJson(res, { ok: true });
+        } catch (err) {
+          handleStorageError(res, err);
         }
-        sendJson(res, { ok: true });
         return true;
       }
 

@@ -103,8 +103,13 @@ export function registerDashboardRoutes(api, deps) {
                     description: describeAction(entry.toolName, entry.params),
                     riskScore: entry.riskScore ?? 0,
                 };
-                deps.guardrailStore.add(guardrail);
-                sendJson(res, { ...guardrail, existing: false });
+                try {
+                    deps.guardrailStore.add(guardrail);
+                    sendJson(res, { ...guardrail, existing: false });
+                }
+                catch (err) {
+                    handleStorageError(res, err);
+                }
                 return true;
             }
             if (subPath === "api/guardrails" && req.method === "GET") {
@@ -133,13 +138,18 @@ export function registerDashboardRoutes(api, deps) {
                     }));
                     return true;
                 }
-                const updated = deps.guardrailStore.update(id, patch);
-                if (!updated) {
-                    res.writeHead(404, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "Guardrail not found" }));
-                    return true;
+                try {
+                    const updated = deps.guardrailStore.update(id, patch);
+                    if (!updated) {
+                        res.writeHead(404, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: "Guardrail not found" }));
+                        return true;
+                    }
+                    sendJson(res, updated);
                 }
-                sendJson(res, updated);
+                catch (err) {
+                    handleStorageError(res, err);
+                }
                 return true;
             }
             if (guardrailIdMatch && req.method === "DELETE") {
@@ -149,13 +159,18 @@ export function registerDashboardRoutes(api, deps) {
                     return true;
                 }
                 const id = decodeURIComponent(guardrailIdMatch[1]);
-                const removed = deps.guardrailStore.remove(id);
-                if (!removed) {
-                    res.writeHead(404, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "Guardrail not found" }));
-                    return true;
+                try {
+                    const removed = deps.guardrailStore.remove(id);
+                    if (!removed) {
+                        res.writeHead(404, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: "Guardrail not found" }));
+                        return true;
+                    }
+                    sendJson(res, { ok: true });
                 }
-                sendJson(res, { ok: true });
+                catch (err) {
+                    handleStorageError(res, err);
+                }
                 return true;
             }
             // ── Saved searches CRUD (Phase 2.8, #36) ────
