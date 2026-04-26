@@ -231,6 +231,13 @@ export interface EntryFilters {
     riskTier?: "low" | "medium" | "high" | "critical";
     decision?: string;
     since?: "1h" | "6h" | "24h" | "7d" | "all";
+    /**
+     * Phase 2.7 (#35) — case-insensitive literal substring matched against
+     * `toolName`, `JSON.stringify(params)`, `agentId ?? ''`, and
+     * `sessionKey ?? ''`. No regex / wildcard. Empty string is a no-op.
+     * Cap of 200 chars enforced at the route layer.
+     */
+    q?: string;
 }
 export interface SessionDetailResponse {
     session: SessionInfo;

@@ -46,6 +46,7 @@ function buildEntriesQuery(filters: Filters, limit: number, offset: number): str
   const rt = tierToRiskTier(filters.tier);
   if (rt) p.set("riskTier", rt);
   if (filters.decision) p.set("decision", filters.decision);
+  if (filters.q) p.set("q", filters.q);
   // Default the displayed feed to the count-basis window (24h) when the
   // operator hasn't picked a time. Keeps "X of Y actions" coherent.
   p.set("since", filters.since ?? DEFAULT_SINCE);
@@ -180,6 +181,18 @@ export default function Activity() {
 
   const handleClearAll = useCallback(() => writeFilters({}), [writeFilters]);
 
+  // Phase 2.7 (#35) — debounced free-text search. Empty string drops `q`
+  // from the URL entirely (no `?q=` left dangling).
+  const handleSetQ = useCallback(
+    (q: string) => {
+      const next: Filters = { ...filtersRef.current };
+      if (q) next.q = q;
+      else delete next.q;
+      writeFilters(next);
+    },
+    [writeFilters],
+  );
+
   const handlePreset = useCallback(
     (preset: { filters: Filters }) => writeFilters(preset.filters),
     [writeFilters],
@@ -266,6 +279,7 @@ export default function Activity() {
             onClearAll={handleClearAll}
             onChip={handleChip}
             onLoadMore={loadMore}
+            onSetQ={handleSetQ}
           />
         )}
       </div>

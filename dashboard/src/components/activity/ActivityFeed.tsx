@@ -4,6 +4,7 @@ import type { EntryResponse } from "../../lib/types";
 import ActiveFilterChips from "./ActiveFilterChips";
 import ActivityRow from "./ActivityRow";
 import HeaderMixBar from "./HeaderMixBar";
+import SearchInput from "./SearchInput";
 
 interface Props {
   filters: Filters;
@@ -31,6 +32,8 @@ interface Props {
   /** Inline filter chip clicks from rows. */
   onChip: (key: "agent" | "tier", value: string) => void;
   onLoadMore: () => void;
+  /** Phase 2.7 (#35) — debounced free-text search → URL state. */
+  onSetQ: (q: string) => void;
 }
 
 interface HourGroup {
@@ -65,6 +68,7 @@ export default function ActivityFeed({
   onClearAll,
   onChip,
   onLoadMore,
+  onSetQ,
 }: Props) {
   const grouped = useMemo(() => groupByHour(entries), [entries]);
 
@@ -142,6 +146,9 @@ export default function ActivityFeed({
           </span>
         </span>
       </div>
+
+      {/* Free-text search (Phase 2.7, #35) */}
+      <SearchInput value={filters.q ?? ""} onChange={onSetQ} />
 
       {/* Active filter chip strip */}
       <ActiveFilterChips filters={filters} onClear={onClear} onClearAll={onClearAll} />

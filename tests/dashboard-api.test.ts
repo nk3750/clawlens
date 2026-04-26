@@ -695,6 +695,155 @@ describe("getRecentEntries — riskTier filter", () => {
   });
 });
 
+describe("getRecentEntries — q filter", () => {
+  // Phase 2.7 (#35): free-text substring filter against four fields per entry:
+  //   toolName, JSON.stringify(params), agentId ?? '', sessionKey ?? ''
+  // Case-insensitive literal substring; no regex / wildcard support. Mirrors
+  // dashboard/src/lib/activityFilters.ts::matchesFilters so SSE-incoming rows
+  // and server-fetched rows agree.
+  const entries: AuditEntry[] = [
+    entry({
+      timestamp: "2026-04-26T10:00:00Z",
+      toolName: "exec",
+      decision: "allow",
+      agentId: "alpha",
+      sessionKey: "sess_alpha_1",
+      toolCallId: "tc_q1",
+      params: { command: "ssh prod-db" },
+      riskScore: 70,
+    }),
+    entry({
+      timestamp: "2026-04-26T10:01:00Z",
+      toolName: "fetch",
+      decision: "allow",
+      agentId: "beta",
+      sessionKey: "sess_beta_1",
+      toolCallId: "tc_q2",
+      params: { url: "https://api.example.com/users" },
+      riskScore: 10,
+    }),
+    entry({
+      timestamp: "2026-04-26T10:02:00Z",
+      toolName: "read",
+      decision: "allow",
+      agentId: "alpha",
+      sessionKey: "sess_alpha_2",
+      toolCallId: "tc_q3",
+      params: { path: "/etc/passwd" },
+      riskScore: 35,
+    }),
+    entry({
+      timestamp: "2026-04-26T10:03:00Z",
+      toolName: "write",
+      decision: "block",
+      agentId: "gamma",
+      sessionKey: "sess_gamma_1",
+      toolCallId: "tc_q4",
+      params: { command: "rm -rf /" },
+      riskScore: 95,
+    }),
+  ];
+
+  it("matches against toolName (case-insensitive)", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "EXEC" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q1"]);
+  });
+
+  it("matches against params.command via JSON.stringify", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "ssh" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q1"]);
+  });
+
+  it("matches against params.url via JSON.stringify", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "api.example" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q2"]);
+  });
+
+  it("matches against params.path via JSON.stringify", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "passwd" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q3"]);
+  });
+
+  it("matches against agentId", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "gamma" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q4"]);
+  });
+
+  it("matches against sessionKey", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "sess_beta" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q2"]);
+  });
+
+  it("returns empty array when nothing matches", () => {
+    const result = getRecentEntries(entries, 50, 0, { q: "nothing-matches-this" });
+    expect(result).toEqual([]);
+  });
+
+  it("intersects with riskTier — only rows matching BOTH q and tier", () => {
+    // tc_q4 alone is critical (riskScore 95 → critical) and has 'rm' in
+    // params. tc_q1 matches "exec" but is high tier. The intersection of
+    // q="rm" + tier="critical" is just tc_q4.
+    const result = getRecentEntries(entries, 50, 0, { q: "rm", riskTier: "critical" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q4"]);
+
+    // q matches multiple rows but tier filter narrows to one.
+    const result2 = getRecentEntries(entries, 50, 0, { q: "alpha", riskTier: "high" });
+    expect(result2.map((e) => e.toolCallId)).toEqual(["tc_q1"]);
+  });
+
+  it("intersects with since — only rows inside the time window AND matching q", () => {
+    vi.useFakeTimers();
+    try {
+      // Sit at 10:01:30 so only entries at/after 10:00:30 fall in the last
+      // hour: tc_q2, tc_q3, tc_q4. Then q="alpha" pulls just tc_q3.
+      vi.setSystemTime(new Date("2026-04-26T11:01:30Z"));
+      const result = getRecentEntries(entries, 50, 0, { q: "alpha", since: "1h" });
+      expect(result.map((e) => e.toolCallId)).toEqual(["tc_q3"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treats empty string as absent (no filter applied)", () => {
+    // Server-side defense: routes.ts only sets q when non-empty, but a direct
+    // call with q: '' should not silently zero the result set.
+    const all = getRecentEntries(entries, 50, 0);
+    const withEmpty = getRecentEntries(entries, 50, 0, { q: "" });
+    expect(withEmpty.map((e) => e.toolCallId)).toEqual(all.map((e) => e.toolCallId));
+  });
+
+  it("preserves unicode substring matches (codepoint-level)", () => {
+    const cafe = entry({
+      timestamp: "2026-04-26T10:05:00Z",
+      toolName: "exec",
+      decision: "allow",
+      agentId: "delta",
+      sessionKey: "sess_delta_1",
+      toolCallId: "tc_q_cafe",
+      params: { command: "café" },
+    });
+    const result = getRecentEntries([cafe], 50, 0, { q: "café" });
+    expect(result.map((e) => e.toolCallId)).toEqual(["tc_q_cafe"]);
+  });
+
+  it("treats q as a literal substring (no regex special-char handling)", () => {
+    const literal = entry({
+      timestamp: "2026-04-26T10:06:00Z",
+      toolName: "exec",
+      decision: "allow",
+      agentId: "alpha",
+      sessionKey: "sess_lit",
+      toolCallId: "tc_q_lit",
+      params: { command: "echo a*b" },
+    });
+    const matches = getRecentEntries([literal], 50, 0, { q: "a*b" });
+    expect(matches.map((e) => e.toolCallId)).toEqual(["tc_q_lit"]);
+    // 'a.b' would only match if regex (the . wildcard) — must NOT match.
+    const noRegex = getRecentEntries([literal], 50, 0, { q: "a.b" });
+    expect(noRegex).toEqual([]);
+  });
+});
+
 describe("getRecentEntries — category field", () => {
   it("includes category on each entry; exec routes by sub-category", () => {
     const entries: AuditEntry[] = [

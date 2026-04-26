@@ -19,6 +19,7 @@ function labelFor(key: keyof Filters, value: string): string {
   if (key === "tier") return value.toUpperCase();
   if (key === "category") return CATEGORY_META[value as keyof typeof CATEGORY_META]?.label ?? value;
   if (key === "since") return `last ${value}`;
+  if (key === "q") return `"${value}"`;
   return value;
 }
 

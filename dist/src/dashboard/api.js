@@ -866,6 +866,25 @@ export function getRecentEntries(entries, limit, offset, filters, guardrailStore
             const cutoff = new Date(Date.now() - ms[filters.since]).toISOString();
             filtered = filtered.filter((e) => e.timestamp >= cutoff);
         }
+        // Phase 2.7 (#35): free-text substring across four fields. Lowercased
+        // once outside the predicate; JSON.stringify the params lazily per entry
+        // (cheap for typical params; no cross-call memo because the audit log
+        // mutates). Mirrors dashboard/src/lib/activityFilters.ts::matchesFilters
+        // so SSE-incoming rows agree with what this endpoint returned.
+        if (filters.q) {
+            const needle = filters.q.toLowerCase();
+            filtered = filtered.filter((e) => {
+                if (e.toolName.toLowerCase().includes(needle))
+                    return true;
+                if (JSON.stringify(e.params).toLowerCase().includes(needle))
+                    return true;
+                if ((e.agentId ?? "").toLowerCase().includes(needle))
+                    return true;
+                if ((e.sessionKey ?? "").toLowerCase().includes(needle))
+                    return true;
+                return false;
+            });
+        }
     }
     // Build split session index so entries get correct sub-session keys (#2, #3, etc.)
     const splitSessionIndex = buildSplitSessionIndex(entries);

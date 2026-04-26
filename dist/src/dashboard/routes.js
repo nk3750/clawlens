@@ -189,6 +189,18 @@ export function registerDashboardRoutes(api, deps) {
                 const since = url.searchParams.get("since");
                 if (since)
                     filters.since = since;
+                // Phase 2.7 (#35): free-text query. The frontend's
+                // <input maxLength={200}> keeps the UI honest; the 400 below is
+                // defense-in-depth for direct URL manipulation.
+                const q = url.searchParams.get("q");
+                if (q) {
+                    if (q.length > 200) {
+                        res.writeHead(400, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: "q exceeds 200 char limit" }));
+                        return true;
+                    }
+                    filters.q = q;
+                }
                 const entries = deps.auditLogger.readEntries();
                 sendJson(res, getRecentEntries(entries, limit, offset, filters, deps.guardrailStore));
                 return true;

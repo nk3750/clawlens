@@ -16,6 +16,13 @@ export interface Filters {
   tier?: string;
   decision?: string;
   since?: string;
+  /**
+   * Phase 2.7 (#35) — free-text substring matched (case-insensitive) against
+   * `entry.toolName`, `JSON.stringify(entry.params)`, `entry.agentId ?? ''`,
+   * and `entry.sessionKey ?? ''`. Mirrors server-side `EntryFilters.q` so the
+   * client-side count math agrees with what `/api/entries?q=` would return.
+   */
+  q?: string;
 }
 
 /** Canonical filter keys — order matters for stable URL serialization. */
@@ -25,6 +32,7 @@ export const FILTER_KEYS: readonly (keyof Filters)[] = [
   "tier",
   "decision",
   "since",
+  "q",
 ] as const;
 
 export interface Preset {
@@ -93,6 +101,17 @@ export function matchesFilters(entry: EntryResponse, filters: Filters): boolean 
     if (ms != null) {
       const cutoff = Date.now() - ms;
       if (new Date(entry.timestamp).getTime() < cutoff) return false;
+    }
+  }
+  if (filters.q) {
+    const needle = filters.q.toLowerCase();
+    if (
+      !entry.toolName.toLowerCase().includes(needle) &&
+      !JSON.stringify(entry.params).toLowerCase().includes(needle) &&
+      !(entry.agentId ?? "").toLowerCase().includes(needle) &&
+      !(entry.sessionKey ?? "").toLowerCase().includes(needle)
+    ) {
+      return false;
     }
   }
   return true;

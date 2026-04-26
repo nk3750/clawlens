@@ -140,3 +140,38 @@ describe("Activity — filter change → URL update", () => {
     });
   });
 });
+
+describe("Activity — q (Phase 2.7, #35)", () => {
+  it("seeds the q chip from ?q= on mount and renders the quoted label", async () => {
+    renderActivityAt("/activity?q=ssh");
+    await waitFor(() => {
+      const chip = screen.getByTestId("active-chip-q");
+      expect(chip.textContent).toMatch(/q:/);
+      // Visible quoted form per spec: `q: "ssh"`.
+      expect(chip.textContent).toMatch(/"ssh"/);
+    });
+  });
+
+  it("clicking the q chip × removes q from the URL", async () => {
+    renderActivityAt("/activity?q=ssh&tier=high");
+    await waitFor(() => expect(screen.getByTestId("active-chip-q")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("active-chip-q-remove"));
+
+    await waitFor(() => {
+      const loc = screen.getByTestId("location").textContent ?? "";
+      expect(loc).toContain("tier=high");
+      expect(loc).not.toContain("q=");
+    });
+  });
+
+  it("first /api/entries call forwards q when ?q= is set", async () => {
+    renderActivityAt("/activity?q=ssh");
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+      const entriesCall = calls.find((u) => u.includes("/api/entries") && u.includes("limit=50"));
+      expect(entriesCall).toBeDefined();
+      expect(entriesCall!).toContain("q=ssh");
+    });
+  });
+});

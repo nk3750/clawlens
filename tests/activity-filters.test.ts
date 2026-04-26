@@ -169,6 +169,88 @@ describe("matchesFilters / applyFilters", () => {
   });
 });
 
+describe("matchesFilters — q (Phase 2.7, #35)", () => {
+  // Mirrors src/dashboard/api.ts::getRecentEntries q-filter semantics so
+  // SSE-incoming rows and server-fetched rows agree on what's visible.
+  // Fields searched: toolName, JSON.stringify(params), agentId ?? '',
+  // sessionKey ?? ''. Case-insensitive literal substring; no regex.
+  it("matches against toolName (case-insensitive)", () => {
+    const e = entry({ toolName: "exec", params: { command: "ls" } });
+    expect(matchesFilters(e, { q: "EXEC" })).toBe(true);
+    expect(matchesFilters(e, { q: "exec" })).toBe(true);
+  });
+
+  it("matches against params via JSON.stringify substring", () => {
+    const e = entry({ toolName: "exec", params: { command: "ssh prod" } });
+    expect(matchesFilters(e, { q: "ssh" })).toBe(true);
+    expect(matchesFilters(e, { q: "SSH" })).toBe(true);
+    expect(matchesFilters(e, { q: "prod" })).toBe(true);
+    expect(matchesFilters(e, { q: "rabbit" })).toBe(false);
+  });
+
+  it("matches against agentId", () => {
+    const e = entry({ agentId: "baddie" });
+    expect(matchesFilters(e, { q: "baddie" })).toBe(true);
+    expect(matchesFilters(e, { q: "BAD" })).toBe(true);
+  });
+
+  it("matches against sessionKey", () => {
+    const e = entry({ sessionKey: "agent:main:telegram:direct:7928" });
+    expect(matchesFilters(e, { q: "telegram" })).toBe(true);
+    expect(matchesFilters(e, { q: "7928" })).toBe(true);
+  });
+
+  it("returns false when no field matches", () => {
+    const e = entry({
+      toolName: "read",
+      params: { path: "/etc/hosts" },
+      agentId: "alpha",
+      sessionKey: "sess_a",
+    });
+    expect(matchesFilters(e, { q: "ssh" })).toBe(false);
+  });
+
+  it("treats undefined agentId/sessionKey as empty (no crash)", () => {
+    const e = entry({
+      toolName: "exec",
+      params: { command: "ls" },
+      agentId: undefined,
+      sessionKey: undefined,
+    });
+    expect(matchesFilters(e, { q: "exec" })).toBe(true);
+    expect(matchesFilters(e, { q: "ghost" })).toBe(false);
+  });
+
+  it("intersects with other filters", () => {
+    const e = entry({
+      toolName: "exec",
+      params: { command: "ssh" },
+      riskTier: "high",
+      agentId: "alpha",
+    });
+    expect(matchesFilters(e, { q: "ssh", tier: "high" })).toBe(true);
+    expect(matchesFilters(e, { q: "ssh", tier: "critical" })).toBe(false);
+    expect(matchesFilters(e, { q: "rabbit", tier: "high" })).toBe(false);
+  });
+
+  it("treats q as a literal substring (no regex special-char handling)", () => {
+    const e = entry({ toolName: "exec", params: { command: "echo a*b" } });
+    expect(matchesFilters(e, { q: "a*b" })).toBe(true);
+    // 'a.b' would only match if regex (the . wildcard) — must NOT match.
+    expect(matchesFilters(e, { q: "a.b" })).toBe(false);
+  });
+
+  it("preserves unicode substring matches (codepoint-level)", () => {
+    const e = entry({ toolName: "exec", params: { command: "café" } });
+    expect(matchesFilters(e, { q: "café" })).toBe(true);
+  });
+
+  it("empty q passes through (treated as absent)", () => {
+    const e = entry({ toolName: "exec", params: {} });
+    expect(matchesFilters(e, { q: "" })).toBe(true);
+  });
+});
+
 describe("countWith", () => {
   const rows: EntryResponse[] = [
     entry({ toolCallId: "c1", agentId: "alpha", riskTier: "high" }),
@@ -221,6 +303,21 @@ describe("parseFiltersFromURL", () => {
     // ?tier=banana — render the chip; counts return 0; user can clear.
     expect(parseFiltersFromURL(new URLSearchParams("tier=banana"))).toEqual({ tier: "banana" });
   });
+
+  it("parses q (Phase 2.7, #35)", () => {
+    expect(parseFiltersFromURL(new URLSearchParams("q=ssh"))).toEqual({ q: "ssh" });
+  });
+
+  it("treats empty q as absent", () => {
+    expect(parseFiltersFromURL(new URLSearchParams("q="))).toEqual({});
+  });
+
+  it("preserves q alongside other filters", () => {
+    expect(parseFiltersFromURL(new URLSearchParams("q=ssh&tier=high"))).toEqual({
+      q: "ssh",
+      tier: "high",
+    });
+  });
 });
 
 describe("filtersToSearchParams", () => {
@@ -249,6 +346,19 @@ describe("filtersToSearchParams", () => {
     };
     const round = parseFiltersFromURL(filtersToSearchParams(original));
     expect(round).toEqual(original);
+  });
+
+  it("serializes q (Phase 2.7, #35)", () => {
+    expect(filtersToSearchParams({ q: "ssh" }).toString()).toBe("q=ssh");
+  });
+
+  it("omits empty-string q from serialization", () => {
+    expect(filtersToSearchParams({ q: "" }).toString()).toBe("");
+  });
+
+  it("round-trips q via parse → serialize → parse", () => {
+    const params = filtersToSearchParams({ q: "test" });
+    expect(parseFiltersFromURL(params)).toEqual({ q: "test" });
   });
 });
 
