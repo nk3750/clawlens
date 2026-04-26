@@ -50,16 +50,37 @@ export class GuardrailStore {
     add(guardrail) {
         this.all.push(guardrail);
         this.indexOne(guardrail);
-        this.save();
+        try {
+            this.save();
+        }
+        catch (err) {
+            // Roll back so in-memory state never diverges from disk on save
+            // failure (ENOSPC, EISDIR, EROFS, EDQUOT, perms). For a security-
+            // boundary store like guardrails, divergence is worse than for UI
+            // state — a phantom guardrail could match live tool calls and
+            // either block legitimate work or require approval on traffic that
+            // should pass through, until the next gateway restart. Pattern
+            // mirrors src/risk/saved-searches-store.ts (Phase 2.8, df8b58f).
+            this.all.pop();
+            this.rebuildIndex();
+            throw err;
+        }
     }
     /** Remove a guardrail by ID. */
     remove(id) {
         const idx = this.all.findIndex((g) => g.id === id);
         if (idx === -1)
             return false;
-        this.all.splice(idx, 1);
+        const [removed] = this.all.splice(idx, 1);
         this.rebuildIndex();
-        this.save();
+        try {
+            this.save();
+        }
+        catch (err) {
+            this.all.splice(idx, 0, removed);
+            this.rebuildIndex();
+            throw err;
+        }
         return true;
     }
     /** Update fields on an existing guardrail. */
@@ -67,12 +88,22 @@ export class GuardrailStore {
         const guardrail = this.all.find((g) => g.id === id);
         if (!guardrail)
             return null;
+        const prevAction = guardrail.action;
+        const prevAgentId = guardrail.agentId;
         if (patch.action !== undefined)
             guardrail.action = patch.action;
         if (patch.agentId !== undefined)
             guardrail.agentId = patch.agentId;
         this.rebuildIndex();
-        this.save();
+        try {
+            this.save();
+        }
+        catch (err) {
+            guardrail.action = prevAction;
+            guardrail.agentId = prevAgentId;
+            this.rebuildIndex();
+            throw err;
+        }
         return guardrail;
     }
     /**

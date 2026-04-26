@@ -681,6 +681,135 @@ describe("GuardrailStore", () => {
   });
 });
 
+// ── GuardrailStore atomic write resilience (Phase 2.8 backport) ──────
+// Mirrors src/risk/saved-searches-store.ts rollback semantics: if save()
+// throws (ENOSPC, EISDIR, EROFS, EDQUOT, perms), in-memory state must roll
+// back so it never diverges from disk. For a security-boundary store like
+// guardrails, divergence is worse than for UI state — a phantom guardrail
+// could match live tool calls until the next gateway restart.
+//
+// We provoke a real EISDIR by pre-creating a directory at the temp-write
+// path; vitest's ESM module-namespace lock prevents spying on fs directly.
+
+describe("GuardrailStore — atomic write resilience", () => {
+  let tmpDir: string;
+  let filePath: string;
+  let store: GuardrailStore;
+
+  function makeGuardrail(overrides?: Partial<Guardrail>): Guardrail {
+    return {
+      id: GuardrailStore.generateId(),
+      tool: "exec",
+      identityKey: "curl https://example.com",
+      matchMode: "exact",
+      action: { type: "block" },
+      agentId: "alpha",
+      createdAt: new Date().toISOString(),
+      source: { toolCallId: "tc-001", sessionKey: "sess-001", agentId: "alpha" },
+      description: "exec — curl https://example.com",
+      riskScore: 55,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-gr-rollback-"));
+    filePath = path.join(tmpDir, "guardrails.json");
+    store = new GuardrailStore(filePath);
+    store.load();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("add() rolls back the in-memory push when save() throws — list and disk both reflect only the survivor", () => {
+    const survivor = makeGuardrail({ identityKey: "survivor" });
+    store.add(survivor);
+    expect(store.list()).toHaveLength(1);
+
+    const tmpPath = `${filePath}.tmp`;
+    fs.mkdirSync(tmpPath); // writeFileSync(tmpPath, …) now throws EISDIR
+    try {
+      expect(() => store.add(makeGuardrail({ identityKey: "doomed" }))).toThrow();
+    } finally {
+      fs.rmdirSync(tmpPath);
+    }
+
+    expect(store.list()).toHaveLength(1);
+    expect(store.list()[0].identityKey).toBe("survivor");
+
+    // The doomed entry must not be reachable through the index either —
+    // otherwise match()/peek() would return a phantom guardrail until the
+    // next restart.
+    expect(store.findExact("alpha", "exec", "doomed")).toBeNull();
+    expect(store.findExact("alpha", "exec", "survivor")).not.toBeNull();
+
+    // Disk and memory match.
+    const reload = new GuardrailStore(filePath);
+    reload.load();
+    expect(reload.list()).toHaveLength(1);
+    expect(reload.list()[0].identityKey).toBe("survivor");
+  });
+
+  it("remove() rolls back the splice and the index when save() throws", () => {
+    const a = makeGuardrail({ identityKey: "a" });
+    const b = makeGuardrail({ identityKey: "b" });
+    store.add(a);
+    store.add(b);
+
+    const tmpPath = `${filePath}.tmp`;
+    fs.mkdirSync(tmpPath);
+    try {
+      expect(() => store.remove(a.id)).toThrow();
+    } finally {
+      fs.rmdirSync(tmpPath);
+    }
+
+    expect(store.list()).toHaveLength(2);
+    // Insertion order preserved — list() returns a fresh copy, but the
+    // restored splice must put 'a' back at its original position.
+    expect(store.list().map((g) => g.identityKey)).toEqual(["a", "b"]);
+
+    // Index must be rebuilt — both entries reachable via findExact.
+    expect(store.findExact("alpha", "exec", "a")).not.toBeNull();
+    expect(store.findExact("alpha", "exec", "b")).not.toBeNull();
+
+    const reload = new GuardrailStore(filePath);
+    reload.load();
+    expect(reload.list()).toHaveLength(2);
+  });
+
+  it("update() rolls back action AND agentId mutations when save() throws", () => {
+    const g = makeGuardrail({ identityKey: "u", action: { type: "block" }, agentId: "alpha" });
+    store.add(g);
+
+    const tmpPath = `${filePath}.tmp`;
+    fs.mkdirSync(tmpPath);
+    try {
+      expect(() =>
+        store.update(g.id, { action: { type: "require_approval" }, agentId: "beta" }),
+      ).toThrow();
+    } finally {
+      fs.rmdirSync(tmpPath);
+    }
+
+    // Both fields restored to their pre-update values.
+    const after = store.list()[0];
+    expect(after.action.type).toBe("block");
+    expect(after.agentId).toBe("alpha");
+
+    // Index restored: original (alpha, …) hits, attempted (beta, …) does not.
+    expect(store.findExact("alpha", "exec", "u")).not.toBeNull();
+    expect(store.findExact("beta", "exec", "u")).toBeNull();
+
+    const reload = new GuardrailStore(filePath);
+    reload.load();
+    expect(reload.list()[0].action.type).toBe("block");
+    expect(reload.list()[0].agentId).toBe("alpha");
+  });
+});
+
 // ── before_tool_call guardrail enforcement ───────────────────
 
 vi.mock("../src/risk/scorer", () => ({
