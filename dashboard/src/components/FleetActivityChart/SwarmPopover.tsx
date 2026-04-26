@@ -70,7 +70,17 @@ export default function SwarmPopover({ cluster, anchor, onClose, onNavigate }: P
         top,
         width: POPOVER_W,
         padding: "10px 12px",
+        // Surface treatment mirrors RiskMixPopover so all hover/click popovers
+        // share one visual language — opaque solid token + r-md radius +
+        // spring entry animation. Without the explicit backgroundColor the
+        // popover inherits .cl-card's translucent --cl-bg-02, which makes
+        // chart content bleed through and kills readability.
+        backgroundColor: "var(--cl-bg-popover)",
+        border: "1px solid var(--cl-border)",
+        borderRadius: "var(--cl-r-md)",
         boxShadow: "var(--cl-depth-pop)",
+        animation: "cl-pop-in 160ms cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        transformOrigin: "top center",
         zIndex: 30,
       }}
     >

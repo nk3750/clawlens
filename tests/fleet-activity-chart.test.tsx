@@ -362,6 +362,51 @@ describe("FleetActivityChart — click-through", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("uses the opaque --cl-bg-popover surface so chart content can't bleed through", () => {
+    // Without the explicit override, .cl-card's --cl-bg-02 (rgba 0.02) leaves
+    // the popover translucent over a busy chart, killing readability. Locks
+    // the popover to the same solid surface RiskMixPopover uses (issue
+    // raised after #19 landed — uniform popover treatment).
+    const base = Date.parse(NOW) - 30 * 60_000;
+    const entries: EntryResponse[] = [
+      mkEntry({ category: "scripts", timestamp: new Date(base).toISOString(), toolCallId: "a" }),
+      mkEntry({
+        category: "scripts",
+        timestamp: new Date(base + 100).toISOString(),
+        toolCallId: "b",
+      }),
+    ];
+    const { container } = renderChart({ entries });
+    const cluster = container.querySelector(
+      '[data-cl-swarm-dot][data-cl-swarm-cluster="true"]',
+    ) as SVGGElement | null;
+    if (!cluster) throw new Error("cluster not rendered");
+    act(() => {
+      fireEvent.click(cluster);
+    });
+    const popover = document.querySelector<HTMLElement>("[data-cl-swarm-popover]");
+    expect(popover).not.toBeNull();
+    expect(popover?.style.backgroundColor).toContain("var(--cl-bg-popover)");
+  });
+
+  it("uses the cl-pop-in keyframe + spring easing — matches RiskMixPopover entry feel", () => {
+    const base = Date.parse(NOW) - 30 * 60_000;
+    const entries: EntryResponse[] = [
+      mkEntry({ category: "git", timestamp: new Date(base).toISOString(), toolCallId: "a" }),
+      mkEntry({ category: "git", timestamp: new Date(base + 100).toISOString(), toolCallId: "b" }),
+    ];
+    const { container } = renderChart({ entries });
+    const cluster = container.querySelector(
+      '[data-cl-swarm-dot][data-cl-swarm-cluster="true"]',
+    ) as SVGGElement | null;
+    if (!cluster) throw new Error("cluster not rendered");
+    act(() => {
+      fireEvent.click(cluster);
+    });
+    const popover = document.querySelector<HTMLElement>("[data-cl-swarm-popover]");
+    expect(popover?.style.animation).toContain("cl-pop-in");
+  });
+
   it("navigates when a popover row is clicked", () => {
     const base = Date.parse(NOW) - 30 * 60_000;
     const entries: EntryResponse[] = [
