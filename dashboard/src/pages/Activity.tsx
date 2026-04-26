@@ -252,6 +252,10 @@ export default function Activity() {
             filters={filters}
             entries={entries}
             totalCount={countBasis.length}
+            // SSE prepends can grow countBasis past 200 (capped at
+            // COUNT_BASIS_MAX). >= keeps the floor signal correct in
+            // either case.
+            totalCountAtCap={countBasis.length >= COUNT_BASIS_LIMIT}
             newIds={newIds}
             paused={paused}
             hasMore={hasMore}

@@ -129,3 +129,40 @@ describe("Activity — Load more pagination", () => {
     expect(screen.queryByTestId("load-more-btn")).toBeNull();
   });
 });
+
+describe("Activity — Y floor label when count basis is at saturation", () => {
+  it("renders 'of 200+ actions' when count basis fetch returns the full 200-cap", async () => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/api/agents")) return jsonResp([]);
+      if (url.includes("limit=200")) {
+        // Saturated count basis — Y is a floor, not a ceiling.
+        return jsonResp(Array.from({ length: 200 }, (_, i) => entry(i)));
+      }
+      if (url.includes("limit=50")) return jsonResp(FIRST_PAGE);
+      return jsonResp([]);
+    });
+    mountActivity();
+    await waitFor(() =>
+      expect(screen.getByTestId("feed-count").textContent).toMatch(/of 200\+ actions/),
+    );
+  });
+
+  it("renders plain 'of 50 actions' (no +) when count basis is below the cap", async () => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/api/agents")) return jsonResp([]);
+      if (url.includes("limit=200")) {
+        return jsonResp(Array.from({ length: 50 }, (_, i) => entry(i)));
+      }
+      if (url.includes("limit=50")) return jsonResp(Array.from({ length: 12 }, (_, i) => entry(i)));
+      return jsonResp([]);
+    });
+    mountActivity();
+    await waitFor(() =>
+      expect(screen.getByTestId("feed-count").textContent).toMatch(/of 50 actions/),
+    );
+    // Negative: must not have a + appended to the count basis Y.
+    expect(screen.getByTestId("feed-count").textContent).not.toMatch(/of 50\+/);
+  });
+});

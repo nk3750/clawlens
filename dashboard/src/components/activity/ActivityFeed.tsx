@@ -11,6 +11,13 @@ interface Props {
   entries: EntryResponse[];
   /** Broader population for the "X of Y actions" denominator (24h count basis). */
   totalCount: number;
+  /**
+   * True when `totalCount` is at the count-basis fetch cap — the gateway
+   * may have more entries in the 24h window than were sampled. Renders Y
+   * as a floor (`200+`) instead of a ceiling (`200`). Required (no
+   * default) so a future refactor can't silently drop the floor signal.
+   */
+  totalCountAtCap: boolean;
   /** Set of toolCallId/timestamp keys that arrived via SSE within the last ~1.8s. */
   newIds: Set<string>;
   paused: boolean;
@@ -48,6 +55,7 @@ export default function ActivityFeed({
   filters,
   entries,
   totalCount,
+  totalCountAtCap,
   newIds,
   paused,
   hasMore,
@@ -121,7 +129,9 @@ export default function ActivityFeed({
           style={{ fontSize: 12, color: "var(--cl-text-secondary)", fontFeatureSettings: '"tnum"' }}
         >
           <span style={{ color: "var(--cl-text-primary)" }}>{entries.length}</span>
-          <span style={{ color: "var(--cl-text-muted)" }}> of {totalCount} actions</span>
+          <span style={{ color: "var(--cl-text-muted)" }}>
+            {` of ${totalCount}${totalCountAtCap ? "+" : ""} actions`}
+          </span>
         </span>
       </div>
 
