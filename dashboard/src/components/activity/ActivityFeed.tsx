@@ -14,11 +14,16 @@ interface Props {
   /** Set of toolCallId/timestamp keys that arrived via SSE within the last ~1.8s. */
   newIds: Set<string>;
   paused: boolean;
+  /** True while another page is available (last fetched page filled the window). */
+  hasMore: boolean;
+  /** True while a Load-more fetch is in flight. */
+  loadingMore: boolean;
   onTogglePause: () => void;
   onClear: (key: keyof Filters) => void;
   onClearAll: () => void;
   /** Inline filter chip clicks from rows. */
   onChip: (key: "agent" | "tier", value: string) => void;
+  onLoadMore: () => void;
 }
 
 interface HourGroup {
@@ -45,10 +50,13 @@ export default function ActivityFeed({
   totalCount,
   newIds,
   paused,
+  hasMore,
+  loadingMore,
   onTogglePause,
   onClear,
   onClearAll,
   onChip,
+  onLoadMore,
 }: Props) {
   const grouped = useMemo(() => groupByHour(entries), [entries]);
 
@@ -193,6 +201,33 @@ export default function ActivityFeed({
           </div>
         </div>
       ))}
+
+      {/* Load more — paginates the displayed feed. Hidden once the API
+          returns a partial page (<DISPLAYED_LIMIT) or while the feed is empty. */}
+      {entries.length > 0 && hasMore && (
+        <button
+          type="button"
+          data-testid="load-more-btn"
+          onClick={onLoadMore}
+          disabled={loadingMore}
+          style={{
+            width: "100%",
+            marginTop: 16,
+            padding: "12px",
+            fontSize: 13,
+            fontFamily: "var(--cl-font-sans)",
+            color: "var(--cl-text-muted)",
+            background: "transparent",
+            border: "1px solid var(--cl-border-subtle)",
+            borderRadius: 12,
+            cursor: loadingMore ? "default" : "pointer",
+            opacity: loadingMore ? 0.5 : 1,
+            transition: "background var(--cl-dur-fast) var(--cl-ease)",
+          }}
+        >
+          {loadingMore ? "Loading…" : "Load more"}
+        </button>
+      )}
 
       <style>{`
         @keyframes row-flash {

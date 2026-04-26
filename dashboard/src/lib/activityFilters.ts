@@ -137,6 +137,17 @@ export function activeFilterCount(filters: Filters): number {
 }
 
 /**
+ * Prepend `item` to the front of `prev` and trim the tail to at most `max`
+ * entries. Pure, generic, side-effect free — used by the SSE handler to keep
+ * the count basis from growing unbounded over a long-running tab session.
+ * `max <= 0` returns an empty array (defensive — caller bug, but no crash).
+ */
+export function prependCapped<T>(prev: T[], item: T, max: number): T[] {
+  if (max <= 0) return [];
+  return [item, ...prev].slice(0, max);
+}
+
+/**
  * A preset is "active" iff its filter shape exactly equals current
  * filters — every key matches and there are no extras. Empty-string
  * values count as absent (so `{ tier: "high", agent: "" }` matches the

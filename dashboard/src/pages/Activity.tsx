@@ -11,14 +11,24 @@ import {
   filtersToSearchParams,
   matchesFilters,
   parseFiltersFromURL,
+  prependCapped,
   tierToRiskTier,
   type Filters,
 } from "../lib/activityFilters";
 import type { AgentInfo, EntryResponse } from "../lib/types";
 
+const API_BASE = "/plugins/clawlens";
 const DISPLAYED_LIMIT = 50;
 const COUNT_BASIS_LIMIT = 200;
+/** Cap on the count basis array so a long-running tab doesn't grow it without bound. */
+const COUNT_BASIS_MAX = 500;
 const NEW_FLASH_MS = 1800;
+/** Default time window for the displayed feed when ?since= is absent. Aligns
+ * with the count-basis fetch (also 24h) so the header's "X of Y actions"
+ * reads coherently in default state. Operators widen via the rail's time
+ * group or ?since= URL — no other UI affordance.
+ */
+const DEFAULT_SINCE = "24h";
 
 /**
  * Build the API query string for the displayed feed. URL `tier` translates
@@ -36,7 +46,9 @@ function buildEntriesQuery(filters: Filters, limit: number, offset: number): str
   const rt = tierToRiskTier(filters.tier);
   if (rt) p.set("riskTier", rt);
   if (filters.decision) p.set("decision", filters.decision);
-  if (filters.since) p.set("since", filters.since);
+  // Default the displayed feed to the count-basis window (24h) when the
+  // operator hasn't picked a time. Keeps "X of Y actions" coherent.
+  p.set("since", filters.since ?? DEFAULT_SINCE);
   return p.toString();
 }
 
@@ -70,9 +82,24 @@ export default function Activity() {
   const [entries, setEntries] = useState<EntryResponse[]>([]);
   const [countBasis, setCountBasis] = useState<EntryResponse[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Reset pagination on filter change. Lives on its own useEffect so it
+  // doesn't piggyback on the setEntries effect — the displayedQuery dep
+  // captures filter mutations directly and keeps offset in lockstep.
+  useEffect(() => {
+    setOffset(0);
+    setHasMore(true);
+  }, [displayedQuery]);
 
   useEffect(() => {
-    if (initialDisplayed) setEntries(initialDisplayed);
+    if (initialDisplayed) {
+      setEntries(initialDisplayed);
+      setOffset(initialDisplayed.length);
+      setHasMore(initialDisplayed.length >= DISPLAYED_LIMIT);
+    }
   }, [initialDisplayed]);
 
   useEffect(() => {
@@ -92,11 +119,12 @@ export default function Activity() {
     }, []),
   );
 
-  // Helper: prepend an SSE entry to count basis (always) and to the
-  // displayed feed (only when it matches the active filters). Animation
-  // tracking is scoped to the displayed feed prepend.
+  // Helper: prepend an SSE entry to count basis (always, capped via
+  // sliding window) and to the displayed feed (only when it matches the
+  // active filters). Animation tracking is scoped to the displayed-feed
+  // prepend.
   const applyLiveEntry = useCallback((raw: EntryResponse) => {
-    setCountBasis((prev) => [raw, ...prev]);
+    setCountBasis((prev) => prependCapped(prev, raw, COUNT_BASIS_MAX));
     if (!matchesFilters(raw, filtersRef.current)) return;
     const id = raw.toolCallId || raw.timestamp;
     setEntries((prev) => [raw, ...prev]);
@@ -168,6 +196,29 @@ export default function Activity() {
 
   const togglePause = useCallback(() => setPaused((p) => !p), []);
 
+  // ─── Pagination — Load more handler ──────────────────────
+  // Raw fetch (not useApi) so the next page appends instead of replacing.
+  // useApi already issued the first 50 on mount; loadMore runs from offset
+  // = current entries.length onward. Errors leave hasMore alone so the
+  // operator can retry by clicking Load more again.
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const url = `${API_BASE}/api/entries?${buildEntriesQuery(filters, DISPLAYED_LIMIT, offset)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const more = (await res.json()) as EntryResponse[];
+      setEntries((prev) => [...prev, ...more]);
+      setOffset((prev) => prev + more.length);
+      setHasMore(more.length >= DISPLAYED_LIMIT);
+    } catch {
+      // Surface as toast in Phase 2.5; for now leave hasMore alone.
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filters, offset, loadingMore, hasMore]);
+
   return (
     <div className="page-enter" style={{ minHeight: "100vh" }}>
       <PresetBar filters={filters} onSelect={handlePreset} />
@@ -203,10 +254,13 @@ export default function Activity() {
             totalCount={countBasis.length}
             newIds={newIds}
             paused={paused}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
             onTogglePause={togglePause}
             onClear={handleClear}
             onClearAll={handleClearAll}
             onChip={handleChip}
+            onLoadMore={loadMore}
           />
         )}
       </div>

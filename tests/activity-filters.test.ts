@@ -8,6 +8,7 @@ import {
   matchesFilters,
   PRESETS,
   parseFiltersFromURL,
+  prependCapped,
   presetMatches,
   tierToRiskTier,
 } from "../dashboard/src/lib/activityFilters";
@@ -312,6 +313,46 @@ describe("PRESETS", () => {
       since: "24h",
     });
     expect(PRESETS.find((p) => p.id === "last-hour")?.filters).toEqual({ since: "1h" });
+  });
+});
+
+describe("prependCapped", () => {
+  it("prepends the item to the front of the array", () => {
+    expect(prependCapped([2, 3], 1, 10)).toEqual([1, 2, 3]);
+  });
+
+  it("caps total length at max (drops the tail)", () => {
+    expect(prependCapped([2, 3, 4], 1, 3)).toEqual([1, 2, 3]);
+  });
+
+  it("max=1 returns only the new item", () => {
+    expect(prependCapped([2, 3], 1, 1)).toEqual([1]);
+  });
+
+  it("max=0 returns an empty array", () => {
+    expect(prependCapped([1, 2], 9, 0)).toEqual([]);
+  });
+
+  it("max larger than length is a no-op cap", () => {
+    expect(prependCapped([], 1, 100)).toEqual([1]);
+    expect(prependCapped([2, 3], 1, 100)).toEqual([1, 2, 3]);
+  });
+
+  it("does not mutate the prev array", () => {
+    const prev = [1, 2, 3];
+    const out = prependCapped(prev, 0, 10);
+    expect(prev).toEqual([1, 2, 3]);
+    expect(out).not.toBe(prev);
+  });
+
+  it("caps a long stream by sliding window (count basis use case — cap=500)", () => {
+    let arr: number[] = [];
+    for (let i = 0; i < 600; i++) arr = prependCapped(arr, i, 500);
+    expect(arr).toHaveLength(500);
+    // Newest at front (last item we pushed was 599).
+    expect(arr[0]).toBe(599);
+    // Oldest survivor is item 100; everything below got dropped.
+    expect(arr[arr.length - 1]).toBe(100);
   });
 });
 

@@ -83,6 +83,19 @@ describe("Activity — URL → filter state seeding", () => {
     });
   });
 
+  it("first /api/entries call defaults to since=24h when no filters are set", async () => {
+    renderActivityAt("/activity");
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+      // Find the displayed-feed call (limit=50). The count-basis call uses
+      // limit=200; we only care about the displayed feed here.
+      const entriesCall = calls.find((u) => u.includes("/api/entries") && u.includes("limit=50"));
+      expect(entriesCall).toBeDefined();
+      expect(entriesCall!).toContain("since=24h");
+    });
+  });
+
   it("renders no active-filter strip when URL is empty", async () => {
     renderActivityAt("/activity");
     await waitFor(() => expect(screen.queryByTestId("active-filter-strip")).toBeNull());
