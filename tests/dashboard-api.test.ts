@@ -10,6 +10,7 @@ import {
   getEffectiveDecision,
   getEffectiveTier,
   getRecentEntries,
+  mapEntry,
   resolveSplitKeyForEntry,
 } from "../src/dashboard/api";
 import {
@@ -156,6 +157,69 @@ describe("getEffectiveTier", () => {
     delete raw.riskScore;
     delete raw.decision;
     expect(getEffectiveTier(raw, new Map())).toBeUndefined();
+  });
+});
+
+describe("mapEntry — riskTier", () => {
+  // Regression lock for #32: mapEntry's riskTier must agree with
+  // getEffectiveTier so the filter side (post-#31) and response side surface
+  // the same tier label. Otherwise unscored approval_required / block entries
+  // pass the filter but come out null in the response (and over the SSE feed
+  // at routes.ts:496, where 5+ frontend components read entry.riskTier
+  // directly).
+  it("returns 'high' for an approval_required entry with no raw tier and no eval", () => {
+    const raw = entry({
+      toolCallId: "tc-pending",
+      decision: "approval_required",
+    });
+    delete raw.riskTier;
+    const result = mapEntry(raw, new Map());
+    expect(result.riskTier).toBe("high");
+  });
+
+  it("returns 'critical' for a block entry with no raw tier and no eval", () => {
+    const raw = entry({
+      toolCallId: "tc-blocked",
+      decision: "block",
+    });
+    delete raw.riskTier;
+    const result = mapEntry(raw, new Map());
+    expect(result.riskTier).toBe("critical");
+  });
+
+  it("uses eval entry's riskTier when present (LLM-adjusted wins)", () => {
+    const raw = entry({
+      toolCallId: "tc-eval",
+      decision: "allow",
+      riskTier: "high",
+    });
+    const evalRow = entry({
+      timestamp: "2026-04-25T12:00:01Z",
+      toolName: "__llm_evaluation__",
+      refToolCallId: "tc-eval",
+      riskTier: "low",
+      llmEvaluation: {
+        adjustedScore: 10,
+        reasoning: "downgraded",
+        tags: [],
+        confidence: "high",
+        patterns: [],
+      },
+    });
+    const evalIdx = new Map([["tc-eval", evalRow]]);
+    const result = mapEntry(raw, evalIdx);
+    expect(result.riskTier).toBe("low");
+  });
+
+  it("falls back to raw entry's riskTier when no eval and no decision fallback applies", () => {
+    const raw = entry({
+      toolCallId: "tc-raw",
+      decision: "allow",
+      riskScore: 35,
+      riskTier: "medium",
+    });
+    const result = mapEntry(raw, new Map());
+    expect(result.riskTier).toBe("medium");
   });
 });
 

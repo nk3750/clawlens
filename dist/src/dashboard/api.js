@@ -129,7 +129,12 @@ export function mapEntry(entry, evalIndex, guardrailStore) {
         durationMs: entry.durationMs,
         riskScore: llmEval ? llmEval.adjustedScore : entry.riskScore,
         originalRiskScore: llmEval ? entry.riskScore : undefined,
-        riskTier: evalEntry?.riskTier ?? entry.riskTier,
+        // Route through getEffectiveTier so the response surface matches the
+        // filter side (see #31). Decision-based fallbacks (block → critical,
+        // approval_required → high) now fire here too — closes the gap where
+        // unscored gated entries went out as riskTier: null while the filter
+        // (correctly) bucketed them as high/critical.
+        riskTier: getEffectiveTier(entry, evalIndex ?? new Map()),
         riskTags: evalEntry?.riskTags ?? entry.riskTags,
         llmEvaluation: llmEval,
         agentId: entry.agentId,
