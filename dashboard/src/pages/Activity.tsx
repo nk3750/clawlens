@@ -237,6 +237,7 @@ export default function Activity() {
           countBasis={countBasis}
           onSelect={handleSelect}
           onClear={handleClear}
+          onApplyFilters={writeFilters}
         />
 
         {displayedError && entries.length === 0 ? (

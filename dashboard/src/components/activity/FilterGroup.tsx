@@ -9,6 +9,12 @@ interface Props {
   cleared: boolean;
   onClear: () => void;
   children: React.ReactNode;
+  /**
+   * Optional control rendered right of the chevron+label, before the CLEAR
+   * link. Used by the saved-searches group for its `+` save button; existing
+   * groups pass nothing and render unchanged.
+   */
+  headerAction?: React.ReactNode;
 }
 
 /**
@@ -24,6 +30,7 @@ export default function FilterGroup({
   cleared,
   onClear,
   children,
+  headerAction,
 }: Props) {
   return (
     <div data-testid={`filter-group-${groupKey}`} style={{ marginBottom: 12 }}>
@@ -72,6 +79,7 @@ export default function FilterGroup({
             {label}
           </span>
         </button>
+        {headerAction}
         {cleared && (
           <button
             type="button"

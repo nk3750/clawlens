@@ -5,6 +5,7 @@ import { countWith, type Filters } from "../../lib/activityFilters";
 import type { ActivityCategory, AgentInfo, EntryResponse, RiskTier } from "../../lib/types";
 import FilterGroup from "./FilterGroup";
 import FilterRow from "./FilterRow";
+import SavedSearchesGroup from "./SavedSearchesGroup";
 
 interface Props {
   filters: Filters;
@@ -18,6 +19,11 @@ interface Props {
   countBasis: EntryResponse[];
   onSelect: (key: keyof Filters, value: string) => void;
   onClear: (key: keyof Filters) => void;
+  /**
+   * Replace the entire filter set in one shot. Used by the saved-searches
+   * group: clicking a saved row applies its full filter combo at once.
+   */
+  onApplyFilters: (next: Filters) => void;
 }
 
 const TIER_ORDER: RiskTier[] = ["critical", "high", "medium", "low"];
@@ -52,6 +58,7 @@ export default function FilterRail({
   countBasis,
   onSelect,
   onClear,
+  onApplyFilters,
 }: Props) {
   const [filterSearch, setFilterSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<GroupKey, boolean>>({
@@ -151,6 +158,12 @@ export default function FilterRail({
           }}
         />
       </div>
+
+      <SavedSearchesGroup
+        filters={filters}
+        countBasis={countBasis}
+        onApplyFilters={onApplyFilters}
+      />
 
       <FilterGroup
         groupKey="agent"

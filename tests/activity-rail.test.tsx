@@ -83,6 +83,7 @@ const COUNT_BASIS: EntryResponse[] = [
 function setup(initial?: Partial<Filters>) {
   const onSelect = vi.fn();
   const onClear = vi.fn();
+  const onApplyFilters = vi.fn();
   const utils = render(
     <FilterRail
       filters={initial ?? {}}
@@ -90,9 +91,10 @@ function setup(initial?: Partial<Filters>) {
       countBasis={COUNT_BASIS}
       onSelect={onSelect}
       onClear={onClear}
+      onApplyFilters={onApplyFilters}
     />,
   );
-  return { ...utils, onSelect, onClear };
+  return { ...utils, onSelect, onClear, onApplyFilters };
 }
 
 describe("FilterRail — group rendering", () => {
