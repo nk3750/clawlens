@@ -21,6 +21,17 @@ export declare class GuardrailStore {
     match(agentId: string, tool: string, identityKey: string): Guardrail | null;
     /** Read-only match — checks for a matching guardrail without side effects. */
     peek(agentId: string, tool: string, identityKey: string): Guardrail | null;
+    /**
+     * Exact lookup by the storage tuple (agentId, tool, identityKey). Unlike
+     * match() / peek(), this does NOT fall through to global — it returns only
+     * the guardrail stored at the *exact* scope. Used by the create endpoint
+     * to enforce idempotency (a global guardrail and an agent-scoped guardrail
+     * for the same tool+key are distinct rows).
+     *
+     * Mirrors indexOne()'s null→"*" translation so the lookup hits the same
+     * key add() registered under.
+     */
+    findExact(agentId: string | null, tool: string, identityKey: string): Guardrail | null;
     /** List guardrails, optionally filtered by agentId. */
     list(filters?: {
         agentId?: string;

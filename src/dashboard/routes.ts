@@ -116,6 +116,18 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         }
         const identityKey = extractIdentityKey(entry.toolName, entry.params);
         const agentId = agentScope === "global" ? null : (entry.agentId ?? null);
+
+        // Idempotency: if a guardrail already exists at the exact (agentId,
+        // tool, identityKey) tuple, return it without duplicating. This
+        // protects against operator double-clicks and SSE-driven retries.
+        // Action-of-record is the existing guardrail's action — operators
+        // who want to change it should edit the row in /guardrails.
+        const existing = deps.guardrailStore.findExact(agentId, entry.toolName, identityKey);
+        if (existing) {
+          sendJson(res, { ...existing, existing: true });
+          return true;
+        }
+
         const describeAction = (tn: string, p: Record<string, unknown>) => {
           const val =
             typeof p.command === "string"
@@ -146,7 +158,7 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
           riskScore: entry.riskScore ?? 0,
         };
         deps.guardrailStore.add(guardrail);
-        sendJson(res, guardrail);
+        sendJson(res, { ...guardrail, existing: false });
         return true;
       }
 

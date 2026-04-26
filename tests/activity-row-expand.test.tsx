@@ -379,14 +379,14 @@ describe("ActivityRow — expanded panel buttons", () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it("add-guardrail button in expanded panel is disabled with title='not yet implemented'", () => {
+  it("add-guardrail button in expanded panel is enabled with title='add guardrail' (Phase 2.6)", () => {
     renderRow({ isExpanded: true });
     const btn = screen.getByTestId("activity-row-expanded-add-guardrail") as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    expect(btn.title).toBe("not yet implemented");
+    expect(btn.disabled).toBe(false);
+    expect(btn.title).toBe("add guardrail");
   });
 
-  it("clicking the disabled add-guardrail in the expanded panel does not toggle the row", () => {
+  it("clicking the add-guardrail in the expanded panel does not toggle the row", () => {
     const onToggleExpand = vi.fn();
     renderRow({ isExpanded: true, onToggleExpand });
     const btn = screen.getByTestId("activity-row-expanded-add-guardrail") as HTMLButtonElement;
@@ -459,16 +459,16 @@ describe("ActivityRow — hover quick-actions", () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it("add-guardrail quick-action is disabled with title='not yet implemented'", () => {
+  it("add-guardrail quick-action is enabled with title='add guardrail' (Phase 2.6)", () => {
     renderRow();
     fireEvent.mouseEnter(screen.getByTestId("activity-row-root"));
     const qa = screen.getByTestId("activity-row-quick-actions");
     const btn = within(qa).getByTestId("activity-row-quick-add-guardrail") as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    expect(btn.title).toBe("not yet implemented");
+    expect(btn.disabled).toBe(false);
+    expect(btn.title).toBe("add guardrail");
   });
 
-  it("clicking the disabled add-guardrail quick-action does not toggle the row", () => {
+  it("clicking the add-guardrail quick-action does not toggle the row", () => {
     const onToggleExpand = vi.fn();
     renderRow({ onToggleExpand });
     fireEvent.mouseEnter(screen.getByTestId("activity-row-root"));

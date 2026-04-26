@@ -4,6 +4,7 @@ import { describeEntry } from "../../lib/groupEntries";
 import type { EntryResponse } from "../../lib/types";
 import GradientAvatar from "../GradientAvatar";
 import DecisionBadge from "../DecisionBadge";
+import GuardrailModal from "../GuardrailModal";
 import ActivityRowExpanded from "./ActivityRowExpanded";
 import RowQuickActions from "./RowQuickActions";
 
@@ -47,6 +48,10 @@ export default function ActivityRow({
   onToggleExpand,
 }: Props) {
   const [hovered, setHovered] = useState(false);
+  // Phase 2.6: ActivityRow owns the GuardrailModal state so the modal can be
+  // opened from either the hover quick-action OR the expanded panel button,
+  // and survives a hover-out (which unmounts RowQuickActions).
+  const [showGuardrailModal, setShowGuardrailModal] = useState(false);
 
   const tier = entry.riskTier;
   const tierColor = tier ? riskColorRaw(tier) : undefined;
@@ -173,7 +178,12 @@ export default function ActivityRow({
         </span>
 
         {/* Hover quick-actions — only when not expanded */}
-        {showQuickActions && <RowQuickActions entry={entry} />}
+        {showQuickActions && (
+          <RowQuickActions
+            entry={entry}
+            onAddGuardrail={() => setShowGuardrailModal(true)}
+          />
+        )}
 
         {/* Inline tags (max 2) */}
         {tags.slice(0, 2).map((tag) => (
@@ -273,7 +283,21 @@ export default function ActivityRow({
         </span>
       </div>
 
-      {isExpanded && <ActivityRowExpanded entry={entry} />}
+      {isExpanded && (
+        <ActivityRowExpanded
+          entry={entry}
+          onAddGuardrail={() => setShowGuardrailModal(true)}
+        />
+      )}
+
+      {showGuardrailModal && (
+        <GuardrailModal
+          entry={entry}
+          description={describeEntry(entry)}
+          onClose={() => setShowGuardrailModal(false)}
+          onCreated={() => setShowGuardrailModal(false)}
+        />
+      )}
     </>
   );
 }

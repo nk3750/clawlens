@@ -6,6 +6,12 @@ import { toolString } from "./RowQuickActions";
 
 interface Props {
   entry: EntryResponse;
+  /**
+   * Phase 2.6: ActivityRow owns the GuardrailModal mount/unmount state so
+   * the same modal can be opened from either the hover quick-action or the
+   * expanded panel button. This callback bubbles the click up.
+   */
+  onAddGuardrail: () => void;
 }
 
 /**
@@ -17,7 +23,7 @@ interface Props {
  * All interactive controls stop event propagation so clicks don't toggle
  * the parent row's expanded state.
  */
-export default function ActivityRowExpanded({ entry }: Props) {
+export default function ActivityRowExpanded({ entry, onAddGuardrail }: Props) {
   const navigate = useNavigate();
   const sessionKey = entry.sessionKey;
   const command = toolString(entry);
@@ -25,11 +31,15 @@ export default function ActivityRowExpanded({ entry }: Props) {
   // React suppresses onClick on disabled <button>s; the surrounding panel
   // catches anything that bubbles up so disabled clicks never reach the row.
   const stopAny = (e: SyntheticEvent) => e.stopPropagation();
-  const stopBtn = (e: MouseEvent<HTMLButtonElement>) => e.stopPropagation();
 
   const handleCopy = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     navigator.clipboard?.writeText(command);
+  };
+
+  const handleAddGuardrail = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onAddGuardrail();
   };
 
   const handleOpenSession = (e: MouseEvent<HTMLButtonElement>) => {
@@ -58,10 +68,9 @@ export default function ActivityRowExpanded({ entry }: Props) {
           type="button"
           data-testid="activity-row-expanded-add-guardrail"
           className="cl-btn cl-btn-primary"
-          disabled
-          title="not yet implemented"
-          onClick={stopBtn}
-          style={{ height: 26, fontSize: 12, cursor: "not-allowed" }}
+          title="add guardrail"
+          onClick={handleAddGuardrail}
+          style={{ height: 26, fontSize: 12 }}
         >
           add guardrail
         </button>

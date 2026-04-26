@@ -4,6 +4,13 @@ import type { EntryResponse } from "../../lib/types";
 
 interface Props {
   entry: EntryResponse;
+  /**
+   * Phase 2.6: ActivityRow owns the GuardrailModal mount/unmount state so
+   * the modal survives a hover-out (which unmounts this strip). When the
+   * shield is clicked, we propagate up via this callback instead of
+   * managing modal state locally.
+   */
+  onAddGuardrail: () => void;
 }
 
 /**
@@ -11,20 +18,20 @@ interface Props {
  * the tool text and the inline tag pills in an activity row. Each button
  * stops propagation so clicking it never toggles the parent row's expanded
  * state (Phase 2.2 — see activity-page-overhaul-spec.md §2.2).
- *
- * The add-guardrail button ships disabled in 2.2 with title="not yet
- * implemented"; Phase 2.6 wires it to the real guardrail-creation flow.
  */
-export default function RowQuickActions({ entry }: Props) {
+export default function RowQuickActions({ entry, onAddGuardrail }: Props) {
   const navigate = useNavigate();
   const command = toolString(entry);
   const sessionKey = entry.sessionKey;
 
-  const stop = (e: MouseEvent<HTMLButtonElement>) => e.stopPropagation();
-
   const handleCopy = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     navigator.clipboard?.writeText(command);
+  };
+
+  const handleAddGuardrail = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onAddGuardrail();
   };
 
   const handleOpenSession = (e: MouseEvent<HTMLButtonElement>) => {
@@ -35,9 +42,9 @@ export default function RowQuickActions({ entry }: Props) {
   return (
     <span
       data-testid="activity-row-quick-actions"
-      // React suppresses onClick on disabled <button>s, so the wrapper has to
-      // catch any click that bubbles up from a disabled child (e.g. the
-      // placeholder add-guardrail button) before it reaches the row root.
+      // React suppresses onClick on disabled <button>s, so the wrapper still
+      // catches anything that bubbles up from a disabled child (open-session
+      // when no sessionKey) before it reaches the row root.
       onClick={(e) => e.stopPropagation()}
       style={{ display: "inline-flex", gap: 4, flexShrink: 0 }}
     >
@@ -50,9 +57,8 @@ export default function RowQuickActions({ entry }: Props) {
       </QuickButton>
       <QuickButton
         testid="activity-row-quick-add-guardrail"
-        title="not yet implemented"
-        disabled
-        onClick={stop}
+        title="add guardrail"
+        onClick={handleAddGuardrail}
       >
         <ShieldIcon />
       </QuickButton>

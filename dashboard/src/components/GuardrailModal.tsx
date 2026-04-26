@@ -6,7 +6,14 @@ interface Props {
   entry: EntryResponse;
   description: string;
   onClose: () => void;
-  onCreated: () => void;
+  /**
+   * Fired after a successful POST. `result.existing` is true when the
+   * backend recognized the (agent, tool, identityKey) tuple and returned
+   * the original guardrail unchanged (idempotency). Callers that don't
+   * care about the distinction can declare `() => void` — TS allows
+   * fewer-arg handlers.
+   */
+  onCreated: (result: { existing: boolean }) => void;
 }
 
 const BASE = "/plugins/clawlens";
@@ -40,7 +47,8 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
         const body = await res.json().catch(() => ({}));
         throw new Error((body as Record<string, string>).error || `HTTP ${res.status}`);
       }
-      onCreated();
+      const body = (await res.json().catch(() => ({}))) as { existing?: boolean };
+      onCreated({ existing: body.existing === true });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create guardrail");
@@ -51,6 +59,7 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
 
   return (
     <div
+      data-testid="guardrail-modal"
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
