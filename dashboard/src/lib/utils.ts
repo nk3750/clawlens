@@ -371,6 +371,65 @@ export function deriveTags(entry: {
   return [...extra, ...base].slice(0, 3);
 }
 
+// ── Risk-tag → human sentence (Phase 2.2 expanded panel) ──
+//
+// Maps known riskTag tokens emitted by the scorer + LLM evaluator to short
+// human-readable sentences that surface the *why* behind a risk score in the
+// expanded row body. Unknown tags return null and are silently skipped — the
+// row already renders them as inline tag pills via deriveTags(), so omission
+// here just means "no extra prose for this tag".
+//
+// Mapping is exhaustive across what the gateway currently emits + the names
+// the spec calls out. Adding a new riskTag in the scorer? Add it here too if
+// it carries a meaning worth narrating in the panel.
+const RISK_TAG_SENTENCES: Record<string, string> = {
+  destructive: "Destructive operation.",
+
+  secret: "Credential surface accessed.",
+  credentials: "Credential surface accessed.",
+  "credential-abuse": "Credential surface accessed.",
+  "credential-misuse": "Credential surface accessed.",
+  "ssh-key-usage": "Credential surface accessed.",
+
+  "network-external": "External network call.",
+  "network-internal": "Internal network call.",
+  "network-local": "Internal network call.",
+
+  "git-write": "Modifies remote repository state.",
+
+  privileged: "Privileged execution.",
+  "privileged-execution": "Privileged execution.",
+  "privilege-escalation": "Privileged execution.",
+  "sudo-execution": "Privileged execution.",
+  "sudo-escalation": "Privileged execution.",
+
+  recon: "Reconnaissance pattern.",
+  reconnaissance: "Reconnaissance pattern.",
+  "reconnaissance-pattern": "Reconnaissance pattern.",
+  "host-recon": "Reconnaissance pattern.",
+
+  exfiltration: "Possible data exfiltration.",
+  "data-exfiltration": "Possible data exfiltration.",
+  "file-exfiltration": "Possible data exfiltration.",
+  "potential-exfiltration": "Possible data exfiltration.",
+
+  "remote-access": "Remote system access.",
+  "lateral-movement": "Lateral movement attempt.",
+
+  "pattern-escalation": "Risk pattern escalation.",
+
+  "persistence-attempt": "Persistence mechanism.",
+  "persistence-key": "Persistence mechanism.",
+  "persistence-risk": "Persistence mechanism.",
+  "persistent-execution": "Persistence mechanism.",
+  "background-persistence": "Persistence mechanism.",
+  "persistence-indicator": "Persistence mechanism.",
+};
+
+export function riskTagSentence(tag: string): string | null {
+  return RISK_TAG_SENTENCES[tag] ?? null;
+}
+
 // ── Entry icon selection ────────────────────────────────
 // Icon overrides for exec sub-categories. Non-exec tools use their
 // activity category icon from CATEGORY_META.

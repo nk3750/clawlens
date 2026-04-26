@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Filters } from "../../lib/activityFilters";
 import type { EntryResponse } from "../../lib/types";
 import ActiveFilterChips from "./ActiveFilterChips";
@@ -67,6 +67,14 @@ export default function ActivityFeed({
   onLoadMore,
 }: Props) {
   const grouped = useMemo(() => groupByHour(entries), [entries]);
+
+  // Single expanded row across the entire feed — clicking a different row
+  // collapses the previous one. Phase 2.2.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpanded = useCallback(
+    (id: string) => setExpandedId((prev) => (prev === id ? null : id)),
+    [],
+  );
 
   return (
     <div style={{ padding: "24px 32px", minWidth: 0 }}>
@@ -205,6 +213,8 @@ export default function ActivityFeed({
                   isNew={newIds.has(id)}
                   onChip={onChip}
                   isLastInGroup={i === group.rows.length - 1}
+                  isExpanded={expandedId === id}
+                  onToggleExpand={() => toggleExpanded(id)}
                 />
               );
             })}
