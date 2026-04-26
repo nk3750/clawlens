@@ -90,15 +90,16 @@ export default function Activity() {
     };
   }, [drawerOpen]);
 
-  // ESC closes the drawer. Skip when typing in an input/textarea so we don't
-  // hijack the user's expected escape-to-blur behavior.
+  // ESC closes the drawer. The handler is scoped to drawer-open via the
+  // `if (!drawerOpen) return` guard above, so it only fires when the drawer
+  // is the active modal — there's no other element that would conflict.
+  // Conventional dialog behavior: ESC dismisses regardless of focused
+  // element. (The drawer auto-focuses its rail search input on open, which
+  // would otherwise no-op an input/textarea guard.)
   useEffect(() => {
     if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
       setDrawerOpen(false);
     };
     document.addEventListener("keydown", onKey);
@@ -322,7 +323,7 @@ export default function Activity() {
   return (
     <div className="page-enter" style={{ minHeight: "100vh" }}>
       <div className={isCompact ? "scrollbar-hide" : undefined} style={presetWrapperStyle}>
-        <PresetBar filters={filters} onSelect={handlePreset} />
+        <PresetBar filters={filters} onSelect={handlePreset} isCompact={isCompact} />
       </div>
 
       <div

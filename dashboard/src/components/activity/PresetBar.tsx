@@ -3,6 +3,14 @@ import { PRESETS, presetMatches, type Filters, type Preset } from "../../lib/act
 interface Props {
   filters: Filters;
   onSelect: (preset: Preset) => void;
+  /**
+   * Phase 2.9 (#37) — compact viewport (≤768px). Switches the chip strip
+   * from wrap (multi-row) to nowrap (single horizontal-scroll line) per
+   * spec line 566. The parent (Activity.tsx) wraps this component in a
+   * `overflow-x: auto` + `scrollbar-hide` container so the strip scrolls
+   * cleanly without visible track chrome.
+   */
+  isCompact?: boolean;
 }
 
 /**
@@ -11,7 +19,7 @@ interface Props {
  * active preset paints with `cl-bg-04` background; inactive presets use the
  * `cl-pill` styling.
  */
-export default function PresetBar({ filters, onSelect }: Props) {
+export default function PresetBar({ filters, onSelect, isCompact = false }: Props) {
   return (
     <div
       data-testid="preset-bar"
@@ -19,7 +27,7 @@ export default function PresetBar({ filters, onSelect }: Props) {
         display: "flex",
         alignItems: "center",
         gap: 6,
-        flexWrap: "wrap",
+        flexWrap: isCompact ? "nowrap" : "wrap",
         padding: "12px 0",
       }}
     >

@@ -163,6 +163,37 @@ describe("Activity — desktop (1280px)", () => {
   });
 });
 
+describe("Activity — desktop just-above-drawer boundary (1025px)", () => {
+  it("at 1025px the layout stays desktop — no hamburger, HeaderMixBar present", async () => {
+    installViewport(1025);
+    renderActivity();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("activity-row-root").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByTestId("activity-drawer-toggle")).toBeNull();
+    expect(screen.getByTestId("header-mix-bar")).toBeInTheDocument();
+  });
+});
+
+describe("Activity — drawer at iPad Pro portrait (1024px)", () => {
+  it("at exactly 1024px drawer mode is active (acceptance #2)", async () => {
+    installViewport(1024);
+    renderActivity();
+    await waitFor(() => expect(screen.getByTestId("activity-drawer-toggle")).toBeInTheDocument());
+    expect(screen.queryByTestId("header-mix-bar")).toBeNull();
+    expect(screen.getByTestId("activity-grid").style.gridTemplateColumns).toBe("1fr");
+  });
+
+  it("inline tags are hidden at 1024px (spec line 559: <1024 hides tags)", async () => {
+    installViewport(1024);
+    renderActivity();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("activity-row-root").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryAllByTestId(/^activity-row-tag-/).length).toBe(0);
+  });
+});
+
 describe("Activity — drawer breakpoint (1023px)", () => {
   it("hamburger IN DOM, HeaderMixBar hidden, grid is 1fr", async () => {
     installViewport(1023);
@@ -171,6 +202,18 @@ describe("Activity — drawer breakpoint (1023px)", () => {
 
     expect(screen.queryByTestId("header-mix-bar")).toBeNull();
     expect(screen.getByTestId("activity-grid").style.gridTemplateColumns).toBe("1fr");
+  });
+
+  it("inline tags are hidden across the entire drawer range (1023px)", async () => {
+    installViewport(1023);
+    renderActivity();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("activity-row-root").length).toBeGreaterThan(0),
+    );
+    // Spec line 559: hide the 2 inline tags at <1024px. At 1023 LIVE-text
+    // is still visible (not yet compact) but tags must be gone.
+    expect(screen.queryAllByTestId(/^activity-row-tag-/).length).toBe(0);
+    expect(screen.getByTestId("live-pause-toggle").textContent ?? "").toMatch(/LIVE/);
   });
 
   it("hamburger toggle opens the drawer with FilterRail inside", async () => {
@@ -191,6 +234,27 @@ describe("Activity — drawer breakpoint (1023px)", () => {
     await screen.findByTestId("activity-drawer");
 
     fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("activity-drawer")).toBeNull());
+  });
+
+  it("ESC closes the drawer even when an input inside the drawer has focus", async () => {
+    // Phase 2.9 fix-up: drawer auto-focuses its first focusable on open
+    // (typically the search-within-filters input). The ESC handler must
+    // close the drawer regardless of focused element — ESC inside a modal
+    // dialog is the conventional dismiss key.
+    installViewport(768);
+    renderActivity();
+    fireEvent.click(await screen.findByTestId("activity-drawer-toggle"));
+    const drawer = await screen.findByTestId("activity-drawer");
+
+    // Focus an input inside the drawer (the rail's "search filters" input).
+    const inputs = drawer.querySelectorAll<HTMLInputElement>("input");
+    expect(inputs.length).toBeGreaterThan(0);
+    inputs[0].focus();
+    expect(document.activeElement?.tagName).toBe("INPUT");
+
+    // Fire ESC keydown from the focused input — drawer must close.
+    fireEvent.keyDown(inputs[0], { key: "Escape", bubbles: true });
     await waitFor(() => expect(screen.queryByTestId("activity-drawer")).toBeNull());
   });
 
@@ -217,6 +281,35 @@ describe("Activity — drawer breakpoint (1023px)", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByTestId("activity-drawer")).toBeNull());
     expect(document.body.style.overflow).toBe(initial);
+  });
+});
+
+describe("Activity — just-above-compact boundary (769px)", () => {
+  it("at 769px LIVE label is still visible (not yet compact, but still mobile)", async () => {
+    installViewport(769);
+    renderActivity();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("activity-row-root").length).toBeGreaterThan(0),
+    );
+    // 769 ≤ 1024 → drawer mode (hamburger present)
+    expect(screen.getByTestId("activity-drawer-toggle")).toBeInTheDocument();
+    // 769 > 768 → NOT compact → LIVE label visible
+    expect(screen.getByTestId("live-pause-toggle").textContent ?? "").toMatch(/LIVE/);
+  });
+});
+
+describe("Activity — compact at iPad Mini portrait (768px)", () => {
+  it("at exactly 768px compact UX is active (acceptance #3)", async () => {
+    installViewport(768);
+    renderActivity();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("activity-row-root").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByTestId("header-mix-bar")).toBeNull();
+    // LIVE/PAUSED label dropped — only the colored dot remains.
+    expect(screen.getByTestId("live-pause-toggle").textContent ?? "").not.toMatch(/LIVE|PAUSED/);
+    // Inline tags removed (now via isMobile gating, still hidden at 768).
+    expect(screen.queryAllByTestId(/^activity-row-tag-/).length).toBe(0);
   });
 });
 

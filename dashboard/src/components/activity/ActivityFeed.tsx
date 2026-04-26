@@ -290,6 +290,7 @@ export default function ActivityFeed({
                   isLastInGroup={i === group.rows.length - 1}
                   isExpanded={expandedId === id}
                   onToggleExpand={() => toggleExpanded(id)}
+                  isMobile={isMobile}
                   isCompact={isCompact}
                   isNarrow={isNarrow}
                   isTapped={tappedId === id}

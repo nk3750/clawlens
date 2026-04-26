@@ -20,9 +20,16 @@ interface Props {
   /** Toggle expand/collapse for this row. ActivityFeed enforces single-at-a-time. */
   onToggleExpand?: () => void;
   /**
-   * Phase 2.9 (#37) — compact viewport (<768px). Hides inline tags, swaps
-   * row-click from "expand" to "tap-to-reveal", and includes the 4th expand
-   * quick-action button on touch.
+   * Phase 2.9 (#37) — drawer/mobile viewport (≤1024px). Spec line 559 binds
+   * tag visibility to <1024px ("hide the 2 inline tags"), so iPad Pro
+   * portrait (1024) and iPad Mini portrait (768) both hide tags. Distinct
+   * from `isCompact`, which only fires at ≤768px and drives label/tap UX.
+   */
+  isMobile?: boolean;
+  /**
+   * Phase 2.9 (#37) — compact viewport (≤768px). Swaps row-click from
+   * "expand" to "tap-to-reveal" and includes the 4th expand quick-action
+   * button on touch.
    */
   isCompact?: boolean;
   /**
@@ -74,6 +81,7 @@ export default function ActivityRow({
   isLastInGroup,
   isExpanded = false,
   onToggleExpand,
+  isMobile = false,
   isCompact = false,
   isNarrow = false,
   isTapped = false,
@@ -125,8 +133,10 @@ export default function ActivityRow({
   // have a discoverable expand affordance.
   const showTapActions = isCompact && isTapped;
 
-  // Inline tags are hidden at compact viewport (operator gets them via expand).
-  const showInlineTags = !isCompact;
+  // Inline tags hide across the entire drawer range (≤1024px) — iPad portrait
+  // gets the same tag-free row as a phone (spec line 559: "<1024px: hide the
+  // 2 inline tags"). Operators reach tags via expand.
+  const showInlineTags = !isMobile;
 
   const avatarEl = entry.agentId && (
     <span data-testid="activity-row-avatar" style={{ flexShrink: 0 }}>

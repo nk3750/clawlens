@@ -28,6 +28,7 @@ function entry(overrides: Partial<EntryResponse> = {}): EntryResponse {
 
 interface RenderProps {
   entry?: EntryResponse;
+  isMobile?: boolean;
   isCompact?: boolean;
   isNarrow?: boolean;
   isTapped?: boolean;
@@ -38,14 +39,20 @@ interface RenderProps {
 
 function renderRow(props: RenderProps = {}) {
   const e = props.entry ?? entry();
+  // Real-world cascade: when isCompact or isNarrow is on, isMobile is too
+  // (the breakpoints nest at 1024 / 768 / 640). Default isMobile to match.
+  const isCompact = props.isCompact ?? true;
+  const isNarrow = props.isNarrow ?? false;
+  const isMobile = props.isMobile ?? isCompact ?? isNarrow;
   return render(
     <MemoryRouter initialEntries={["/activity"]}>
       <ActivityRow
         entry={e}
         isNew={false}
         onChip={vi.fn()}
-        isCompact={props.isCompact ?? true}
-        isNarrow={props.isNarrow ?? false}
+        isMobile={isMobile}
+        isCompact={isCompact}
+        isNarrow={isNarrow}
         isTapped={props.isTapped ?? false}
         isExpanded={props.isExpanded ?? false}
         onToggleTapped={props.onToggleTapped ?? vi.fn()}
@@ -118,13 +125,16 @@ describe("ActivityRow — compact tap behavior", () => {
     expect(screen.queryByTestId("activity-row-quick-expand")).toBeNull();
   });
 
-  it("inline tags are hidden at compact viewport", () => {
-    renderRow({ isCompact: true });
+  it("inline tags are hidden when isMobile (covers 768–1023 drawer-only range)", () => {
+    // Phase 2.9 fix-up: tag gating moves from isCompact to isMobile so iPad
+    // portrait (768) and iPad Pro portrait (1024) both hide tags per spec
+    // line 559 ("<1024px: hide the 2 inline tags").
+    renderRow({ isMobile: true, isCompact: false });
     expect(screen.queryAllByTestId(/^activity-row-tag-/).length).toBe(0);
   });
 
-  it("inline tags are present at desktop", () => {
-    renderRow({ isCompact: false });
+  it("inline tags are present at desktop (non-mobile)", () => {
+    renderRow({ isMobile: false, isCompact: false });
     expect(screen.queryAllByTestId(/^activity-row-tag-/).length).toBeGreaterThan(0);
   });
 });
