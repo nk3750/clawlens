@@ -1,9 +1,9 @@
 {
   "name": "clawlens",
-  "version": "0.2.0",
+  "version": "0.2.0-preview.1",
   "description": "Agent observatory and governance for OpenClaw",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "files": [
     "dist/",
     "dashboard/dist/",
