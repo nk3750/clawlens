@@ -125,7 +125,7 @@
        (/activity, /agent/:id, /session/:key, /guardrails) and the
        fleetheader subchips. Phase 3 re-skins will rip them. Do NOT add
        new call sites for these names. */
-    /* still used by DormantState, ErrorCard, FilterBar, fleetheader — Phase 3 */
+    /* still used by DormantState, ErrorCard, fleetheader — Phase 3 */
     --cl-border-default: var(--cl-border);
     /* still used by AgentDetail, Activity, RiskDetail, TimelineGroup,
        ActivityEntry, TimelineNode, DateChip, PendingChip — Phase 3 */

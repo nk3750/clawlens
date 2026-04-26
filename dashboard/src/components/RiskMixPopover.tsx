@@ -170,10 +170,12 @@ export default function RiskMixPopover({ mix, total, agentId }: Props) {
       <button
         type="button"
         data-cl-risk-mix-pop-link
-        // stopPropagation prevents the wrapping card <Link to="/agent/:id">
-        // from also firing. <button> avoids the nested-anchor HTML invalid
-        // state that <Link> created here (validateDOMNesting + repair races).
+        // preventDefault cancels the parent <Link>'s native anchor-follow
+        // (which would race the SPA navigation and land us on /agent/:id).
+        // stopPropagation also stops React's synthetic bubble so the parent
+        // card's onClick never fires. Both are required (#29).
         onClick={(e) => {
+          e.preventDefault();
           e.stopPropagation();
           navigate(targetHref);
         }}

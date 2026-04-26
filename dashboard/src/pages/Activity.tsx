@@ -1,324 +1,215 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import ActivityFeed from "../components/activity/ActivityFeed";
+import FilterRail from "../components/activity/FilterRail";
+import PresetBar from "../components/activity/PresetBar";
+import ErrorCard from "../components/ErrorCard";
+import { ActivityFeedSkeleton } from "../components/Skeleton";
 import { useApi } from "../hooks/useApi";
 import { useSSE } from "../hooks/useSSE";
-import type { EntryResponse, StatsResponse, AgentInfo } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon } from "../lib/utils";
-import { describeEntry } from "../lib/groupEntries";
-import GradientAvatar from "../components/GradientAvatar";
-import DecisionBadge from "../components/DecisionBadge";
-import FilterBar, { type FilterState } from "../components/FilterBar";
-import LiveIndicator from "../components/LiveIndicator";
-import { ActivityFeedSkeleton } from "../components/Skeleton";
+import {
+  filtersToSearchParams,
+  matchesFilters,
+  parseFiltersFromURL,
+  tierToRiskTier,
+  type Filters,
+} from "../lib/activityFilters";
+import type { AgentInfo, EntryResponse } from "../lib/types";
 
-const EMPTY_FILTERS: FilterState = {
-  agent: "",
-  category: "",
-  riskTier: "",
-  decision: "",
-  since: "",
-};
+const DISPLAYED_LIMIT = 50;
+const COUNT_BASIS_LIMIT = 200;
+const NEW_FLASH_MS = 1800;
 
-function buildQueryString(filters: FilterState, limit: number, offset: number): string {
-  const params = new URLSearchParams();
-  params.set("limit", String(limit));
-  params.set("offset", String(offset));
-  if (filters.agent) params.set("agent", filters.agent);
-  if (filters.category) params.set("category", filters.category);
-  if (filters.riskTier) params.set("riskTier", filters.riskTier);
-  if (filters.decision) params.set("decision", filters.decision);
-  if (filters.since) params.set("since", filters.since);
-  return params.toString();
+/**
+ * Build the API query string for the displayed feed. URL `tier` translates
+ * to API `riskTier`; everything else passes through. Unknown tier values
+ * (e.g., `?tier=banana`) are dropped from the API call (`tierToRiskTier`
+ * returns undefined) — the feed returns no rows, which mirrors what
+ * server-side filtering would do.
+ */
+function buildEntriesQuery(filters: Filters, limit: number, offset: number): string {
+  const p = new URLSearchParams();
+  p.set("limit", String(limit));
+  p.set("offset", String(offset));
+  if (filters.agent) p.set("agent", filters.agent);
+  if (filters.category) p.set("category", filters.category);
+  const rt = tierToRiskTier(filters.tier);
+  if (rt) p.set("riskTier", rt);
+  if (filters.decision) p.set("decision", filters.decision);
+  if (filters.since) p.set("since", filters.since);
+  return p.toString();
 }
-
-/** Check if an SSE entry matches current filter state (client-side) */
-function matchesFilters(entry: EntryResponse, filters: FilterState): boolean {
-  if (filters.agent && entry.agentId !== filters.agent) return false;
-  if (filters.category && entry.category !== filters.category) return false;
-  if (filters.riskTier && entry.riskTier !== filters.riskTier) return false;
-  if (filters.decision) {
-    const eff = entry.effectiveDecision;
-    if (filters.decision === "block" && eff !== "block" && eff !== "denied") return false;
-    if (filters.decision === "allow" && eff !== "allow") return false;
-    if (filters.decision !== "block" && filters.decision !== "allow" && eff !== filters.decision) return false;
-  }
-  return true;
-}
-
 
 export default function Activity() {
-  const [entries, setEntries] = useState<EntryResponse[]>([]);
-  const [newIds, setNewIds] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [pulseKey, setPulseKey] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo(() => parseFiltersFromURL(searchParams), [searchParams]);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
 
-  const { data: stats } = useApi<StatsResponse>("api/stats");
+  // Pause toggles SSE-driven insertion; queued entries flush on resume.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const queuedRef = useRef<EntryResponse[]>([]);
+
+  // ─── Initial fetches ─────────────────────────────────────
+  const displayedQuery = buildEntriesQuery(filters, DISPLAYED_LIMIT, 0);
+  const {
+    data: initialDisplayed,
+    loading: displayedLoading,
+    error: displayedError,
+    refetch: refetchDisplayed,
+  } = useApi<EntryResponse[]>(`api/entries?${displayedQuery}`);
+
+  const countBasisQuery = `since=24h&limit=${COUNT_BASIS_LIMIT}&offset=0`;
+  const { data: initialCountBasis } = useApi<EntryResponse[]>(`api/entries?${countBasisQuery}`);
+
   const { data: agents } = useApi<AgentInfo[]>("api/agents");
 
-  // Build query from filters
-  const query = buildQueryString(filters, 50, 0);
-  const { data: initialEntries, loading } = useApi<EntryResponse[]>(
-    `api/entries?${query}`,
-  );
+  // ─── Local state — displayed feed + count basis + animation tracking ──
+  const [entries, setEntries] = useState<EntryResponse[]>([]);
+  const [countBasis, setCountBasis] = useState<EntryResponse[]>([]);
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (initialEntries) {
-      setEntries(initialEntries);
-      setHasMore(initialEntries.length >= 50);
-      setOffset(initialEntries.length);
-    }
-  }, [initialEntries]);
+    if (initialDisplayed) setEntries(initialDisplayed);
+  }, [initialDisplayed]);
 
-  // SSE for live updates
+  useEffect(() => {
+    if (initialCountBasis) setCountBasis(initialCountBasis);
+  }, [initialCountBasis]);
+
+  // ─── SSE — live updates ──────────────────────────────────
   useSSE<EntryResponse>(
     "api/stream",
     useCallback((raw: EntryResponse) => {
-      const entry: EntryResponse = {
-        ...raw,
-        effectiveDecision: raw.effectiveDecision || computeDecision(raw),
-      };
-
-      // Client-side filter check
-      if (!matchesFilters(entry, filtersRef.current)) return;
-
-      const id = entry.toolCallId || entry.timestamp;
-      setNewIds((prev) => new Set(prev).add(id));
-      setEntries((prev) => [entry, ...prev]);
-      setPulseKey((k) => k + 1);
-
-      setTimeout(() => {
-        setNewIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      }, 2000);
+      // Pause queues without losing data — flush on resume below.
+      if (pausedRef.current) {
+        queuedRef.current.push(raw);
+        return;
+      }
+      applyLiveEntry(raw);
     }, []),
   );
 
-  const loadMore = async () => {
-    setLoadingMore(true);
-    try {
-      const q = buildQueryString(filters, 50, offset);
-      const res = await fetch(`/plugins/clawlens/api/entries?${q}`);
-      const more: EntryResponse[] = await res.json();
-      setEntries((prev) => [...prev, ...more]);
-      setOffset((prev) => prev + more.length);
-      setHasMore(more.length >= 50);
-    } catch {
-      /* ignore */
-    } finally {
-      setLoadingMore(false);
-    }
-  };
+  // Helper: prepend an SSE entry to count basis (always) and to the
+  // displayed feed (only when it matches the active filters). Animation
+  // tracking is scoped to the displayed feed prepend.
+  const applyLiveEntry = useCallback((raw: EntryResponse) => {
+    setCountBasis((prev) => [raw, ...prev]);
+    if (!matchesFilters(raw, filtersRef.current)) return;
+    const id = raw.toolCallId || raw.timestamp;
+    setEntries((prev) => [raw, ...prev]);
+    setNewIds((prev) => new Set(prev).add(id));
+    setTimeout(() => {
+      setNewIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, NEW_FLASH_MS);
+  }, []);
 
-  const handleFiltersChange = (next: FilterState) => {
-    setFilters(next);
-    setOffset(0);
-    setHasMore(true);
-  };
+  // Flush queued entries when paused → false transition occurs.
+  useEffect(() => {
+    if (paused) return;
+    const queued = queuedRef.current;
+    if (queued.length === 0) return;
+    queuedRef.current = [];
+    for (const e of queued) applyLiveEntry(e);
+  }, [paused, applyLiveEntry]);
 
-  const hasActiveFilters = filters.agent || filters.category || filters.riskTier || filters.decision || filters.since;
+  // ─── Filter mutation helpers ─────────────────────────────
+  const writeFilters = useCallback(
+    (next: Filters) => {
+      setSearchParams(filtersToSearchParams(next), { replace: true });
+    },
+    [setSearchParams],
+  );
+
+  const handleSelect = useCallback(
+    (key: keyof Filters, value: string) => {
+      const current = filtersRef.current[key];
+      const next: Filters = { ...filtersRef.current };
+      if (current === value) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      writeFilters(next);
+    },
+    [writeFilters],
+  );
+
+  const handleClear = useCallback(
+    (key: keyof Filters) => {
+      const next: Filters = { ...filtersRef.current };
+      delete next[key];
+      writeFilters(next);
+    },
+    [writeFilters],
+  );
+
+  const handleClearAll = useCallback(() => writeFilters({}), [writeFilters]);
+
+  const handlePreset = useCallback(
+    (preset: { filters: Filters }) => writeFilters(preset.filters),
+    [writeFilters],
+  );
+
+  const handleChip = useCallback(
+    (key: "agent" | "tier", value: string) => {
+      // Agent/tier chip clicks always set (never toggle) — operator dragging
+      // an attribute up to the filter row is asking to scope, not unscope.
+      writeFilters({ ...filtersRef.current, [key]: value });
+    },
+    [writeFilters],
+  );
+
+  const togglePause = useCallback(() => setPaused((p) => !p), []);
 
   return (
-    <div className="page-enter stagger">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1
-            className="font-display font-bold"
-            style={{ fontSize: "var(--text-heading)", color: "var(--cl-text-primary)" }}
-          >
-            Activity
-          </h1>
-          <LiveIndicator pulseKey={pulseKey} />
-        </div>
-        {stats && (
-          <span className="font-mono text-sm" style={{ color: "var(--cl-text-secondary)" }}>
-            {stats.total} actions today
-          </span>
+    <div className="page-enter" style={{ minHeight: "100vh" }}>
+      <PresetBar filters={filters} onSelect={handlePreset} />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "244px 1fr",
+          minHeight: "calc(100vh - 92px)",
+          gap: 0,
+        }}
+      >
+        <FilterRail
+          filters={filters}
+          agents={agents ?? []}
+          countBasis={countBasis}
+          onSelect={handleSelect}
+          onClear={handleClear}
+        />
+
+        {displayedError && entries.length === 0 ? (
+          <div style={{ padding: "24px 32px" }}>
+            <ErrorCard message={displayedError} onRetry={refetchDisplayed} />
+          </div>
+        ) : displayedLoading && entries.length === 0 ? (
+          <div style={{ padding: "24px 32px" }}>
+            <ActivityFeedSkeleton />
+          </div>
+        ) : (
+          <ActivityFeed
+            filters={filters}
+            entries={entries}
+            totalCount={countBasis.length}
+            newIds={newIds}
+            paused={paused}
+            onTogglePause={togglePause}
+            onClear={handleClear}
+            onClearAll={handleClearAll}
+            onChip={handleChip}
+          />
         )}
       </div>
-
-      {/* Filter bar */}
-      <div className="mb-6">
-        <FilterBar
-          filters={filters}
-          onChange={handleFiltersChange}
-          agents={agents ?? undefined}
-        />
-      </div>
-
-      <div className="cl-divider mb-6" />
-
-      {/* Loading skeleton */}
-      {loading && entries.length === 0 && (
-        <ActivityFeedSkeleton />
-      )}
-
-      {/* Empty */}
-      {!loading && entries.length === 0 && (
-        <p
-          className="text-center py-20"
-          style={{ color: "var(--cl-text-muted)", fontSize: "var(--text-subhead)" }}
-        >
-          {hasActiveFilters ? "No results match your filters" : "No activity yet"}
-        </p>
-      )}
-
-      {/* Feed */}
-      {entries.length > 0 && (
-        <div
-          className="rounded-xl border overflow-hidden"
-          style={{
-            backgroundColor: "var(--cl-surface)",
-            borderColor: "var(--cl-border-subtle)",
-          }}
-        >
-          {entries.map((entry, i) => {
-            const id = entry.toolCallId || entry.timestamp;
-            const isNew = newIds.has(id);
-            const tier = entry.riskScore != null ? riskTierFromScore(entry.riskScore) : null;
-            const dotColor = tier ? riskColorRaw(tier) : null;
-            const icon = entryIcon(entry);
-            const tags = deriveTags(entry);
-            const showBadge = entry.effectiveDecision && entry.effectiveDecision !== "allow";
-
-            return (
-              <div
-                key={`${id}-${i}`}
-                className={`flex items-center gap-3 px-4 py-3 transition-all ${isNew ? "entry-flash" : ""}`}
-                style={{
-                  borderBottom: i < entries.length - 1 ? "1px solid var(--cl-border-subtle)" : undefined,
-                  animation: isNew
-                    ? "slide-in 0.4s var(--cl-spring) both"
-                    : undefined,
-                }}
-              >
-                {/* Agent avatar */}
-                {entry.agentId && (
-                  <Link to={`/agent/${encodeURIComponent(entry.agentId)}`} className="shrink-0">
-                    <GradientAvatar agentId={entry.agentId} size="sm" />
-                  </Link>
-                )}
-
-                {/* Category icon (exec sub-category aware) */}
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={icon.color}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="shrink-0"
-                >
-                  <path d={icon.path} />
-                </svg>
-
-                {/* Content */}
-                <div className="min-w-0 flex-1">
-                  {entry.agentId && (
-                    <Link
-                      to={`/agent/${encodeURIComponent(entry.agentId)}`}
-                      className="text-xs font-semibold mr-2 transition-colors"
-                      style={{ color: "var(--cl-text-primary)" }}
-                    >
-                      {entry.agentId}
-                    </Link>
-                  )}
-                  <span className="text-sm" style={{ color: "var(--cl-text-secondary)" }}>
-                    {describeEntry(entry)}
-                  </span>
-                </div>
-
-                {/* Inline tags */}
-                {tags.length > 0 && (
-                  <span className="hidden lg:flex items-center gap-1 shrink-0">
-                    {tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="label-mono px-1.5 py-0.5 rounded"
-                        style={{
-                          fontSize: "11px",
-                          backgroundColor: "var(--cl-accent-7)",
-                          color: "var(--cl-text-secondary)",
-                        }}
-                      >
-                        {tag.toUpperCase()}
-                      </span>
-                    ))}
-                  </span>
-                )}
-
-                {/* Risk dot + score + tier */}
-                {entry.riskScore != null && dotColor && tier && (
-                  <span className="flex items-center gap-1 shrink-0">
-                    <span
-                      className="inline-block w-1.5 h-1.5 rounded-full"
-                      style={{
-                        backgroundColor: dotColor,
-                        boxShadow: tier !== "low" ? `0 0 5px ${dotColor}50` : undefined,
-                      }}
-                    />
-                    <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-                      {entry.riskScore}
-                    </span>
-                    <span className="label-mono shrink-0" style={{ color: dotColor }}>
-                      {tier.toUpperCase()}
-                    </span>
-                  </span>
-                )}
-
-                {/* Decision badge */}
-                {showBadge && (
-                  <span className="shrink-0">
-                    <DecisionBadge decision={entry.effectiveDecision} />
-                  </span>
-                )}
-
-                {/* Timestamp */}
-                <span className="font-mono text-xs shrink-0" style={{ color: "var(--cl-text-secondary)" }}>
-                  {relTime(entry.timestamp)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Load more */}
-      {hasMore && entries.length > 0 && (
-        <button
-          onClick={loadMore}
-          disabled={loadingMore}
-          className="w-full mt-4 py-3 text-sm transition-all disabled:opacity-50 rounded-xl border cursor-pointer"
-          style={{
-            color: "var(--cl-text-muted)",
-            borderColor: "var(--cl-border-subtle)",
-            backgroundColor: "transparent",
-          }}
-        >
-          {loadingMore ? "Loading..." : "Load more"}
-        </button>
-      )}
     </div>
   );
-}
-
-function computeDecision(entry: EntryResponse): string {
-  if (entry.userResponse === "approved") return "approved";
-  if (entry.userResponse === "denied") return "denied";
-  if (entry.userResponse === "timeout") return "timeout";
-  if (entry.decision === "allow") return "allow";
-  if (entry.decision === "block") return "block";
-  if (entry.decision === "approval_required") return "pending";
-  if (entry.executionResult) return entry.executionResult;
-  return "unknown";
 }
