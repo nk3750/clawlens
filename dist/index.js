@@ -12,6 +12,7 @@ import { PendingApprovalStore } from "./src/hooks/pending-approval-store";
 import { createSessionEndHandler } from "./src/hooks/session-end";
 import { createSessionStartHandler } from "./src/hooks/session-start";
 import { EvalCache } from "./src/risk/eval-cache";
+import { SavedSearchesStore } from "./src/risk/saved-searches-store";
 import { SessionContext } from "./src/risk/session-context";
 // ── Module-level state ──────────────────────────────────────────────────────
 // Components + handler created once. Hooks registered per unique api object
@@ -19,6 +20,7 @@ import { SessionContext } from "./src/risk/session-context";
 let _handlerDeps;
 let _attentionStore;
 let _pendingApprovalStore;
+let _savedSearchesStore;
 let _serviceRegistered = false;
 // biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
 const _hookedApis = new WeakSet();
@@ -55,6 +57,8 @@ const plugin = {
             guardrailStore.load();
             _attentionStore = new AttentionStore(config.attentionStatePath);
             _pendingApprovalStore = new PendingApprovalStore();
+            _savedSearchesStore = new SavedSearchesStore(config.savedSearchesPath);
+            _savedSearchesStore.load();
             // Alert send function — uses gateway method if available
             let alertSend;
             try {
@@ -187,6 +191,7 @@ const plugin = {
                 guardrailStore: grStore,
                 attentionStore: _attentionStore,
                 pendingApprovalStore: _pendingApprovalStore,
+                savedSearchesStore: _savedSearchesStore,
             });
             _serviceRegistered = true;
         }

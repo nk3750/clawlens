@@ -158,6 +158,92 @@ export function registerDashboardRoutes(api, deps) {
                 sendJson(res, { ok: true });
                 return true;
             }
+            // ── Saved searches CRUD (Phase 2.8, #36) ────
+            // Backend persistence for the rail's saved-searches group. The
+            // frontend's hook migrates localStorage entries into here on first
+            // load and then sources from this endpoint thereafter.
+            if (subPath === "api/saved-searches" && req.method === "GET") {
+                if (!deps.savedSearchesStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Saved searches not configured" }));
+                    return true;
+                }
+                sendJson(res, { items: deps.savedSearchesStore.list() });
+                return true;
+            }
+            if (subPath === "api/saved-searches" && req.method === "POST") {
+                if (!deps.savedSearchesStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Saved searches not configured" }));
+                    return true;
+                }
+                const body = (await readBody(req));
+                const nameError = validateSavedSearchName(body.name);
+                if (nameError) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: nameError }));
+                    return true;
+                }
+                const filters = sanitizeSavedSearchFilters(body.filters);
+                try {
+                    const item = deps.savedSearchesStore.add(body.name.trim(), filters);
+                    sendJson(res, { item });
+                }
+                catch (err) {
+                    handleStorageError(res, err);
+                }
+                return true;
+            }
+            const savedSearchIdMatch = subPath.match(/^api\/saved-searches\/([^/]+)$/);
+            if (savedSearchIdMatch && req.method === "DELETE") {
+                if (!deps.savedSearchesStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Saved searches not configured" }));
+                    return true;
+                }
+                const id = decodeURIComponent(savedSearchIdMatch[1]);
+                try {
+                    const removed = deps.savedSearchesStore.remove(id);
+                    if (!removed) {
+                        res.writeHead(404, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: "Saved search not found" }));
+                        return true;
+                    }
+                    sendJson(res, { ok: true });
+                }
+                catch (err) {
+                    handleStorageError(res, err);
+                }
+                return true;
+            }
+            if (savedSearchIdMatch && req.method === "PATCH") {
+                if (!deps.savedSearchesStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Saved searches not configured" }));
+                    return true;
+                }
+                const id = decodeURIComponent(savedSearchIdMatch[1]);
+                const body = (await readBody(req));
+                const nameError = validateSavedSearchName(body.name);
+                if (nameError) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: nameError }));
+                    return true;
+                }
+                try {
+                    const updated = deps.savedSearchesStore.rename(id, body.name.trim());
+                    if (!updated) {
+                        res.writeHead(404, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: "Saved search not found" }));
+                        return true;
+                    }
+                    sendJson(res, { item: updated });
+                }
+                catch (err) {
+                    handleStorageError(res, err);
+                }
+                return true;
+            }
             // ── Core API routes ─────────────────────────
             if (subPath === "api/stats") {
                 const date = url.searchParams.get("date") || undefined;
@@ -502,6 +588,61 @@ function clampInt(raw, min, max, fallback) {
     if (Number.isNaN(n))
         return fallback;
     return Math.max(min, Math.min(max, n));
+}
+/**
+ * Validate a POST/PATCH body's `name` field for the saved-searches endpoints.
+ * Returns an error message string, or null if valid. The 100-char cap is
+ * defense-in-depth — operators don't need 10KB names, attackers shouldn't be
+ * able to fill the file with one.
+ */
+function validateSavedSearchName(name) {
+    if (typeof name !== "string")
+        return "name is required";
+    if (name.trim().length === 0)
+        return "name cannot be empty";
+    if (name.length > 100)
+        return "name exceeds 100 char limit";
+    return null;
+}
+/**
+ * Whitelist + type-check the filter shape so the persisted file can never
+ * grow keys/values the frontend won't recognize on read. Mirrors
+ * dashboard/src/lib/activityFilters.ts::Filters; values must be strings.
+ */
+function sanitizeSavedSearchFilters(input) {
+    if (!input || typeof input !== "object")
+        return {};
+    const f = input;
+    const out = {};
+    if (typeof f.agent === "string")
+        out.agent = f.agent;
+    if (typeof f.category === "string")
+        out.category = f.category;
+    if (typeof f.tier === "string")
+        out.tier = f.tier;
+    if (typeof f.decision === "string")
+        out.decision = f.decision;
+    if (typeof f.since === "string")
+        out.since = f.since;
+    if (typeof f.q === "string")
+        out.q = f.q;
+    return out;
+}
+/**
+ * Map a thrown filesystem error from a store .save() into an HTTP response.
+ * Disk-shaped errors (ENOSPC, EISDIR, EROFS, EDQUOT) → 507 so the operator
+ * can distinguish "out of room" from a generic 500. Anything else → 500.
+ */
+function handleStorageError(res, err) {
+    const code = err?.code;
+    const message = err instanceof Error ? err.message : typeof err === "string" ? err : "unknown error";
+    if (code === "ENOSPC" || code === "EISDIR" || code === "EROFS" || code === "EDQUOT") {
+        res.writeHead(507, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "disk full or unwritable", code, message }));
+        return;
+    }
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "internal storage error", code, message }));
 }
 function readBody(req) {
     return new Promise((resolve, reject) => {

@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useSavedSearches } from "../../hooks/useSavedSearches";
 import { activeFilterCount, countWith, type Filters } from "../../lib/activityFilters";
-import {
-  addSaved,
-  loadSaved,
-  removeSaved,
-  type SavedSearch,
-} from "../../lib/savedSearches";
 import type { EntryResponse } from "../../lib/types";
 import FilterGroup from "./FilterGroup";
 import FilterRow from "./FilterRow";
@@ -24,16 +19,15 @@ interface Props {
 
 /**
  * Top-of-rail group that lets the operator name and recall filter combos.
- * Phase 2.3 persists to localStorage; Phase 2.8 will swap the helpers in
- * `lib/savedSearches.ts` to a backend API while keeping this component's
- * shape identical.
+ * Phase 2.8 (#36) sources from the backend store via useSavedSearches; the
+ * hook handles the one-shot localStorage→backend migration on first mount.
  */
 export default function SavedSearchesGroup({
   filters,
   countBasis,
   onApplyFilters,
 }: Props) {
-  const [items, setItems] = useState<SavedSearch[]>(() => loadSaved());
+  const { items, add, remove } = useSavedSearches();
   const [collapsed, setCollapsed] = useState(false);
   const [adding, setAdding] = useState(false);
   const [nameInput, setNameInput] = useState("");
@@ -45,7 +39,6 @@ export default function SavedSearchesGroup({
     if (adding) inputRef.current?.focus();
   }, [adding]);
 
-  const refresh = () => setItems(loadSaved());
   const canSave = activeFilterCount(filters) > 0;
 
   const startAdd = () => {
@@ -57,26 +50,25 @@ export default function SavedSearchesGroup({
     setAdding(false);
     setNameInput("");
   };
-  const commitAdd = () => {
+  const commitAdd = async () => {
     const name = nameInput.trim();
     if (!name) {
       cancelAdd();
       return;
     }
-    // addSaved returns null on quota/disabled; refresh from storage either
-    // way so the UI reflects what actually persisted.
-    addSaved(name, filters);
+    // The hook re-fetches internally on success; on failure (4xx/5xx/network)
+    // it returns null and surfaces the error via console.warn — no toast for
+    // this phase per the orchestrator spec.
     setAdding(false);
     setNameInput("");
-    refresh();
+    await add(name, filters);
   };
 
-  const handleRemove = (id: string, e: React.MouseEvent) => {
+  const handleRemove = async (id: string, e: React.MouseEvent) => {
     // Stop propagation so the underlying FilterRow click doesn't also fire
     // onApplyFilters with the about-to-be-removed entry.
     e.stopPropagation();
-    removeSaved(id);
-    refresh();
+    await remove(id);
   };
 
   const addBtn = (

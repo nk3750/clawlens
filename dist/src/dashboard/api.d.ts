@@ -243,6 +243,7 @@ export interface SessionDetailResponse {
     session: SessionInfo;
     entries: EntryResponse[];
 }
+export type { SavedSearch, SavedSearchFilters } from "../risk/saved-searches-store";
 /** Today's date in local time as YYYY-MM-DD. */
 export declare function localToday(): string;
 /** Extract the local-date portion (YYYY-MM-DD) of a UTC ISO timestamp. */

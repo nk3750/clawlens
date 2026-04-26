@@ -5,6 +5,7 @@ export interface ClawLensConfig {
   auditLogPath: string;
   guardrailsPath: string;
   attentionStatePath: string;
+  savedSearchesPath: string;
   retention: string;
   digest: {
     schedule: string;
@@ -33,6 +34,7 @@ export const DEFAULT_CONFIG: ClawLensConfig = {
   auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
   guardrailsPath: path.join(DEFAULT_DIR, "guardrails.json"),
   attentionStatePath: path.join(DEFAULT_DIR, "attention.jsonl"),
+  savedSearchesPath: path.join(DEFAULT_DIR, "activity-saved-searches.json"),
   retention: "30d",
   digest: {
     schedule: "daily",
@@ -68,6 +70,9 @@ export function resolveConfig(
     ),
     attentionStatePath: resolve(
       (pluginConfig.attentionStatePath as string) || DEFAULT_CONFIG.attentionStatePath,
+    ),
+    savedSearchesPath: resolve(
+      (pluginConfig.savedSearchesPath as string) || DEFAULT_CONFIG.savedSearchesPath,
     ),
     retention: (pluginConfig.retention as string) || DEFAULT_CONFIG.retention,
     digest: {

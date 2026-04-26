@@ -12,6 +12,7 @@ import { PendingApprovalStore } from "./src/hooks/pending-approval-store";
 import { createSessionEndHandler } from "./src/hooks/session-end";
 import { createSessionStartHandler } from "./src/hooks/session-start";
 import { EvalCache } from "./src/risk/eval-cache";
+import { SavedSearchesStore } from "./src/risk/saved-searches-store";
 import { SessionContext } from "./src/risk/session-context";
 import type {
   EmbeddedAgentRuntime,
@@ -26,6 +27,7 @@ import type {
 let _handlerDeps: BeforeToolCallDeps | undefined;
 let _attentionStore: AttentionStore | undefined;
 let _pendingApprovalStore: PendingApprovalStore | undefined;
+let _savedSearchesStore: SavedSearchesStore | undefined;
 let _serviceRegistered = false;
 // biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
 const _hookedApis = new WeakSet<any>();
@@ -79,6 +81,8 @@ const plugin: OpenClawPluginDefinition = {
       guardrailStore.load();
       _attentionStore = new AttentionStore(config.attentionStatePath);
       _pendingApprovalStore = new PendingApprovalStore();
+      _savedSearchesStore = new SavedSearchesStore(config.savedSearchesPath);
+      _savedSearchesStore.load();
 
       // Alert send function — uses gateway method if available
       let alertSend: ((msg: string) => Promise<void> | void) | undefined;
@@ -229,6 +233,7 @@ const plugin: OpenClawPluginDefinition = {
         guardrailStore: grStore as GuardrailStore,
         attentionStore: _attentionStore,
         pendingApprovalStore: _pendingApprovalStore,
+        savedSearchesStore: _savedSearchesStore,
       });
 
       _serviceRegistered = true;

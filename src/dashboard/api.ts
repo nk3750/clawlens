@@ -271,6 +271,11 @@ export interface SessionDetailResponse {
   entries: EntryResponse[];
 }
 
+// Re-export saved-search shapes so frontend code (which imports from a single
+// "lib/types"-style barrel) and route code (which imports from "../risk/...")
+// stay in lockstep without each end of the wire learning a different name.
+export type { SavedSearch, SavedSearchFilters } from "../risk/saved-searches-store";
+
 // ── Internal helpers ────────────────────────────────────
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;

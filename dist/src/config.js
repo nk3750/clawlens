@@ -5,6 +5,7 @@ export const DEFAULT_CONFIG = {
     auditLogPath: path.join(DEFAULT_DIR, "audit.jsonl"),
     guardrailsPath: path.join(DEFAULT_DIR, "guardrails.json"),
     attentionStatePath: path.join(DEFAULT_DIR, "attention.jsonl"),
+    savedSearchesPath: path.join(DEFAULT_DIR, "activity-saved-searches.json"),
     retention: "30d",
     digest: {
         schedule: "daily",
@@ -31,6 +32,7 @@ export function resolveConfig(pluginConfig, resolvePath) {
         auditLogPath: resolve(pluginConfig.auditLogPath || DEFAULT_CONFIG.auditLogPath),
         guardrailsPath: resolve(pluginConfig.guardrailsPath || DEFAULT_CONFIG.guardrailsPath),
         attentionStatePath: resolve(pluginConfig.attentionStatePath || DEFAULT_CONFIG.attentionStatePath),
+        savedSearchesPath: resolve(pluginConfig.savedSearchesPath || DEFAULT_CONFIG.savedSearchesPath),
         retention: pluginConfig.retention || DEFAULT_CONFIG.retention,
         digest: {
             schedule: pluginConfig.digest?.schedule ||

@@ -20,7 +20,14 @@ interface Envelope {
 }
 
 export const STORAGE_KEY = "clawlens.activity.savedSearches";
+/**
+ * One-shot flag set after the legacy localStorage entries are successfully
+ * POSTed to the backend in Phase 2.8. Once `"1"`, migrateLocalToBackend()
+ * becomes a no-op.
+ */
+export const MIGRATION_FLAG_KEY = "clawlens.activity.savedSearchesMigrated";
 const SCHEMA_VERSION = 1;
+const API_PATH = "/plugins/clawlens/api/saved-searches";
 
 /**
  * One-time flag so a disabled-storage browser (private mode, quota=0) doesn't
@@ -119,4 +126,95 @@ export function renameSaved(id: string, name: string): void {
   });
   if (!changed) return;
   writeEnvelope(next);
+}
+
+// ── Phase 2.8 migration ────────────────────────────────────────────────
+// One-shot move of legacy localStorage entries into the backend store. The
+// flag persists across reloads so we never re-poll a successfully-migrated
+// browser.
+
+export function isMigrated(): boolean {
+  try {
+    return localStorage.getItem(MIGRATION_FLAG_KEY) === "1";
+  } catch {
+    // Storage disabled / private mode — treat as migrated to avoid pointless
+    // retries; the backend is the source of truth either way.
+    return true;
+  }
+}
+
+function setMigratedFlag(): void {
+  try {
+    localStorage.setItem(MIGRATION_FLAG_KEY, "1");
+  } catch {
+    // Quota / disabled — silently swallow. Worst case the migration runs
+    // again next page load and is a no-op (legacy is empty after success).
+  }
+}
+
+function clearLegacyKey(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Best-effort.
+  }
+}
+
+function writeLegacyEnvelope(items: SavedSearch[]): void {
+  // Used by the partial-failure path to keep ONLY the entries that didn't
+  // make it across, so the next migration retries just those.
+  writeEnvelope(items);
+}
+
+/**
+ * Migrate every legacy localStorage entry into the backend store via POST.
+ *
+ * - All-success → set the flag, clear the legacy key.
+ * - Partial failure → leave only the failing entries in the legacy key,
+ *   leave the flag unset so the next mount retries them.
+ * - Already migrated / empty legacy → no-op, flag set so subsequent loads
+ *   skip the call entirely.
+ */
+export async function migrateLocalToBackend(): Promise<{ migrated: number; failed: number }> {
+  if (isMigrated()) return { migrated: 0, failed: 0 };
+
+  const legacy = loadSaved();
+  if (legacy.length === 0) {
+    // Nothing to do, but flip the flag so we don't re-enter this branch on
+    // every page load until the operator explicitly creates a search.
+    setMigratedFlag();
+    clearLegacyKey();
+    return { migrated: 0, failed: 0 };
+  }
+
+  let migrated = 0;
+  const failures: SavedSearch[] = [];
+
+  for (const item of legacy) {
+    try {
+      const res = await fetch(API_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: item.name, filters: item.filters }),
+      });
+      if (res.ok) {
+        migrated++;
+      } else {
+        failures.push(item);
+      }
+    } catch {
+      failures.push(item);
+    }
+  }
+
+  if (failures.length === 0) {
+    setMigratedFlag();
+    clearLegacyKey();
+  } else {
+    // Keep ONLY the failing entries in localStorage. Successful entries are
+    // already on the backend; re-POSTing them would create duplicates.
+    writeLegacyEnvelope(failures);
+  }
+
+  return { migrated, failed: failures.length };
 }
