@@ -5,6 +5,7 @@ import { GuardrailStore } from "../guardrails/store";
 import { isValidGuardrailAction } from "../guardrails/types";
 import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
+import { describeAction } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
 const MIME_TYPES = {
@@ -75,18 +76,11 @@ export function registerDashboardRoutes(api, deps) {
                     sendJson(res, { ...existing, existing: true });
                     return true;
                 }
-                const describeAction = (tn, p) => {
-                    const val = typeof p.command === "string"
-                        ? p.command
-                        : typeof p.path === "string"
-                            ? p.path
-                            : typeof p.url === "string"
-                                ? p.url
-                                : typeof p.query === "string"
-                                    ? p.query
-                                    : "";
-                    return val ? `${tn} — ${val}` : tn;
-                };
+                // Description is sourced from the canonical describeAction in
+                // ./categories so the guardrail row reads the same as the audit
+                // surface that originated it. Issue #44 collapsed the previous
+                // four-field inline closure (command/path/url/query) which fell
+                // through to bare tool names for the 20 tools added in #42.
                 const guardrail = {
                     id: GuardrailStore.generateId(),
                     tool: entry.toolName,
@@ -100,7 +94,10 @@ export function registerDashboardRoutes(api, deps) {
                         sessionKey: entry.sessionKey ?? "",
                         agentId: entry.agentId ?? "unknown",
                     },
-                    description: describeAction(entry.toolName, entry.params),
+                    description: describeAction({
+                        toolName: entry.toolName,
+                        params: entry.params,
+                    }),
                     riskScore: entry.riskScore ?? 0,
                 };
                 try {

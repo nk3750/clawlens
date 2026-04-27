@@ -544,3 +544,334 @@ describe("activity category coverage — 20 new tool routings", () => {
     expect(getCategory("sessions_spawn")).toBe("orchestration");
   });
 });
+
+// describeAction is the *backend* description engine — it powers
+// EntryResponse.description, which the Attention Inbox cards and the
+// guardrail-creation closure render directly. Issue #44 surfaced that #42
+// only extended the frontend description path (formatEventTarget /
+// describeEntry), leaving describeAction's switch falling through to
+// `default: return toolName` for the 20 new tools. These cases lock the
+// per-tool output so the regression can't slide back in.
+describe("describeAction — new tools (issue #44)", () => {
+  // ── changes ──────────────────────────────────────────────
+  it("describes apply_patch using a unified-diff path header", () => {
+    expect(
+      describeAction({
+        toolName: "apply_patch",
+        params: {
+          patch: "--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1 +1 @@\n-old\n+new",
+        },
+      }),
+    ).toBe("Patch: src/foo.ts");
+  });
+
+  it("describes apply_patch using the Codex *** Update File header", () => {
+    expect(
+      describeAction({
+        toolName: "apply_patch",
+        params: {
+          patch: "*** Begin Patch\n*** Update File: src/bar.ts\n@@\n-old\n+new\n*** End Patch",
+        },
+      }),
+    ).toBe("Patch: src/bar.ts");
+  });
+
+  it("falls back to a bare label when the patch carries no extractable path", () => {
+    expect(describeAction({ toolName: "apply_patch", params: { patch: "garbage" } })).toBe(
+      "Patch file",
+    );
+  });
+
+  it("falls back to a bare label when no patch param is supplied", () => {
+    expect(describeAction({ toolName: "apply_patch", params: {} })).toBe("Patch file");
+  });
+
+  it("describes gateway config.update with path", () => {
+    expect(
+      describeAction({
+        toolName: "gateway",
+        params: { action: "config.update", path: "rules.yaml" },
+      }),
+    ).toBe("Gateway update: rules.yaml");
+  });
+
+  it("describes gateway config.get with path", () => {
+    expect(
+      describeAction({
+        toolName: "gateway",
+        params: { action: "config.get", path: "rules.yaml" },
+      }),
+    ).toBe("Gateway query: rules.yaml");
+  });
+
+  it("describes gateway restart", () => {
+    expect(describeAction({ toolName: "gateway", params: { action: "restart" } })).toBe(
+      "Gateway restart",
+    );
+  });
+
+  it("describes bare gateway with no action", () => {
+    expect(describeAction({ toolName: "gateway", params: {} })).toBe("Gateway");
+  });
+
+  // ── web ──────────────────────────────────────────────────
+  it("describes x_search with a query", () => {
+    expect(describeAction({ toolName: "x_search", params: { query: "claude code" } })).toBe(
+      'X search "claude code"',
+    );
+  });
+
+  it("describes empty x_search", () => {
+    expect(describeAction({ toolName: "x_search", params: {} })).toBe("X search");
+  });
+
+  // ── scripts ──────────────────────────────────────────────
+  it("describes code_execution with code", () => {
+    expect(describeAction({ toolName: "code_execution", params: { code: "print('hi')" } })).toBe(
+      `Run code: "print('hi')"`,
+    );
+  });
+
+  it("describes empty code_execution", () => {
+    expect(describeAction({ toolName: "code_execution", params: {} })).toBe("Run code");
+  });
+
+  // ── media ────────────────────────────────────────────────
+  it("describes image with both path and prompt", () => {
+    expect(
+      describeAction({
+        toolName: "image",
+        params: { path: "shot.png", prompt: "What's in this?" },
+      }),
+    ).toBe('Image: shot.png — "What\'s in this?"');
+  });
+
+  it("describes image with only path", () => {
+    expect(describeAction({ toolName: "image", params: { path: "shot.png" } })).toBe(
+      "Image: shot.png",
+    );
+  });
+
+  it("describes pdf with file_path fallback", () => {
+    expect(describeAction({ toolName: "pdf", params: { file_path: "/tmp/r.pdf" } })).toBe(
+      "PDF: /tmp/r.pdf",
+    );
+  });
+
+  it("describes image_generate with a prompt", () => {
+    expect(
+      describeAction({
+        toolName: "image_generate",
+        params: { prompt: "a dog wearing sunglasses" },
+      }),
+    ).toBe('Generate image: "a dog wearing sunglasses"');
+  });
+
+  it("describes image_generate with no prompt", () => {
+    expect(describeAction({ toolName: "image_generate", params: {} })).toBe("Generate image");
+  });
+
+  it("describes video_generate with a prompt", () => {
+    expect(
+      describeAction({ toolName: "video_generate", params: { prompt: "sunset over the bay" } }),
+    ).toBe('Generate video: "sunset over the bay"');
+  });
+
+  it("describes music_generate with a prompt", () => {
+    expect(describeAction({ toolName: "music_generate", params: { prompt: "lofi beat" } })).toBe(
+      'Generate music: "lofi beat"',
+    );
+  });
+
+  it("describes tts with text", () => {
+    expect(describeAction({ toolName: "tts", params: { text: "hello" } })).toBe('Speak: "hello"');
+  });
+
+  it("describes canvas navigate with url", () => {
+    expect(
+      describeAction({
+        toolName: "canvas",
+        params: { action: "navigate", url: "https://x.com" },
+      }),
+    ).toBe("Canvas navigate: https://x.com");
+  });
+
+  it("describes canvas snapshot with format", () => {
+    expect(
+      describeAction({ toolName: "canvas", params: { action: "snapshot", format: "png" } }),
+    ).toBe("Canvas snapshot: png");
+  });
+
+  it("describes canvas snapshot with no format", () => {
+    expect(describeAction({ toolName: "canvas", params: { action: "snapshot" } })).toBe(
+      "Canvas snapshot",
+    );
+  });
+
+  it("describes nodes system_run with both node and command", () => {
+    expect(
+      describeAction({
+        toolName: "nodes",
+        params: { action: "system_run", node: "raspi-1", command: "uptime" },
+      }),
+    ).toBe("Nodes raspi-1: uptime");
+  });
+
+  it("describes nodes camera_snap with a node", () => {
+    expect(
+      describeAction({
+        toolName: "nodes",
+        params: { action: "camera_snap", node: "raspi-2" },
+      }),
+    ).toBe("Nodes camera: raspi-2");
+  });
+
+  it("describes nodes screen_record with a node", () => {
+    expect(
+      describeAction({
+        toolName: "nodes",
+        params: { action: "screen_record", node: "mac-mini" },
+      }),
+    ).toBe("Nodes screen: mac-mini");
+  });
+
+  it("describes bare nodes with no action", () => {
+    expect(describeAction({ toolName: "nodes", params: {} })).toBe("Nodes");
+  });
+
+  // ── orchestration ────────────────────────────────────────
+  it("describes sessions_send with recipient and message", () => {
+    expect(
+      describeAction({
+        toolName: "sessions_send",
+        params: { sessionKey: "agent:beta:main", message: "ping" },
+      }),
+    ).toBe('Send to agent:beta:main: "ping"');
+  });
+
+  it("describes sessions_send with message only (no recipient)", () => {
+    expect(describeAction({ toolName: "sessions_send", params: { message: "ping" } })).toBe(
+      'Send: "ping"',
+    );
+  });
+
+  it("describes empty sessions_send", () => {
+    expect(describeAction({ toolName: "sessions_send", params: {} })).toBe("Send message");
+  });
+
+  it("describes sessions_yield with sessionKey", () => {
+    expect(
+      describeAction({
+        toolName: "sessions_yield",
+        params: { sessionKey: "agent:gamma:main" },
+      }),
+    ).toBe("Yield agent:gamma:main");
+  });
+
+  it("describes session_status with sessionKey", () => {
+    expect(
+      describeAction({
+        toolName: "session_status",
+        params: { sessionKey: "agent:x:main" },
+      }),
+    ).toBe("Status agent:x:main");
+  });
+
+  it("describes sessions_history with sessionKey", () => {
+    expect(
+      describeAction({
+        toolName: "sessions_history",
+        params: { sessionKey: "agent:x:main" },
+      }),
+    ).toBe("History agent:x:main");
+  });
+
+  it("describes sessions_list (empty params)", () => {
+    expect(describeAction({ toolName: "sessions_list", params: {} })).toBe("List sessions");
+  });
+
+  it("describes agents_list", () => {
+    expect(describeAction({ toolName: "agents_list", params: {} })).toBe("List agents");
+  });
+
+  it("describes subagents kill with target", () => {
+    expect(
+      describeAction({ toolName: "subagents", params: { action: "kill", target: "abc-123" } }),
+    ).toBe("Kill subagent abc-123");
+  });
+
+  it("describes subagents steer with target", () => {
+    expect(
+      describeAction({ toolName: "subagents", params: { action: "steer", target: "abc-123" } }),
+    ).toBe("Steer subagent abc-123");
+  });
+
+  it("describes subagents list (no target)", () => {
+    expect(describeAction({ toolName: "subagents", params: { action: "list" } })).toBe(
+      "List subagents",
+    );
+  });
+
+  it("describes update_plan surfacing the in-progress step", () => {
+    expect(
+      describeAction({
+        toolName: "update_plan",
+        params: {
+          plan: [
+            { step: "scaffold", status: "completed" },
+            { step: "wire api", status: "in_progress" },
+            { step: "deploy", status: "pending" },
+          ],
+        },
+      }),
+    ).toBe('Plan: "wire api"');
+  });
+
+  it("describes update_plan with empty plan + explanation", () => {
+    expect(
+      describeAction({
+        toolName: "update_plan",
+        params: { plan: [], explanation: "thinking" },
+      }),
+    ).toBe("Plan: thinking");
+  });
+
+  it("describes update_plan with empty plan and no explanation", () => {
+    expect(describeAction({ toolName: "update_plan", params: { plan: [] } })).toBe("Plan");
+  });
+
+  it("describes update_plan with non-array plan (defensive)", () => {
+    expect(describeAction({ toolName: "update_plan", params: { plan: "not array" } })).toBe("Plan");
+  });
+
+  // Regression guard: every new tool must produce something other than the
+  // bare tool name. Locks the spec invariant from the issue body.
+  it("never returns the bare tool name for any of the 20 new tools (default fallthrough)", () => {
+    const tools = [
+      "apply_patch",
+      "gateway",
+      "x_search",
+      "code_execution",
+      "image",
+      "image_generate",
+      "video_generate",
+      "music_generate",
+      "tts",
+      "pdf",
+      "canvas",
+      "nodes",
+      "sessions_send",
+      "sessions_yield",
+      "sessions_history",
+      "sessions_list",
+      "session_status",
+      "agents_list",
+      "subagents",
+      "update_plan",
+    ];
+    for (const tool of tools) {
+      const out = describeAction({ toolName: tool, params: {} });
+      expect(out, `${tool} must not fall through to the bare tool name`).not.toBe(tool);
+    }
+  });
+});

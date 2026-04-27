@@ -331,9 +331,228 @@ export function describeAction(entry: {
       const action = typeof params.action === "string" ? params.action : "";
       return action ? `Process: ${action}` : "Process operation";
     }
+
+    // ── changes ────────────────────────────────────────────
+    case "apply_patch": {
+      const path = extractFirstPatchPath(typeof params.patch === "string" ? params.patch : "");
+      return path ? `Patch: ${path}` : "Patch file";
+    }
+    case "gateway": {
+      const action = typeof params.action === "string" ? params.action : "";
+      const path =
+        typeof params.path === "string"
+          ? params.path
+          : typeof params.key === "string"
+            ? params.key
+            : "";
+      if (action === "config.update") return path ? `Gateway update: ${path}` : "Gateway update";
+      if (action === "config.get") return path ? `Gateway query: ${path}` : "Gateway query";
+      if (action === "restart") return "Gateway restart";
+      return action ? `Gateway: ${action}` : "Gateway";
+    }
+
+    // ── web ────────────────────────────────────────────────
+    case "x_search": {
+      const q = typeof params.query === "string" ? params.query : "";
+      return q ? `X search "${truncate(q, 40)}"` : "X search";
+    }
+
+    // ── scripts ────────────────────────────────────────────
+    case "code_execution": {
+      const code =
+        typeof params.code === "string"
+          ? params.code
+          : typeof params.command === "string"
+            ? params.command
+            : "";
+      return code ? `Run code: "${truncate(code, 40)}"` : "Run code";
+    }
+
+    // ── media ──────────────────────────────────────────────
+    case "image":
+    case "pdf": {
+      const label = toolName === "pdf" ? "PDF" : "Image";
+      const target =
+        typeof params.path === "string"
+          ? params.path
+          : typeof params.file_path === "string"
+            ? params.file_path
+            : typeof params.url === "string"
+              ? params.url
+              : "";
+      const prompt = typeof params.prompt === "string" ? params.prompt : "";
+      if (target && prompt) return `${label}: ${target} — "${truncate(prompt, 30)}"`;
+      if (target) return `${label}: ${target}`;
+      if (prompt) return `${label}: "${truncate(prompt, 40)}"`;
+      return label;
+    }
+    case "image_generate":
+    case "video_generate":
+    case "music_generate":
+    case "tts": {
+      const verb = toolName === "tts" ? "Speak" : `Generate ${toolName.replace("_generate", "")}`;
+      const prompt =
+        typeof params.prompt === "string"
+          ? params.prompt
+          : typeof params.text === "string"
+            ? params.text
+            : "";
+      return prompt ? `${verb}: "${truncate(prompt, 40)}"` : verb;
+    }
+    case "canvas": {
+      const action = typeof params.action === "string" ? params.action : "";
+      const url = typeof params.url === "string" ? params.url : "";
+      const format = typeof params.format === "string" ? params.format : "";
+      if (action === "navigate") return url ? `Canvas navigate: ${url}` : "Canvas navigate";
+      if (action === "snapshot") return format ? `Canvas snapshot: ${format}` : "Canvas snapshot";
+      return action ? `Canvas: ${action}` : "Canvas";
+    }
+    case "nodes": {
+      const action = typeof params.action === "string" ? params.action : "";
+      const node =
+        typeof params.node === "string"
+          ? params.node
+          : typeof params.target === "string"
+            ? params.target
+            : "";
+      if (action === "system_run") {
+        const command = typeof params.command === "string" ? params.command : "";
+        if (node && command) return `Nodes ${node}: ${truncate(command, 30)}`;
+        if (command) return `Nodes: ${truncate(command, 30)}`;
+        if (node) return `Nodes run: ${node}`;
+        return "Nodes run";
+      }
+      if (action === "camera_snap" || action === "camera_clip") {
+        return node ? `Nodes camera: ${node}` : "Nodes camera";
+      }
+      if (action === "screen_record") {
+        return node ? `Nodes screen: ${node}` : "Nodes screen";
+      }
+      if (action) return node ? `Nodes ${action}: ${node}` : `Nodes: ${action}`;
+      return "Nodes";
+    }
+
+    // ── orchestration ──────────────────────────────────────
+    case "sessions_send": {
+      const target =
+        typeof params.sessionKey === "string"
+          ? params.sessionKey
+          : typeof params.label === "string"
+            ? params.label
+            : typeof params.agentId === "string"
+              ? params.agentId
+              : "";
+      const msg = typeof params.message === "string" ? params.message : "";
+      if (target && msg) return `Send to ${target}: "${truncate(msg, 30)}"`;
+      if (msg) return `Send: "${truncate(msg, 40)}"`;
+      if (target) return `Send to ${target}`;
+      return "Send message";
+    }
+    case "sessions_yield": {
+      const target =
+        typeof params.sessionKey === "string"
+          ? params.sessionKey
+          : typeof params.label === "string"
+            ? params.label
+            : "";
+      return target ? `Yield ${target}` : "Yield session";
+    }
+    case "session_status": {
+      const target =
+        typeof params.sessionKey === "string"
+          ? params.sessionKey
+          : typeof params.label === "string"
+            ? params.label
+            : typeof params.agentId === "string"
+              ? params.agentId
+              : "";
+      return target ? `Status ${target}` : "Session status";
+    }
+    case "sessions_history": {
+      const target =
+        typeof params.sessionKey === "string"
+          ? params.sessionKey
+          : typeof params.label === "string"
+            ? params.label
+            : typeof params.agentId === "string"
+              ? params.agentId
+              : "";
+      return target ? `History ${target}` : "Session history";
+    }
+    case "sessions_list": {
+      const target =
+        typeof params.sessionKey === "string"
+          ? params.sessionKey
+          : typeof params.label === "string"
+            ? params.label
+            : "";
+      return target ? `List sessions: ${target}` : "List sessions";
+    }
+    case "agents_list":
+      return "List agents";
+    case "subagents": {
+      const action = typeof params.action === "string" ? params.action : "";
+      const target = typeof params.target === "string" ? params.target : "";
+      if (action === "kill") return target ? `Kill subagent ${target}` : "Kill subagent";
+      if (action === "steer") return target ? `Steer subagent ${target}` : "Steer subagent";
+      if (action === "list") return "List subagents";
+      if (action) return target ? `Subagent ${action}: ${target}` : `Subagent ${action}`;
+      return target ? `Subagent ${target}` : "Subagents";
+    }
+    case "update_plan": {
+      // Schema verified at openclaw `update-plan-tool.ts:11-32`:
+      //   { explanation?: string; plan: { step: string; status: "pending" | "in_progress" | "completed" }[] }
+      // The most useful description is the in-progress step text — that's
+      // the operator's current focus. Falls back through first step →
+      // explanation → bare label.
+      const plan = Array.isArray(params.plan) ? params.plan : null;
+      const explanation = typeof params.explanation === "string" ? params.explanation : "";
+      if (!plan || plan.length === 0) {
+        return explanation ? `Plan: ${truncate(explanation, 40)}` : "Plan";
+      }
+      const inProgress = plan.find(
+        (s): s is Record<string, unknown> =>
+          typeof s === "object" &&
+          s !== null &&
+          (s as Record<string, unknown>).status === "in_progress",
+      );
+      const focusStep = inProgress
+        ? typeof inProgress.step === "string"
+          ? inProgress.step
+          : ""
+        : typeof plan[0] === "object" && plan[0] !== null
+          ? typeof (plan[0] as Record<string, unknown>).step === "string"
+            ? ((plan[0] as Record<string, unknown>).step as string)
+            : ""
+          : "";
+      if (focusStep) return `Plan: "${truncate(focusStep, 40)}"`;
+      if (explanation) return `Plan: ${truncate(explanation, 40)}`;
+      return "Plan";
+    }
+
     default:
       return toolName;
   }
+}
+
+/**
+ * Pull the first path from a unified-diff `patch` blob. Tolerant of both
+ * unified-diff `--- a/path` headers and Codex-style `*** Update File: …` /
+ * `*** Add File: …` / `*** Delete File: …` headers. Returns "" when no path
+ * is recognizable — caller falls back to a bare label.
+ *
+ * Mirrors the helper of the same name in `dashboard/src/lib/eventFormat.ts`.
+ * Duplicated rather than imported because categories.ts is backend code and
+ * the dashboard module sits across the SPA boundary; the regex is small and
+ * the dual-source-of-truth between describeAction and formatEventTarget is a
+ * known follow-up (see issue #44 body).
+ */
+function extractFirstPatchPath(patch: string): string {
+  if (!patch) return "";
+  const m =
+    patch.match(/^[-+]{3}\s+[ab]\/(\S+)/m) ??
+    patch.match(/^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(\S+)/m);
+  return m ? m[1] : "";
 }
 
 function describeExecAction(cmd: string): string {

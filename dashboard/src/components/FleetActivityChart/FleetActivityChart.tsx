@@ -362,7 +362,7 @@ export default function FleetActivityChart({
 
       {/* Chart body — split into a fixed-width lane-label gutter on the left
           and a flex-1 swarm SVG on the right so lane labels stay visible even
-          when all six lanes are empty. marginTop reserves room for both the
+          when all eight lanes are empty. marginTop reserves room for both the
           NOW caption (lifted above y=0) and cluster '+N' labels that draw
           above the top lane; the main SVG has overflow="visible" below. */}
       <div
