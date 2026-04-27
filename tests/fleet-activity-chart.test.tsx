@@ -148,22 +148,42 @@ describe("FleetActivityChart — empty state", () => {
 
 describe("FleetActivityChart — dot placement", () => {
   it("renders one [data-cl-swarm-dot] per entry when spread across different times", () => {
-    // Spread 6 entries ~30 seconds apart so none cluster at 12h/900px.
+    // Spread 8 entries ~30 seconds apart so none cluster at 12h/900px.
     const base = Date.parse(NOW) - 10 * 60_000;
-    const entries = Array.from({ length: 6 }, (_, i) =>
+    const entries = Array.from({ length: 8 }, (_, i) =>
       mkEntry({
-        category: (["exploring", "changes", "git", "scripts", "web", "comms"] as const)[i],
+        category: (
+          [
+            "exploring",
+            "changes",
+            "git",
+            "scripts",
+            "web",
+            "comms",
+            "orchestration",
+            "media",
+          ] as const
+        )[i],
         timestamp: new Date(base + i * 60_000).toISOString(),
         toolCallId: `tc-${i}`,
       }),
     );
     const { container } = renderChart({ entries });
-    expect(container.querySelectorAll("[data-cl-swarm-dot]")).toHaveLength(6);
+    expect(container.querySelectorAll("[data-cl-swarm-dot]")).toHaveLength(8);
   });
 
   it("places each dot in its category lane (cy ascending by LANE_ORDER)", () => {
     const base = Date.parse(NOW) - 30 * 60_000;
-    const cats: ActivityCategory[] = ["exploring", "changes", "git", "scripts", "web", "comms"];
+    const cats: ActivityCategory[] = [
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ];
     const entries = cats.map((cat, i) =>
       mkEntry({
         category: cat,
@@ -557,9 +577,18 @@ describe("FleetActivityChart — legend", () => {
   it("renders a legend chip for every ActivityCategory", () => {
     const { container } = renderChart();
     const chips = container.querySelectorAll("[data-cl-swarm-legend-chip]");
-    expect(chips.length).toBe(6);
+    expect(chips.length).toBe(8);
     const ids = [...chips].map((el) => el.getAttribute("data-cl-swarm-legend-chip"));
-    expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+    expect(ids).toEqual([
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ]);
   });
 
   it("renders two risk-key chips (high + critical) after the category chips", () => {
@@ -595,26 +624,53 @@ describe("FleetActivityChart — lane labels (left gutter)", () => {
     const { container } = renderChart();
     const labels = container.querySelectorAll("[data-cl-swarm-lane-label]");
     const ids = [...labels].map((el) => el.getAttribute("data-cl-swarm-lane-label"));
-    expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+    expect(ids).toEqual([
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ]);
   });
 
   it("lane labels show the CATEGORY_META short-lowercase form", () => {
     const { container } = renderChart();
     const labels = container.querySelectorAll("[data-cl-swarm-lane-label]");
     const texts = [...labels].map((el) => el.textContent);
-    expect(texts).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+    expect(texts).toEqual([
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ]);
   });
 
   it("lane labels render even when all lanes are empty — empty is a signal", () => {
     const { container } = renderChart({ entries: [] });
-    expect(container.querySelectorAll("[data-cl-swarm-lane-label]").length).toBe(6);
+    expect(container.querySelectorAll("[data-cl-swarm-lane-label]").length).toBe(8);
   });
 
   it("renders one [data-cl-swarm-lane-icon] per category, stroked with the category color", () => {
     const { container } = renderChart();
     const icons = [...container.querySelectorAll("[data-cl-swarm-lane-icon]")];
     const ids = icons.map((el) => el.getAttribute("data-cl-swarm-lane-icon"));
-    expect(ids).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+    expect(ids).toEqual([
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ]);
     const expectedStrokes: Record<string, string> = {
       exploring: "var(--cl-cat-exploring)",
       changes: "var(--cl-cat-changes)",
@@ -622,6 +678,8 @@ describe("FleetActivityChart — lane labels (left gutter)", () => {
       scripts: "var(--cl-cat-scripts)",
       web: "var(--cl-cat-web)",
       comms: "var(--cl-cat-comms)",
+      orchestration: "var(--cl-cat-orchestration)",
+      media: "var(--cl-cat-media)",
     };
     for (const icon of icons) {
       const cat = icon.getAttribute("data-cl-swarm-lane-icon") ?? "";

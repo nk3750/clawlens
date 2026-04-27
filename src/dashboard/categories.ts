@@ -18,27 +18,71 @@ import { parseSessionKey } from "./channel-catalog";
  *   sub-categories. It replaces the retired `commands` catch-all.
  * - Every tool name and every ExecCategory routes into exactly one bucket.
  */
-export type ActivityCategory = "exploring" | "changes" | "git" | "scripts" | "web" | "comms";
+export type ActivityCategory =
+  | "exploring"
+  | "changes"
+  | "git"
+  | "scripts"
+  | "web"
+  | "comms"
+  | "orchestration"
+  | "media";
 
 const TOOL_TO_CATEGORY: Record<string, ActivityCategory> = {
+  // exploring — file/state reads only (session reads moved to orchestration)
   read: "exploring",
   search: "exploring",
   glob: "exploring",
   grep: "exploring",
   memory_search: "exploring",
   memory_get: "exploring",
+
+  // changes — file/system mutation
   write: "changes",
   edit: "changes",
   // `cron` here is the scheduling TOOL, not the session channel — rare but
   // mutating (installs a schedule), so it sits alongside write/edit.
   cron: "changes",
   process: "changes",
+  apply_patch: "changes",
+  // gateway: config.update / restart dominate; config.get is rare and stays
+  // tinted via the bucket. Severity rides risk score, not color.
+  gateway: "changes",
+
+  // web — outbound HTTP / search
   fetch_url: "web",
   web_fetch: "web",
   web_search: "web",
   browser: "web",
+  x_search: "web",
+
+  // scripts — running code
+  code_execution: "scripts",
+
+  // comms — agent ↔ human only (sessions_spawn moved out)
   message: "comms",
-  sessions_spawn: "comms",
+
+  // orchestration — agent ↔ agent (NEW BUCKET)
+  sessions_spawn: "orchestration",
+  sessions_send: "orchestration",
+  sessions_yield: "orchestration",
+  sessions_history: "orchestration",
+  sessions_list: "orchestration",
+  session_status: "orchestration",
+  subagents: "orchestration",
+  agents_list: "orchestration",
+  update_plan: "orchestration",
+
+  // media — non-code artifacts (NEW BUCKET)
+  image: "media",
+  image_generate: "media",
+  video_generate: "media",
+  music_generate: "media",
+  tts: "media",
+  pdf: "media",
+  canvas: "media",
+  nodes: "media",
+
   // exec → routed by sub-category in EXEC_CATEGORY_TO_CATEGORY. No entry here.
 };
 
@@ -94,13 +138,15 @@ export function getCategoryFromEntry(entry: {
 
 // ── Category breakdown ───────────────────────────────────
 
-const ALL_CATEGORIES: ActivityCategory[] = [
+export const ALL_CATEGORIES: ActivityCategory[] = [
   "exploring",
   "changes",
   "git",
   "scripts",
   "web",
   "comms",
+  "orchestration",
+  "media",
 ];
 
 /**
@@ -126,6 +172,8 @@ export function computeBreakdown(
     scripts: 0,
     web: 0,
     comms: 0,
+    orchestration: 0,
+    media: 0,
   };
 
   for (const e of entries) {
@@ -147,6 +195,8 @@ export function computeBreakdown(
     scripts: 0,
     web: 0,
     comms: 0,
+    orchestration: 0,
+    media: 0,
   };
 
   let assigned = 0;

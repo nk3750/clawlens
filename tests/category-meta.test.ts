@@ -15,6 +15,8 @@ describe("CATEGORY_META.label", () => {
     expect(CATEGORY_META.scripts.label).toBe("scripts");
     expect(CATEGORY_META.web.label).toBe("web");
     expect(CATEGORY_META.comms.label).toBe("comms");
+    expect(CATEGORY_META.orchestration.label).toBe("orchestration");
+    expect(CATEGORY_META.media.label).toBe("media");
   });
 });
 
@@ -35,6 +37,11 @@ describe("CATEGORY_META.color — token names match bucket names", () => {
     expect(CATEGORY_META.changes.color).toBe("var(--cl-cat-changes)");
     expect(CATEGORY_META.web.color).toBe("var(--cl-cat-web)");
     expect(CATEGORY_META.comms.color).toBe("var(--cl-cat-comms)");
+  });
+
+  it("orchestration and media reference their own --cl-cat-* tokens", () => {
+    expect(CATEGORY_META.orchestration.color).toBe("var(--cl-cat-orchestration)");
+    expect(CATEGORY_META.media.color).toBe("var(--cl-cat-media)");
   });
 
   it("every CATEGORY_META.color resolves to a --cl-cat-* token (no risk-token, no hardcoded hex)", () => {
@@ -81,6 +88,8 @@ describe("category palette — no hex-value overlap with risk palette", () => {
     expect(tokens["cl-cat-web"]).toBe("#06b6d4"); // cyan-500
     expect(tokens["cl-cat-comms"]).toBe("#14b8a6"); // teal-500
     expect(tokens["cl-cat-scripts"]).toBe("#a855f7"); // purple-500
+    expect(tokens["cl-cat-orchestration"]).toBe("#6366f1"); // indigo-500
+    expect(tokens["cl-cat-media"]).toBe("#d946ef"); // fuchsia-500
   });
 
   it("category and risk hex sets are disjoint", () => {
@@ -95,6 +104,8 @@ describe("category palette — no hex-value overlap with risk palette", () => {
       "cl-cat-web",
       "cl-cat-comms",
       "cl-cat-scripts",
+      "cl-cat-orchestration",
+      "cl-cat-media",
     ];
     const riskNames = ["cl-risk-low", "cl-risk-medium", "cl-risk-high", "cl-risk-critical"];
 

@@ -57,12 +57,14 @@
        green spectrum; categories never share a hex with a risk token. The
        category-meta hex-overlap test in tests/category-meta.test.ts enforces
        this rule against future drift. */
-    --cl-cat-exploring: #3b82f6; /* blue-500   — exploring */
-    --cl-cat-changes:   #8b5cf6; /* violet-500 — changes   */
-    --cl-cat-git:       #ec4899; /* pink-500   — git       */
-    --cl-cat-web:       #06b6d4; /* cyan-500   — web       */
-    --cl-cat-comms:     #14b8a6; /* teal-500   — comms     */
-    --cl-cat-scripts:   #a855f7; /* purple-500 — scripts   */
+    --cl-cat-exploring:     #3b82f6; /* blue-500    — exploring     */
+    --cl-cat-changes:       #8b5cf6; /* violet-500  — changes       */
+    --cl-cat-git:           #ec4899; /* pink-500    — git           */
+    --cl-cat-web:           #06b6d4; /* cyan-500    — web           */
+    --cl-cat-comms:         #14b8a6; /* teal-500    — comms         */
+    --cl-cat-scripts:       #a855f7; /* purple-500  — scripts       */
+    --cl-cat-orchestration: #6366f1; /* indigo-500  — orchestration */
+    --cl-cat-media:         #d946ef; /* fuchsia-500 — media         */
 
     /* Radii ladder */
     --cl-r-xs:   2px;

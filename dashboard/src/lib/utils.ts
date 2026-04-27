@@ -283,6 +283,21 @@ export const CATEGORY_META: Record<
     // MessageSquare icon
     iconPath: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
   },
+  orchestration: {
+    label: "orchestration",
+    color: "var(--cl-cat-orchestration)",
+    // Lucide `Network` — three connected nodes; reads as "agent fleet" at 14×14.
+    // Three rounded squares (top, bottom-left, bottom-right) joined by a bus.
+    iconPath:
+      "M16 16h6v6h-6z M2 16h6v6H2z M9 2h6v6H9z M5 16v-3a1 1 0 011-1h12a1 1 0 011 1v3 M12 12V8",
+  },
+  media: {
+    label: "media",
+    color: "var(--cl-cat-media)",
+    // Lucide `Image` — frame + sun + folded corner.
+    iconPath:
+      "M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z M11 9a2 2 0 11-4 0 2 2 0 014 0z M21 15l-3.086-3.086a2 2 0 00-2.828 0L6 21",
+  },
 };
 
 export function categoryColor(cat: ActivityCategory): string {
@@ -315,7 +330,10 @@ const EXEC_CATEGORY_TAGS: Record<string, string> = {
   "unknown-exec": "exec",
 };
 
-/** Tag for each non-exec tool. Covers all tool names in TOOL_TO_CATEGORY. */
+/** Tag for each non-exec tool. Covers all tool names in TOOL_TO_CATEGORY.
+ * For tools with a `params.action` discriminator (nodes / canvas / gateway /
+ * subagents) the entry here is a fallback — `deriveActionTag` overrides when
+ * an action is present. */
 const TOOL_TAGS: Record<string, string> = {
   read: "file-read",
   write: "file-write",
@@ -333,7 +351,73 @@ const TOOL_TAGS: Record<string, string> = {
   process: "process",
   memory_get: "memory",
   memory_search: "memory",
+
+  // changes
+  apply_patch: "file-patch",
+  gateway: "gateway",
+
+  // web
+  x_search: "x-search",
+
+  // scripts
+  code_execution: "code-exec",
+
+  // orchestration
+  sessions_send: "session-send",
+  sessions_yield: "session-yield",
+  sessions_history: "session-history",
+  sessions_list: "session-list",
+  session_status: "session-status",
+  agents_list: "agents-list",
+  update_plan: "plan-update",
+  subagents: "subagents",
+
+  // media
+  image: "image-analyze",
+  image_generate: "image-gen",
+  video_generate: "video-gen",
+  music_generate: "music-gen",
+  tts: "tts",
+  pdf: "pdf",
+  canvas: "canvas",
+  nodes: "node",
 };
+
+/** Action-aware tag override for the four tools whose `params.action`
+ * discriminator carries semantic weight. Returns undefined when no action is
+ * present so the caller falls through to the toolName-keyed `TOOL_TAGS`
+ * entry. Mirrors how exec already routes through `EXEC_CATEGORY_TAGS`. */
+function deriveActionTag(toolName: string, action?: string): string | undefined {
+  if (!action) return undefined;
+  switch (toolName) {
+    case "nodes":
+      if (action === "camera_snap" || action === "camera_clip") return "camera";
+      if (action === "screen_record") return "screen-rec";
+      if (action === "system_run") return "node-run";
+      if (action === "approve" || action === "reject") return "node-decision";
+      if (action === "notify") return "node-notify";
+      return "node";
+    case "canvas":
+      if (action === "snapshot") return "canvas-snap";
+      if (action === "eval") return "canvas-eval";
+      if (action === "navigate") return "canvas-nav";
+      if (action === "present") return "canvas-show";
+      if (action === "hide") return "canvas-hide";
+      return "canvas";
+    case "gateway":
+      if (action === "config.update") return "config-write";
+      if (action === "config.get") return "config-read";
+      if (action === "restart") return "restart";
+      return "gateway";
+    case "subagents":
+      if (action === "kill") return "subagent-kill";
+      if (action === "steer") return "subagent-steer";
+      if (action === "list") return "subagent-list";
+      return "subagents";
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Derive display tags for a timeline entry.
@@ -349,6 +433,11 @@ export function deriveTags(entry: {
   execCategory?: string;
   riskTags?: string[];
   effectiveDecision?: string;
+  /** Threaded through so action-aware tools (nodes / canvas / gateway /
+   * subagents) can surface action-specific tags via `deriveActionTag`. Older
+   * call sites that omit this stay backwards-compatible — tag derivation just
+   * falls back to the toolName-keyed entry. */
+  params?: Record<string, unknown>;
 }): string[] {
   const extra: string[] = [];
   if (entry.effectiveDecision === "block") extra.push("blocked");
@@ -363,9 +452,16 @@ export function deriveTags(entry: {
     const tag = EXEC_CATEGORY_TAGS[entry.execCategory];
     if (tag) base.push(tag);
   } else {
-    const tag = TOOL_TAGS[entry.toolName];
-    if (tag) base.push(tag);
-    else if (entry.toolName) base.push(entry.toolName);
+    const action =
+      typeof entry.params?.action === "string" ? entry.params.action : undefined;
+    const actionTag = deriveActionTag(entry.toolName, action);
+    if (actionTag) {
+      base.push(actionTag);
+    } else {
+      const tag = TOOL_TAGS[entry.toolName];
+      if (tag) base.push(tag);
+      else if (entry.toolName) base.push(entry.toolName);
+    }
   }
 
   return [...extra, ...base].slice(0, 3);
@@ -448,6 +544,142 @@ const EXTRA_ICON_PATHS: Record<string, string> = {
     "M16.5 9.4l-9-5.19 M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12",
 };
 
+/** Lucide icon paths used by `toolIconOverride`. Each entry's `<path d>` was
+ * hand-pasted from `lucide.dev/icons/<name>` SVG source — same workflow as
+ * `EXTRA_ICON_PATHS` above so we don't take a runtime dep on lucide-react.
+ * Designed for the 24×24 viewBox used by every other icon in this file. */
+const NEW_ICON_PATHS: Record<string, string> = {
+  // media bucket
+  image:
+    "M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z M11 9a2 2 0 11-4 0 2 2 0 014 0z M21 15l-3.086-3.086a2 2 0 00-2.828 0L6 21",
+  imageGen:
+    "M9.937 15.5A2 2 0 008.5 14.063l-6.135-1.582a.5.5 0 010-.962L8.5 9.936A2 2 0 009.937 8.5l1.582-6.135a.5.5 0 01.963 0L14.063 8.5A2 2 0 0015.5 9.937l6.135 1.581a.5.5 0 010 .964L15.5 14.063a2 2 0 00-1.437 1.437l-1.582 6.135a.5.5 0 01-.963 0z M20 3v4 M22 5h-4 M4 17v2 M5 18H3",
+  video:
+    "M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z M7 3v18 M3 7.5h4 M3 12h18 M3 16.5h4 M17 3v18 M17 7.5h4 M17 16.5h4",
+  music:
+    "M9 18V5l12-2v13 M6 21a3 3 0 100-6 3 3 0 000 6z M18 18a3 3 0 100-6 3 3 0 000 6z",
+  speaker:
+    "M11 5L6 9H2v6h4l5 4z M15.54 8.46a5 5 0 010 7.07 M19.07 4.93a10 10 0 010 14.14",
+  document:
+    "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8",
+  monitor:
+    "M10 7.5v5l4-2.5z M2 13a2 2 0 002 2h16a2 2 0 002-2V5a2 2 0 00-2-2H4a2 2 0 00-2 2z M12 17v4 M8 21h8",
+  camera:
+    "M14.5 4h-5L7 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2h-3l-2.5-3z M15 13a3 3 0 11-6 0 3 3 0 016 0z",
+  screen:
+    "M22 6a3 3 0 11-6 0 3 3 0 016 0z M22 12v3a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h9 M12 17v4 M8 21h8",
+
+  // orchestration bucket
+  network:
+    "M16 16h6v6h-6z M2 16h6v6H2z M9 2h6v6H9z M5 16v-3a1 1 0 011-1h12a1 1 0 011 1v3 M12 12V8",
+  send: "M3 3l3 9-3 9 19-9z M6 12h13",
+  pause:
+    "M22 12a10 10 0 11-20 0 10 10 0 0120 0z M10 9v6 M14 9v6",
+  history:
+    "M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8 M3 3v5h5 M12 7v5l4 2",
+  list: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
+  pulse: "M2 12h4l3-9 6 18 3-9h4",
+  users:
+    "M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2 M13 7a4 4 0 11-8 0 4 4 0 018 0z M22 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75",
+  todo: "M4 5h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z M3 17l2 2 4-4 M13 6h8 M13 12h8 M13 18h8",
+
+  // changes bucket
+  patch:
+    "M14.5 22H18a2 2 0 002-2V7l-5-5H6a2 2 0 00-2 2v3 M14 2v6h6 M3 15h6 M6 12v6 M11 18H5",
+  cog:
+    "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+
+  // web bucket
+  hash: "M4 9h16 M4 15h16 M10 3l-2 18 M16 3l-2 18",
+
+  // scripts bucket
+  terminal: "M4 17l6-6-6-6 M12 19h8",
+};
+
+/**
+ * Per-tool icon override for the 20 tools added by the activity-category-
+ * coverage spec (rev 2). Returns `undefined` for any tool not handled here so
+ * callers fall back to the activity-category default from `CATEGORY_META`.
+ *
+ * Action-aware for `nodes` / `canvas` / `gateway` / `subagents`. Severity
+ * never bleeds into color — color is bucket-bound across every action so the
+ * microbar swatches stay legible. Severity rides the risk score.
+ */
+function toolIconOverride(
+  toolName: string,
+  action?: string,
+): { path: string; color: string } | undefined {
+  switch (toolName) {
+    // ── media bucket — color = var(--cl-cat-media) ─────────────────
+    case "image":
+      return { path: NEW_ICON_PATHS.image, color: "var(--cl-cat-media)" };
+    case "image_generate":
+      return { path: NEW_ICON_PATHS.imageGen, color: "var(--cl-cat-media)" };
+    case "video_generate":
+      return { path: NEW_ICON_PATHS.video, color: "var(--cl-cat-media)" };
+    case "music_generate":
+      return { path: NEW_ICON_PATHS.music, color: "var(--cl-cat-media)" };
+    case "tts":
+      return { path: NEW_ICON_PATHS.speaker, color: "var(--cl-cat-media)" };
+    case "pdf":
+      return { path: NEW_ICON_PATHS.document, color: "var(--cl-cat-media)" };
+    case "canvas":
+      if (action === "snapshot") {
+        return { path: NEW_ICON_PATHS.camera, color: "var(--cl-cat-media)" };
+      }
+      return { path: NEW_ICON_PATHS.monitor, color: "var(--cl-cat-media)" };
+    case "nodes":
+      if (action === "camera_snap" || action === "camera_clip") {
+        return { path: NEW_ICON_PATHS.camera, color: "var(--cl-cat-media)" };
+      }
+      if (action === "screen_record") {
+        return { path: NEW_ICON_PATHS.screen, color: "var(--cl-cat-media)" };
+      }
+      if (action === "status" || action === "describe" || action === "pending") {
+        return { path: NEW_ICON_PATHS.pulse, color: "var(--cl-cat-media)" };
+      }
+      return { path: NEW_ICON_PATHS.monitor, color: "var(--cl-cat-media)" };
+
+    // ── orchestration bucket — color = var(--cl-cat-orchestration) ─
+    case "sessions_send":
+      return { path: NEW_ICON_PATHS.send, color: "var(--cl-cat-orchestration)" };
+    case "sessions_yield":
+      return { path: NEW_ICON_PATHS.pause, color: "var(--cl-cat-orchestration)" };
+    case "sessions_history":
+      return { path: NEW_ICON_PATHS.history, color: "var(--cl-cat-orchestration)" };
+    case "sessions_list":
+      return { path: NEW_ICON_PATHS.list, color: "var(--cl-cat-orchestration)" };
+    case "session_status":
+      return { path: NEW_ICON_PATHS.pulse, color: "var(--cl-cat-orchestration)" };
+    case "agents_list":
+      return { path: NEW_ICON_PATHS.users, color: "var(--cl-cat-orchestration)" };
+    case "subagents":
+      return { path: NEW_ICON_PATHS.users, color: "var(--cl-cat-orchestration)" };
+    case "update_plan":
+      return { path: NEW_ICON_PATHS.todo, color: "var(--cl-cat-orchestration)" };
+    // sessions_spawn falls through to the orchestration category default
+    // (Network icon via CATEGORY_META.orchestration). Operators differentiate
+    // via the tag column.
+
+    // ── changes bucket — color = var(--cl-cat-changes) ─────────────
+    case "apply_patch":
+      return { path: NEW_ICON_PATHS.patch, color: "var(--cl-cat-changes)" };
+    case "gateway":
+      return { path: NEW_ICON_PATHS.cog, color: "var(--cl-cat-changes)" };
+
+    // ── web bucket — color = var(--cl-cat-web) ─────────────────────
+    case "x_search":
+      return { path: NEW_ICON_PATHS.hash, color: "var(--cl-cat-web)" };
+
+    // ── scripts bucket — color = var(--cl-cat-scripts) ─────────────
+    case "code_execution":
+      return { path: NEW_ICON_PATHS.terminal, color: "var(--cl-cat-scripts)" };
+
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Exec sub-category → icon override mapping. Covers all 15 ExecCategory values.
  * Returns { path, color } for SVG rendering, or undefined to use the default
@@ -483,14 +715,23 @@ export function entryIcon(entry: {
   toolName: string;
   category: ActivityCategory;
   execCategory?: string;
+  /** Threaded through so `toolIconOverride` can branch on `params.action` for
+   * action-aware tools (nodes / canvas / gateway / subagents). Older callers
+   * that omit this stay backwards-compatible — those tools just get their
+   * tool-level fallback icon instead of the action-specific one. */
+  params?: Record<string, unknown>;
 }): { path: string; color: string } {
   const meta = CATEGORY_META[entry.category];
   const defaultIcon = { path: meta?.iconPath ?? "", color: meta?.color ?? "var(--cl-text-muted)" };
 
-  // Non-exec tools use their activity category icon
-  if (entry.toolName !== "exec" || !entry.execCategory) return defaultIcon;
+  if (entry.toolName === "exec") {
+    if (!entry.execCategory) return defaultIcon;
+    const override = EXEC_ICON_OVERRIDES[entry.execCategory];
+    return override ?? defaultIcon;
+  }
 
-  // Exec tools: check for sub-category override
-  const override = EXEC_ICON_OVERRIDES[entry.execCategory];
-  return override ?? defaultIcon;
+  const action =
+    typeof entry.params?.action === "string" ? entry.params.action : undefined;
+  const toolOverride = toolIconOverride(entry.toolName, action);
+  return toolOverride ?? defaultIcon;
 }

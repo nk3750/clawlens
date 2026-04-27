@@ -47,6 +47,37 @@ export function groupVerb(toolName: string): { verb: string; noun: string } {
     case "fetch_url": return { verb: "Fetched", noun: "URLs" };
     case "grep": return { verb: "Searched", noun: "patterns" };
     case "glob": return { verb: "Scanned", noun: "patterns" };
+
+    // changes
+    case "apply_patch": return { verb: "Patched", noun: "files" };
+    case "gateway": return { verb: "Configured", noun: "gateway" };
+
+    // web
+    case "x_search": return { verb: "Searched", noun: "X posts" };
+
+    // scripts
+    case "code_execution": return { verb: "Executed", noun: "code" };
+
+    // orchestration
+    case "sessions_history": return { verb: "Queried", noun: "session histories" };
+    case "sessions_list": return { verb: "Listed", noun: "sessions" };
+    case "sessions_send": return { verb: "Messaged", noun: "sessions" };
+    case "sessions_yield": return { verb: "Yielded", noun: "sessions" };
+    case "session_status": return { verb: "Checked", noun: "session statuses" };
+    case "subagents": return { verb: "Managed", noun: "subagents" };
+    case "agents_list": return { verb: "Listed", noun: "agents" };
+    case "update_plan": return { verb: "Planned", noun: "steps" };
+
+    // media
+    case "image": return { verb: "Analyzed", noun: "images" };
+    case "image_generate": return { verb: "Generated", noun: "images" };
+    case "video_generate": return { verb: "Generated", noun: "videos" };
+    case "music_generate": return { verb: "Generated", noun: "tracks" };
+    case "tts": return { verb: "Spoke", noun: "phrases" };
+    case "pdf": return { verb: "Analyzed", noun: "PDFs" };
+    case "canvas": return { verb: "Used", noun: "canvas" };
+    case "nodes": return { verb: "Operated", noun: "nodes" };
+
     default: return { verb: toolName, noun: "actions" };
   }
 }

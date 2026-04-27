@@ -12,7 +12,7 @@
  *   sub-categories. It replaces the retired `commands` catch-all.
  * - Every tool name and every ExecCategory routes into exactly one bucket.
  */
-export type ActivityCategory = "exploring" | "changes" | "git" | "scripts" | "web" | "comms";
+export type ActivityCategory = "exploring" | "changes" | "git" | "scripts" | "web" | "comms" | "orchestration" | "media";
 export declare function getCategory(toolName: string, execCategory?: string): ActivityCategory;
 /**
  * Route a full AuditEntry-shaped record to its activity bucket, deriving the
@@ -26,6 +26,7 @@ export declare function getCategoryFromEntry(entry: {
     params?: Record<string, unknown>;
     execCategory?: string;
 }): ActivityCategory;
+export declare const ALL_CATEGORIES: ActivityCategory[];
 /**
  * Compute percentage breakdown from a set of entries.
  * Returns percentages that sum to 100 (or all 0 if empty).

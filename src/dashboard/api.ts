@@ -1959,7 +1959,16 @@ export function getActivityTimeline(
       bucket = {
         start: new Date(bucketStart).toISOString(),
         agentId,
-        counts: { exploring: 0, changes: 0, git: 0, scripts: 0, web: 0, comms: 0 },
+        counts: {
+          exploring: 0,
+          changes: 0,
+          git: 0,
+          scripts: 0,
+          web: 0,
+          comms: 0,
+          orchestration: 0,
+          media: 0,
+        },
         total: 0,
         peakRisk: 0,
         sessions: [],

@@ -43,7 +43,8 @@ function makeAgent(partial: Partial<AgentInfo> = {}): AgentInfo {
     lastActiveTimestamp: NOW_ISO,
     mode: "interactive",
     riskPosture: "calm",
-    // New taxonomy: six pure-domain buckets (exploring/changes/git/scripts/web/comms).
+    // Taxonomy after activity-category-coverage spec rev 2: eight pure-domain
+    // buckets (exploring / changes / git / scripts / web / comms / orchestration / media).
     activityBreakdown: {
       exploring: 5,
       changes: 3,
@@ -51,6 +52,8 @@ function makeAgent(partial: Partial<AgentInfo> = {}): AgentInfo {
       scripts: 2,
       web: 1,
       comms: 0,
+      orchestration: 0,
+      media: 0,
     },
     todayActivityBreakdown: {
       exploring: 5,
@@ -59,6 +62,8 @@ function makeAgent(partial: Partial<AgentInfo> = {}): AgentInfo {
       scripts: 2,
       web: 1,
       comms: 0,
+      orchestration: 0,
+      media: 0,
     },
     needsAttention: false,
     blockedCount: 0,
@@ -106,6 +111,8 @@ describe("AgentCardCompact — category bars + icons (agent-card-polish §2)", (
         scripts: 2,
         web: 2,
         comms: 1,
+        orchestration: 0,
+        media: 0,
       },
     });
     const { container } = renderCard(agent);
@@ -146,6 +153,8 @@ describe("AgentCardCompact — category bars + icons (agent-card-polish §2)", (
         scripts: 2,
         web: 0,
         comms: 0,
+        orchestration: 0,
+        media: 0,
       },
     });
     const { container } = renderCard(agent);
@@ -171,6 +180,8 @@ describe("AgentCardCompact — category bars + icons (agent-card-polish §2)", (
         scripts: 1,
         web: 0,
         comms: 0,
+        orchestration: 0,
+        media: 0,
       },
     });
     const { container } = renderCard(agent);
@@ -178,15 +189,17 @@ describe("AgentCardCompact — category bars + icons (agent-card-polish §2)", (
     expect(rows.length).toBe(4);
   });
 
-  it("caps category rows at 4 even when all 6 categories are surfaced", () => {
+  it("caps category rows at 4 even when all 8 categories are surfaced", () => {
     const agent = makeAgent({
       todayActivityBreakdown: {
-        exploring: 5,
-        changes: 4,
-        git: 3,
-        scripts: 2,
-        web: 1,
-        comms: 1,
+        exploring: 8,
+        changes: 7,
+        git: 6,
+        scripts: 5,
+        web: 4,
+        comms: 3,
+        orchestration: 2,
+        media: 1,
       },
     });
     const { container } = renderCard(agent);
@@ -197,17 +210,19 @@ describe("AgentCardCompact — category bars + icons (agent-card-polish §2)", (
   it("renders a '+N more' overflow row when more than 4 categories are surfaced", () => {
     const agent = makeAgent({
       todayActivityBreakdown: {
-        exploring: 5,
-        changes: 4,
-        git: 3,
-        scripts: 2,
-        web: 1,
-        comms: 1,
+        exploring: 8,
+        changes: 7,
+        git: 6,
+        scripts: 5,
+        web: 4,
+        comms: 3,
+        orchestration: 2,
+        media: 1,
       },
     });
     const { container } = renderCard(agent);
-    // Six surfaced, top 4 shown → 2 overflow.
-    expect(container.textContent).toMatch(/\+2 more/);
+    // Eight surfaced, top 4 shown → 4 overflow.
+    expect(container.textContent).toMatch(/\+4 more/);
   });
 });
 

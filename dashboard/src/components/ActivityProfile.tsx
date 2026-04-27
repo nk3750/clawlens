@@ -10,7 +10,14 @@ interface Props {
 }
 
 const ORDERED: ActivityCategory[] = [
-  "exploring", "changes", "git", "scripts", "web", "comms",
+  "exploring",
+  "changes",
+  "git",
+  "scripts",
+  "web",
+  "comms",
+  "orchestration",
+  "media",
 ];
 
 export default function ActivityProfile({ breakdown, sessionActions, todayActions, decisionCounts, tierCounts }: Props) {

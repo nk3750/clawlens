@@ -4,7 +4,9 @@ export type ActivityCategory =
   | "git"
   | "scripts"
   | "web"
-  | "comms";
+  | "comms"
+  | "orchestration"
+  | "media";
 
 export type RiskTier = "low" | "medium" | "high" | "critical";
 export type RiskPosture = "calm" | "elevated" | "high" | "critical";

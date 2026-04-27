@@ -33,8 +33,20 @@ function dot(partial: { cx?: number; cy?: number; entry?: Partial<EntryResponse>
 }
 
 describe("LANE_ORDER", () => {
-  it("lists the 6 categories in the exploring → comms order (top to bottom)", () => {
-    expect(LANE_ORDER).toEqual(["exploring", "changes", "git", "scripts", "web", "comms"]);
+  it("lists the 8 categories in the exploring → media order (top to bottom)", () => {
+    // orchestration sits next to comms (peer "boundary-crossing" buckets);
+    // media stays last (creative output). Kept in lockstep with the spec's
+    // canonical category order — see activity-category-coverage spec §9.
+    expect(LANE_ORDER).toEqual([
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ]);
   });
 });
 
@@ -76,25 +88,28 @@ describe("jitterForKey", () => {
 });
 
 describe("laneYForCategory", () => {
-  it("returns the lane center for each of the 6 categories, top to bottom", () => {
-    const chartH = 180; // 30px per lane
+  it("returns the lane center for each of the 8 categories, top to bottom", () => {
+    // 240 chart height / 8 lanes = 30px per lane (preserves the 30px lane
+    // height the prior 6-lane * 30px setup used after the rev-2 lane bump).
+    const chartH = 240;
     const ys = LANE_ORDER.map((c) => laneYForCategory(c, chartH));
-    // Strictly increasing — exploring at top (smallest y), comms at bottom.
+    // Strictly increasing — exploring at top (smallest y), media at bottom.
     for (let i = 1; i < ys.length; i++) {
       expect(ys[i]).toBeGreaterThan(ys[i - 1]);
     }
     // Top lane's center at half a lane height.
     expect(ys[0]).toBe(15);
     // Bottom lane's center at chartH - half a lane height.
-    expect(ys[5]).toBe(chartH - 15);
+    expect(ys[ys.length - 1]).toBe(chartH - 15);
   });
 
-  it("scales with chart height (lane height = chartH / 6)", () => {
+  it("scales with chart height (lane height = chartH / LANE_ORDER.length)", () => {
     const a = laneYForCategory("git", 120);
     const b = laneYForCategory("git", 240);
-    // git is index 2; center = laneH * 2.5.
-    expect(a).toBe((120 / 6) * 2.5);
-    expect(b).toBe((240 / 6) * 2.5);
+    // git is index 2; center = laneH * 2.5. With LANE_ORDER.length = 8 the
+    // lane height tightens by 25% relative to 6 lanes — accepted per spec §9.
+    expect(a).toBe((120 / LANE_ORDER.length) * 2.5);
+    expect(b).toBe((240 / LANE_ORDER.length) * 2.5);
   });
 });
 
@@ -302,7 +317,16 @@ describe("cullLabelsForWidth", () => {
 // Exhaustiveness sanity check — every ActivityCategory value must have a lane.
 describe("lane coverage", () => {
   it("LANE_ORDER covers every ActivityCategory", () => {
-    const all: ActivityCategory[] = ["exploring", "changes", "git", "scripts", "web", "comms"];
+    const all: ActivityCategory[] = [
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ];
     for (const c of all) expect(LANE_ORDER).toContain(c);
     expect(LANE_ORDER.length).toBe(all.length);
   });

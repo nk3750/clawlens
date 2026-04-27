@@ -41,6 +41,8 @@ const CATEGORY_ORDER: ActivityCategory[] = [
   "scripts",
   "web",
   "comms",
+  "orchestration",
+  "media",
 ];
 const DECISION_OPTIONS: { value: string; label: string }[] = [
   { value: "allow", label: "allowed" },

@@ -11,6 +11,8 @@ export const LANE_ORDER: ActivityCategory[] = [
   "scripts",
   "web",
   "comms",
+  "orchestration",
+  "media",
 ];
 
 /** Horizontal px threshold for merging adjacent dots within a lane.

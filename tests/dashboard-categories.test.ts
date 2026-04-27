@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { ActivityCategory } from "../src/dashboard/categories";
 import {
+  ALL_CATEGORIES,
   computeBreakdown,
   describeAction,
   getCategory,
@@ -34,9 +36,10 @@ describe("getCategory — non-exec tools", () => {
     expect(getCategory("browser")).toBe("web");
   });
 
-  it("maps message/spawn to comms", () => {
+  it("maps message to comms", () => {
+    // sessions_spawn moved to orchestration in rev 2 of the activity-category-
+    // coverage spec — see the dedicated orchestration block below.
     expect(getCategory("message")).toBe("comms");
-    expect(getCategory("sessions_spawn")).toBe("comms");
   });
 
   it("falls back to scripts for unknown tool names", () => {
@@ -112,6 +115,8 @@ describe("computeBreakdown", () => {
       scripts: 0,
       web: 0,
       comms: 0,
+      orchestration: 0,
+      media: 0,
     });
   });
 
@@ -430,5 +435,112 @@ describe("riskPosture", () => {
     expect(riskPosture(71)).toBe("critical");
     expect(riskPosture(85)).toBe("critical");
     expect(riskPosture(100)).toBe("critical");
+  });
+});
+
+// Routing coverage for the 20 tools that the rev-2 activity-category-coverage
+// spec rescues from the `scripts` fallback, plus the `sessions_spawn` move
+// from `comms` to the new `orchestration` bucket.
+describe("activity category coverage — 20 new tool routings", () => {
+  const cases: Array<[string, ActivityCategory]> = [
+    // changes — top-level write tools
+    ["apply_patch", "changes"],
+    ["gateway", "changes"],
+    // web — outbound search
+    ["x_search", "web"],
+    // scripts — running code
+    ["code_execution", "scripts"],
+    // orchestration — agent ↔ agent (NEW BUCKET)
+    ["sessions_spawn", "orchestration"], // MOVED from comms
+    ["sessions_send", "orchestration"],
+    ["sessions_yield", "orchestration"],
+    ["sessions_history", "orchestration"],
+    ["sessions_list", "orchestration"],
+    ["session_status", "orchestration"],
+    ["agents_list", "orchestration"],
+    ["subagents", "orchestration"],
+    ["update_plan", "orchestration"],
+    // media — non-code artifacts (NEW BUCKET)
+    ["image", "media"],
+    ["image_generate", "media"],
+    ["video_generate", "media"],
+    ["music_generate", "media"],
+    ["tts", "media"],
+    ["pdf", "media"],
+    ["canvas", "media"],
+    ["nodes", "media"],
+  ];
+
+  it.each(cases)("getCategory(%s) → %s", (tool, expected) => {
+    expect(getCategory(tool)).toBe(expected);
+  });
+
+  it("computeBreakdown returns 100% media for an all-media batch", () => {
+    const b = computeBreakdown([
+      { toolName: "image_generate" },
+      { toolName: "tts" },
+      { toolName: "video_generate" },
+      { toolName: "canvas" },
+    ]);
+    expect(b.media).toBe(100);
+    expect(b.exploring).toBe(0);
+    expect(b.scripts).toBe(0);
+    expect(b.orchestration).toBe(0);
+  });
+
+  it("computeBreakdown returns 100% orchestration for an all-session batch", () => {
+    const b = computeBreakdown([
+      { toolName: "sessions_send" },
+      { toolName: "sessions_list" },
+      { toolName: "subagents" },
+      { toolName: "update_plan" },
+    ]);
+    expect(b.orchestration).toBe(100);
+    expect(b.comms).toBe(0);
+    expect(b.exploring).toBe(0);
+  });
+
+  it("computeBreakdown sums to 100 across an 8-bucket mix (rounding fixup is bucket-count-agnostic)", () => {
+    // One entry per bucket — by-1 rounding artifacts must still fixup to 100.
+    const b = computeBreakdown([
+      { toolName: "read" },
+      { toolName: "write" },
+      { toolName: "exec", execCategory: "git-read" },
+      { toolName: "exec", execCategory: "scripting" },
+      { toolName: "fetch_url" },
+      { toolName: "message" },
+      { toolName: "sessions_send" },
+      { toolName: "image_generate" },
+    ]);
+    const sum = Object.values(b).reduce((a, c) => a + c, 0);
+    expect(sum).toBe(100);
+    expect(b.orchestration).toBeGreaterThan(0);
+    expect(b.media).toBeGreaterThan(0);
+  });
+
+  it("ALL_CATEGORIES includes orchestration and media in their canonical positions", () => {
+    expect(ALL_CATEGORIES).toContain("orchestration");
+    expect(ALL_CATEGORIES).toContain("media");
+    // Lock the spec's display order: orchestration sits next to comms (peer
+    // boundary-crossing buckets) and media stays last (creative output).
+    expect(ALL_CATEGORIES).toEqual([
+      "exploring",
+      "changes",
+      "git",
+      "scripts",
+      "web",
+      "comms",
+      "orchestration",
+      "media",
+    ]);
+  });
+
+  it("unknown future tools still fall through to scripts", () => {
+    expect(getCategory("nonexistent_future_tool_2027")).toBe("scripts");
+  });
+
+  it("regression: sessions_spawn no longer routes to comms", () => {
+    expect(getCategory("sessions_spawn")).not.toBe("comms");
+    expect(getCategory("sessions_spawn")).toBe("orchestration");
   });
 });

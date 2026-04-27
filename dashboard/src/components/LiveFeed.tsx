@@ -173,6 +173,7 @@ export default function LiveFeed() {
               execCategory: entry.execCategory,
               riskTags: entry.riskTags,
               effectiveDecision: entry.effectiveDecision,
+              params: entry.params,
             });
             const shadow = riskLeftBorder(entry.riskScore);
             const verb = verbFor(entry);
