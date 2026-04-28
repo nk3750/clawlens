@@ -288,27 +288,38 @@ describe("formatEventTarget — memory_get", () => {
 });
 
 describe("formatEventTarget — message", () => {
-  it("combines to + subject", () => {
+  // Live params: {action, target, channel, caption, ...} — see issue #43.
+  it("combines target + caption", () => {
     expect(
       formatEventTarget(
         entry({
           toolName: "message",
-          params: { to: "#general", subject: "shipping" },
+          params: { target: "#general", caption: "shipping" },
         }),
       ),
     ).toBe('#general: "shipping"');
   });
-  it("to only when subject missing", () => {
-    expect(formatEventTarget(entry({ toolName: "message", params: { to: "#general" } }))).toBe(
+  it("target only when caption missing", () => {
+    expect(formatEventTarget(entry({ toolName: "message", params: { target: "#general" } }))).toBe(
       "#general",
     );
   });
-  it("subject only when to missing", () => {
-    expect(formatEventTarget(entry({ toolName: "message", params: { subject: "hi" } }))).toBe(
+  it("caption only when target/channel missing", () => {
+    expect(formatEventTarget(entry({ toolName: "message", params: { caption: "hi" } }))).toBe(
       '"hi"',
     );
   });
-  it("empty when both missing", () => {
+  it("falls back to channel when target missing", () => {
+    expect(formatEventTarget(entry({ toolName: "message", params: { channel: "#ops" } }))).toBe(
+      "#ops",
+    );
+  });
+  it("prefers target over channel when both present", () => {
+    expect(
+      formatEventTarget(entry({ toolName: "message", params: { target: "#a", channel: "#b" } })),
+    ).toBe("#a");
+  });
+  it("empty when target/channel/caption all missing", () => {
     expect(formatEventTarget(entry({ toolName: "message", params: {} }))).toBe("");
   });
 });
@@ -332,17 +343,18 @@ describe("formatEventTarget — sessions_spawn / cron / process / exec", () => {
   it('cron falls back to "(unnamed)" when name missing', () => {
     expect(formatEventTarget(entry({ toolName: "cron", params: {} }))).toBe("(unnamed)");
   });
-  it("process uses params.target", () => {
+  // Live params: {action, sessionId, ...} — see issue #43.
+  it("process uses params.sessionId", () => {
     expect(
       formatEventTarget(
         entry({
           toolName: "process",
-          params: { target: "stream-A", action: "poll" },
+          params: { sessionId: "s_abc", action: "poll" },
         }),
       ),
-    ).toBe("stream-A");
+    ).toBe("s_abc");
   });
-  it("process empty when target missing (no phantom line 2)", () => {
+  it("process empty when sessionId missing (no phantom line 2)", () => {
     expect(formatEventTarget(entry({ toolName: "process", params: { action: "poll" } }))).toBe("");
   });
   it("exec uses full command, no truncation here", () => {

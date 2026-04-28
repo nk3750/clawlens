@@ -243,18 +243,21 @@ export function formatEventTarget(entry: EntryResponse): string {
     case "memory_get":
       return str(p.key) || "(all memories)";
     case "message": {
-      const to = str(p.to);
-      const subj = str(p.subject);
-      if (to && subj) return `${to}: "${subj}"`;
-      if (to) return to;
-      return subj ? `"${subj}"` : "";
+      // Live params: {action, target, channel, caption, ...} — target wins
+      // over channel. See issue #43.
+      const dest = str(p.target) || str(p.channel);
+      const cap = str(p.caption);
+      if (dest && cap) return `${dest}: "${cap}"`;
+      if (dest) return dest;
+      return cap ? `"${cap}"` : "";
     }
     case "sessions_spawn":
       return str(p.agent);
     case "cron":
       return str(p.name) || "(unnamed)";
     case "process":
-      return str(p.target);
+      // Live params: {action, sessionId, ...}. See issue #43.
+      return str(p.sessionId);
     case "exec":
       return str(p.command);
 

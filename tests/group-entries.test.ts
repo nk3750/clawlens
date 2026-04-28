@@ -49,12 +49,12 @@ describe("describeEntry — non-exec tools (Verb target)", () => {
       ),
     ).toBe("Fetched https://example.com/deep/path");
   });
-  it("message combines to + subject", () => {
+  it("message combines target + caption", () => {
     expect(
       describeEntry(
         entry({
           toolName: "message",
-          params: { to: "#general", subject: "ship" },
+          params: { target: "#general", caption: "ship" },
         }),
       ),
     ).toBe('Sent #general: "ship"');

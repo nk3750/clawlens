@@ -251,8 +251,12 @@ export function describeAction(entry) {
             return `Fetch: ${extractUrlDomain(url)}`;
         }
         case "message": {
-            const to = typeof params.to === "string" ? params.to : "";
-            return to ? `Message ${truncate(to, 30)}` : "Send message";
+            // Live params: {action, target, channel, ...} — target wins over channel.
+            // See issue #43.
+            const target = typeof params.target === "string" ? params.target : "";
+            const channel = typeof params.channel === "string" ? params.channel : "";
+            const dest = target || channel;
+            return dest ? `Message ${truncate(dest, 30)}` : "Send message";
         }
         case "exec": {
             const cmd = typeof params.command === "string" ? params.command : "";

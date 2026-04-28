@@ -569,7 +569,7 @@ describe("describeAction", () => {
   });
 
   it("describes message actions", () => {
-    const desc = describeAction({ toolName: "message", params: { to: "boss@co.com" } });
+    const desc = describeAction({ toolName: "message", params: { target: "boss@co.com" } });
     expect(desc).toContain("boss@co.com");
   });
 });

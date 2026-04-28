@@ -363,9 +363,21 @@ describe("describeAction", () => {
     expect(describeAction({ toolName: "grep", params: { pattern: "TODO" } })).toBe('Grep "TODO"');
   });
 
-  it("describes message actions", () => {
-    expect(describeAction({ toolName: "message", params: { to: "team-channel" } })).toBe(
+  it("describes message actions with target", () => {
+    expect(describeAction({ toolName: "message", params: { target: "team-channel" } })).toBe(
       "Message team-channel",
+    );
+  });
+
+  it("describes message actions with channel fallback", () => {
+    expect(describeAction({ toolName: "message", params: { channel: "#ops" } })).toBe(
+      "Message #ops",
+    );
+  });
+
+  it("describes message: target wins over channel when both present", () => {
+    expect(describeAction({ toolName: "message", params: { target: "#a", channel: "#b" } })).toBe(
+      "Message #a",
     );
   });
 
