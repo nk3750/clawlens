@@ -53,8 +53,23 @@ export function formatAlert(
 
   lines.push(`Tool: ${toolName}`);
 
-  // Show the most relevant parameter
-  if (params.command) {
+  // process and message live params don't expose command/url/path/to, so the
+  // pre-existing chain skipped them entirely. Handle them explicitly first.
+  // See issue #43.
+  if (toolName === "process") {
+    const action = typeof params.action === "string" ? params.action : "";
+    const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
+    if (action) lines.push(`Action: ${truncate(action, 200)}`);
+    if (sessionId) lines.push(`Session: ${truncate(sessionId, 200)}`);
+  } else if (toolName === "message") {
+    const action = typeof params.action === "string" ? params.action : "";
+    const target = typeof params.target === "string" ? params.target : "";
+    const channel = typeof params.channel === "string" ? params.channel : "";
+    const dest = target || channel;
+    if (action) lines.push(`Action: ${truncate(action, 200)}`);
+    if (dest) lines.push(`To: ${truncate(dest, 200)}`);
+  } else if (params.command) {
+    // Show the most relevant parameter
     lines.push(`Command: ${truncate(String(params.command), 200)}`);
   } else if (params.url) {
     lines.push(`URL: ${truncate(String(params.url), 200)}`);

@@ -21,8 +21,29 @@ describe("extractIdentityKey", () => {
     );
   });
 
-  it("extracts command for process tool", () => {
-    expect(extractIdentityKey("process", { command: "npm install" })).toBe("npm install");
+  // Process tool uses {action, sessionId} — no command field. See issue #43.
+  it("extracts action:sessionId for process tool", () => {
+    expect(extractIdentityKey("process", { action: "poll", sessionId: "s_abc" })).toBe(
+      "poll:s_abc",
+    );
+  });
+
+  it("extracts action: when sessionId missing for process tool", () => {
+    expect(extractIdentityKey("process", { action: "poll" })).toBe("poll:");
+  });
+
+  it("extracts :sessionId when action missing for process tool", () => {
+    expect(extractIdentityKey("process", { sessionId: "s_abc" })).toBe(":s_abc");
+  });
+
+  it("falls back to JSON for process tool when action+sessionId both missing", () => {
+    expect(extractIdentityKey("process", { limit: 10 })).toBe('{"limit":10}');
+  });
+
+  it("differentiates two process calls with different sessionIds", () => {
+    const k1 = extractIdentityKey("process", { action: "poll", sessionId: "s_a" });
+    const k2 = extractIdentityKey("process", { action: "poll", sessionId: "s_b" });
+    expect(k1).not.toBe(k2);
   });
 
   it("extracts path for read tool", () => {
@@ -59,16 +80,46 @@ describe("extractIdentityKey", () => {
     expect(extractIdentityKey("search", { query: "find bugs" })).toBe("find bugs");
   });
 
-  it("extracts url for browser tool", () => {
-    expect(extractIdentityKey("browser", { url: "https://app.com" })).toBe("https://app.com");
+  // Browser tool uses {action, target, url} — sub-actions on the same URL must
+  // not collapse to one identity. See issue #43.
+  it("extracts action:url for browser tool", () => {
+    expect(extractIdentityKey("browser", { action: "click", url: "https://app.com" })).toBe(
+      "click:https://app.com",
+    );
   });
 
-  it("extracts to for message tool", () => {
-    expect(extractIdentityKey("message", { to: "user@example.com" })).toBe("user@example.com");
+  it("extracts action: for browser tool when url missing", () => {
+    expect(extractIdentityKey("browser", { action: "click" })).toBe("click:");
   });
 
-  it("extracts recipient for message tool (fallback)", () => {
-    expect(extractIdentityKey("message", { recipient: "#general" })).toBe("#general");
+  it("extracts :url for browser tool when action missing", () => {
+    expect(extractIdentityKey("browser", { url: "https://app.com" })).toBe(":https://app.com");
+  });
+
+  it("falls back to JSON for browser tool when action+url both missing", () => {
+    expect(extractIdentityKey("browser", { foo: "bar" })).toBe('{"foo":"bar"}');
+  });
+
+  // Message tool uses {action, target, channel} — no `to` or `recipient`.
+  // See issue #43.
+  it("extracts action:target for message tool", () => {
+    expect(extractIdentityKey("message", { action: "send", target: "#alerts" })).toBe(
+      "send:#alerts",
+    );
+  });
+
+  it("extracts action:channel for message tool when target missing", () => {
+    expect(extractIdentityKey("message", { action: "send", channel: "#ops" })).toBe("send:#ops");
+  });
+
+  it("prefers target over channel for message tool when both present", () => {
+    expect(extractIdentityKey("message", { action: "send", target: "#a", channel: "#b" })).toBe(
+      "send:#a",
+    );
+  });
+
+  it("falls back to JSON for message tool when action/target/channel all missing", () => {
+    expect(extractIdentityKey("message", { caption: "hi" })).toBe('{"caption":"hi"}');
   });
 
   it("extracts sessionKey for sessions_spawn tool", () => {
@@ -111,8 +162,10 @@ describe("extractIdentityKey", () => {
     expect(extractIdentityKey("fetch_url", { url: "HTTPS://FOO.COM/" })).toBe("https://foo.com");
   });
 
-  it("normalizes browser URL: trailing slash + case", () => {
-    expect(extractIdentityKey("browser", { url: "https://App.Com/" })).toBe("https://app.com");
+  it("normalizes browser URL: trailing slash + case (action prefix preserved)", () => {
+    expect(extractIdentityKey("browser", { action: "click", url: "https://App.Com/" })).toBe(
+      "click:https://app.com",
+    );
   });
 
   it("normalizes URL: preserves path case", () => {
@@ -233,11 +286,6 @@ describe("extractIdentityKey", () => {
     it("handles command with no path prefix", () => {
       expect(extractIdentityKey("exec", { command: "ls -la" })).toBe("ls -la");
     });
-    it("normalizes process tool identically", () => {
-      expect(extractIdentityKey("process", { command: "/usr/local/bin/node script.js" })).toBe(
-        "node script.js",
-      );
-    });
     it("handles empty command", () => {
       expect(extractIdentityKey("exec", { command: "" })).toBe("");
     });
@@ -252,7 +300,11 @@ describe("extractIdentityKey", () => {
     expect(extractIdentityKey("exec", {})).toBe("");
     expect(extractIdentityKey("read", {})).toBe("");
     expect(extractIdentityKey("web_fetch", {})).toBe("");
-    expect(extractIdentityKey("message", {})).toBe("");
+    // process/message/browser fall through to the JSON default branch when
+    // their identity-relevant keys are all missing — empty params hash to "{}".
+    expect(extractIdentityKey("message", {})).toBe("{}");
+    expect(extractIdentityKey("process", {})).toBe("{}");
+    expect(extractIdentityKey("browser", {})).toBe("{}");
   });
 
   // ── Query/message/cron/spawn normalization ────────────────
@@ -271,12 +323,6 @@ describe("extractIdentityKey", () => {
     });
     it("trims and lowercases memory_get key", () => {
       expect(extractIdentityKey("memory_get", { key: " Config.Auth " })).toBe("config.auth");
-    });
-    it("trims and lowercases message recipient", () => {
-      expect(extractIdentityKey("message", { to: "User@Example.COM" })).toBe("user@example.com");
-    });
-    it("trims and lowercases message recipient (fallback)", () => {
-      expect(extractIdentityKey("message", { recipient: " #General " })).toBe("#general");
     });
     it("trims cron name and normalizes cron expression whitespace", () => {
       expect(extractIdentityKey("cron", { name: " cleanup ", cron: "0  0  *  *  *" })).toBe(
@@ -387,6 +433,22 @@ describe("lookupKey", () => {
 
   it("uses * for global", () => {
     expect(lookupKey("*", "write", "/etc/passwd")).toBe("*:write:/etc/passwd");
+  });
+
+  // Regression for issue #43: two distinct process calls on the same agent
+  // must not collapse to the same composite lookup key.
+  it("produces distinct lookup keys for two distinct process calls", () => {
+    const k1 = lookupKey(
+      "a-1",
+      "process",
+      extractIdentityKey("process", { action: "poll", sessionId: "s_a" }),
+    );
+    const k2 = lookupKey(
+      "a-1",
+      "process",
+      extractIdentityKey("process", { action: "poll", sessionId: "s_b" }),
+    );
+    expect(k1).not.toBe(k2);
   });
 });
 

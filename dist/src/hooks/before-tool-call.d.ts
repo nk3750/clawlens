@@ -27,3 +27,4 @@ export interface BeforeToolCallDeps {
     pendingApprovalStore?: PendingApprovalStore;
 }
 export declare function createBeforeToolCallHandler(deps: BeforeToolCallDeps): (event: BeforeToolCallEvent, ctx: Record<string, unknown>) => Promise<BeforeToolCallResult | undefined>;
+export declare function extractApprovalDetail(toolName: string, params: Record<string, unknown>): string;

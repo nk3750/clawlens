@@ -271,12 +271,19 @@ function formatGuardrailApproval(guardrail, toolName, params) {
         `Guardrail: "Require Approval" (added ${date})`,
     ].join("\n");
 }
-function extractApprovalDetail(toolName, params) {
+export function extractApprovalDetail(toolName, params) {
     const str = (key) => (typeof params[key] === "string" ? params[key] : "");
     switch (toolName) {
         case "exec":
-        case "process":
             return str("command");
+        case "process": {
+            // Live params: {action, sessionId, ...} — no command. See issue #43.
+            const action = str("action");
+            const sessionId = str("sessionId");
+            if (!action && !sessionId)
+                return "";
+            return `${action}:${sessionId}`;
+        }
         case "read":
         case "write":
         case "edit":
@@ -289,8 +296,16 @@ function extractApprovalDetail(toolName, params) {
         case "search":
         case "memory_search":
             return str("query");
-        case "message":
-            return str("to") || str("recipient");
+        case "message": {
+            // Live params: {action, target, channel, ...} — no `to` or `recipient`.
+            // target wins over channel. See issue #43.
+            const action = str("action");
+            const target = str("target");
+            const channel = str("channel");
+            if (!action && !target && !channel)
+                return "";
+            return `${action}:${target || channel}`;
+        }
         case "sessions_spawn":
             return str("sessionKey") || str("agent");
         case "memory_get":

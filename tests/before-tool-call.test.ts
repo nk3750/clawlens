@@ -4,6 +4,7 @@ import { DEFAULT_CONFIG } from "../src/config";
 import {
   type BeforeToolCallDeps,
   createBeforeToolCallHandler,
+  extractApprovalDetail,
 } from "../src/hooks/before-tool-call";
 import { EvalCache } from "../src/risk/eval-cache";
 import { SessionContext } from "../src/risk/session-context";
@@ -595,5 +596,58 @@ describe("guardrail match audit row carries the action's risk score", () => {
         riskTier: "critical",
       }),
     );
+  });
+});
+
+// ── extractApprovalDetail ────────────────────────────────────
+//
+// Surfaces the human-readable detail line in the guardrail-approval modal.
+// process and message tools historically read wrong param keys (issue #43);
+// these tests lock in the corrected shapes.
+describe("extractApprovalDetail", () => {
+  it("exec returns command", () => {
+    expect(extractApprovalDetail("exec", { command: "ls -la" })).toBe("ls -la");
+  });
+
+  it("process returns action:sessionId", () => {
+    expect(extractApprovalDetail("process", { action: "poll", sessionId: "s_abc" })).toBe(
+      "poll:s_abc",
+    );
+  });
+
+  it("process returns action:'' when sessionId missing", () => {
+    expect(extractApprovalDetail("process", { action: "poll" })).toBe("poll:");
+  });
+
+  it("process returns '' when both action and sessionId missing", () => {
+    expect(extractApprovalDetail("process", {})).toBe("");
+  });
+
+  it("message returns action:target", () => {
+    expect(extractApprovalDetail("message", { action: "send", target: "#alerts" })).toBe(
+      "send:#alerts",
+    );
+  });
+
+  it("message falls back to channel when target missing", () => {
+    expect(extractApprovalDetail("message", { action: "send", channel: "#ops" })).toBe("send:#ops");
+  });
+
+  it("message: target wins over channel when both present", () => {
+    expect(extractApprovalDetail("message", { action: "send", target: "#a", channel: "#b" })).toBe(
+      "send:#a",
+    );
+  });
+
+  it("message returns '' when action/target/channel all missing", () => {
+    expect(extractApprovalDetail("message", {})).toBe("");
+  });
+
+  it("read returns path", () => {
+    expect(extractApprovalDetail("read", { path: "/etc/hosts" })).toBe("/etc/hosts");
+  });
+
+  it("unknown tool returns ''", () => {
+    expect(extractApprovalDetail("unknown_tool", { foo: "bar" })).toBe("");
   });
 });

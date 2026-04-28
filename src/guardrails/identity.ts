@@ -11,8 +11,15 @@ import * as nodePath from "node:path";
 export function extractIdentityKey(toolName: string, params: Record<string, unknown>): string {
   switch (toolName) {
     case "exec":
-    case "process":
       return normalizeCommand(String(params.command ?? ""));
+    case "process": {
+      // Live params: {action, sessionId, limit, offset, timeout} — no command.
+      // See issue #43.
+      const action = String(params.action ?? "");
+      const sessionId = String(params.sessionId ?? "");
+      if (action || sessionId) return `${action}:${sessionId}`;
+      break;
+    }
     case "read":
     case "write":
     case "edit":
@@ -25,12 +32,23 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
       return String(params.query ?? "")
         .trim()
         .toLowerCase();
-    case "browser":
-      return normalizeUrl(String(params.url ?? ""));
-    case "message":
-      return String(params.to ?? params.recipient ?? "")
-        .trim()
-        .toLowerCase();
+    case "browser": {
+      // Live params: {action, target, url} — distinguish click/fill/scroll on
+      // the same URL. See issue #43.
+      const action = String(params.action ?? "");
+      const url = String(params.url ?? "");
+      if (action || url) return `${action}:${normalizeUrl(url)}`;
+      break;
+    }
+    case "message": {
+      // Live params: {action, target, channel, caption, media, message} —
+      // no `to` or `recipient`. target wins over channel. See issue #43.
+      const action = String(params.action ?? "");
+      const target = String(params.target ?? "");
+      const channel = String(params.channel ?? "");
+      if (action || target || channel) return `${action}:${target || channel}`;
+      break;
+    }
     case "sessions_spawn":
       return String(params.sessionKey ?? params.agent ?? "").trim();
     case "cron": {
@@ -51,9 +69,11 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
     case "glob":
     case "grep":
       return String(params.pattern ?? "");
-    default:
-      return JSON.stringify(sortKeys(params));
   }
+  // Fallthrough for process/browser/message when their identity-relevant keys
+  // are all missing, and for any unknown tool — JSON-hash the params as a
+  // stable last resort.
+  return JSON.stringify(sortKeys(params));
 }
 
 const COMMAND_PREFIX_SKIP = new Set(["sudo", "env", "nohup", "nice", "time"]);

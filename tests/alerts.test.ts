@@ -141,6 +141,56 @@ describe("formatAlert", () => {
     const msg = formatAlert("exec", {}, riskScore, "");
     expect(msg).toContain("\u26a0\ufe0f ClawLens Risk Alert");
   });
+
+  // Process tool: live params {action, sessionId, ...} \u2014 neither command nor
+  // path. The pre-existing param-shape chain skipped these. See issue #43.
+  it("process: includes Action and Session lines when both present", () => {
+    const msg = formatAlert("process", { action: "poll", sessionId: "s_abc" }, riskScore, "");
+    expect(msg).toContain("Action: poll");
+    expect(msg).toContain("Session: s_abc");
+  });
+
+  it("process: includes Action only when sessionId missing", () => {
+    const msg = formatAlert("process", { action: "poll" }, riskScore, "");
+    expect(msg).toContain("Action: poll");
+    expect(msg).not.toContain("Session:");
+  });
+
+  it("process: includes neither line when action+sessionId missing", () => {
+    const msg = formatAlert("process", {}, riskScore, "");
+    expect(msg).not.toContain("Action:");
+    expect(msg).not.toContain("Session:");
+  });
+
+  // Message tool: live params {action, target, channel, ...} \u2014 see issue #43.
+  it("message: includes Action and To (target) lines when both present", () => {
+    const msg = formatAlert("message", { action: "send", target: "#alerts" }, riskScore, "");
+    expect(msg).toContain("Action: send");
+    expect(msg).toContain("To: #alerts");
+  });
+
+  it("message: To falls back to channel when target missing", () => {
+    const msg = formatAlert("message", { action: "send", channel: "#ops" }, riskScore, "");
+    expect(msg).toContain("Action: send");
+    expect(msg).toContain("To: #ops");
+  });
+
+  it("message: target wins over channel when both present", () => {
+    const msg = formatAlert(
+      "message",
+      { action: "send", target: "#a", channel: "#b" },
+      riskScore,
+      "",
+    );
+    expect(msg).toContain("To: #a");
+    expect(msg).not.toContain("To: #b");
+  });
+
+  it("message: includes neither line when action/target/channel all missing", () => {
+    const msg = formatAlert("message", {}, riskScore, "");
+    expect(msg).not.toContain("Action:");
+    expect(msg).not.toContain("To:");
+  });
 });
 
 describe("sendAlert", () => {
