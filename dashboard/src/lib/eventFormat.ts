@@ -14,12 +14,15 @@ import type { EntryResponse } from "./types";
 // ─────────────────────────────────────────────────────────────
 
 const TOOL_NAMESPACE: Record<string, string> = {
+  // Names mirror what pi-coding-agent registers — read/write/edit/find/grep/ls.
+  // The dead `glob` and bare `search` namespaces were dropped in #47 because
+  // OpenClaw never renamed those tools.
   read: "fs.read",
   write: "fs.write",
   edit: "fs.edit",
-  glob: "fs.glob",
+  find: "fs.find",
   grep: "fs.grep",
-  search: "web.search",
+  ls: "fs.ls",
   web_search: "web.search",
   web_fetch: "net.fetch",
   fetch_url: "net.fetch",
@@ -94,9 +97,11 @@ const TOOL_VERB: Record<string, string> = {
   read: "read",
   write: "wrote",
   edit: "edited",
-  glob: "scanned",
+  // find/ls verbs match groupVerb in groupEntries.ts ("Found"/"Listed") so
+  // single-row and grouped descriptions stay coherent. Issue #47.
+  find: "found",
   grep: "searched",
-  search: "searched",
+  ls: "listed",
   web_search: "searched",
   web_fetch: "fetched",
   fetch_url: "fetched",
@@ -225,12 +230,14 @@ export function formatEventTarget(entry: EntryResponse): string {
     case "write":
     case "edit":
       return str(p.path) || str(p.file_path);
-    case "glob":
+    case "ls":
+      return str(p.path);
+    case "find":
     case "grep": {
+      // pi-coding-agent's `find` shares grep's `pattern` param shape — see #47.
       const pat = str(p.pattern);
       return pat ? `"${pat}"` : "";
     }
-    case "search":
     case "web_search":
     case "memory_search": {
       const q = str(p.query);

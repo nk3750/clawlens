@@ -24,11 +24,15 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
     case "write":
     case "edit":
       return normalizePath(String(params.path ?? params.file_path ?? ""));
+    case "ls":
+      // pi-coding-agent registers `ls` with a single `path` param; treat its
+      // identity the same way as read/write/edit so guardrails on a directory
+      // travel across read/list calls without divergent keys. See issue #47.
+      return normalizePath(String(params.path ?? ""));
     case "web_fetch":
     case "fetch_url":
       return normalizeUrl(String(params.url ?? ""));
     case "web_search":
-    case "search":
       return String(params.query ?? "")
         .trim()
         .toLowerCase();
@@ -66,8 +70,11 @@ export function extractIdentityKey(toolName: string, params: Record<string, unkn
       return String(params.key ?? "")
         .trim()
         .toLowerCase();
-    case "glob":
+    case "find":
     case "grep":
+      // pi-coding-agent's `find` tool uses the same `pattern` param key as
+      // `grep` (find.js:72); ClawLens previously had a dead `glob` arm here
+      // because OpenClaw never renamed the tool. See issue #47.
       return String(params.pattern ?? "");
   }
   // Fallthrough for process/browser/message when their identity-relevant keys

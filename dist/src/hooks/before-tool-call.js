@@ -288,12 +288,13 @@ export function extractApprovalDetail(toolName, params) {
         case "write":
         case "edit":
             return str("path") || str("file_path");
+        case "ls":
+            return str("path");
         case "web_fetch":
         case "fetch_url":
         case "browser":
             return str("url");
         case "web_search":
-        case "search":
         case "memory_search":
             return str("query");
         case "message": {
@@ -312,8 +313,10 @@ export function extractApprovalDetail(toolName, params) {
             return str("key");
         case "cron":
             return str("name");
-        case "glob":
+        case "find":
         case "grep":
+            // pi-coding-agent registers `find` (not `glob`) with a `pattern` param.
+            // See issue #47.
             return str("pattern");
         default:
             return "";

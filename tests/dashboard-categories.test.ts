@@ -12,11 +12,21 @@ import {
 describe("getCategory — non-exec tools", () => {
   it("maps read-family tools to exploring", () => {
     expect(getCategory("read")).toBe("exploring");
-    expect(getCategory("glob")).toBe("exploring");
+    expect(getCategory("find")).toBe("exploring");
+    expect(getCategory("ls")).toBe("exploring");
     expect(getCategory("grep")).toBe("exploring");
-    expect(getCategory("search")).toBe("exploring");
     expect(getCategory("memory_search")).toBe("exploring");
     expect(getCategory("memory_get")).toBe("exploring");
+  });
+
+  // Regression guard: pi-coding-agent never registered `glob` or bare `search`
+  // tools, so those names must NOT route to exploring. They fall through to the
+  // `scripts` fallback (the catch-all for unknown tool names). Dropping these
+  // dead handlers is the central fix in #47 — a future re-add would silently
+  // re-bucket calls into the wrong category.
+  it("regression: dead glob/search names fall through to scripts (#47)", () => {
+    expect(getCategory("glob")).toBe("scripts");
+    expect(getCategory("search")).toBe("scripts");
   });
 
   it("maps mutating tools (write/edit/process/cron) to changes", () => {
@@ -361,6 +371,26 @@ describe("describeAction", () => {
 
   it("describes grep actions", () => {
     expect(describeAction({ toolName: "grep", params: { pattern: "TODO" } })).toBe('Grep "TODO"');
+  });
+
+  it("describes find actions with a pattern", () => {
+    expect(describeAction({ toolName: "find", params: { pattern: "**/*.ts" } })).toBe(
+      "Find **/*.ts",
+    );
+  });
+
+  it("describes find actions with no pattern", () => {
+    expect(describeAction({ toolName: "find", params: {} })).toBe("File search");
+  });
+
+  it("describes ls actions with a path", () => {
+    expect(describeAction({ toolName: "ls", params: { path: "/Users/x/code" } })).toBe(
+      "List .../x/code",
+    );
+  });
+
+  it("describes ls actions with no path", () => {
+    expect(describeAction({ toolName: "ls", params: {} })).toBe("List directory");
   });
 
   it("describes message actions with target", () => {

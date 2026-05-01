@@ -647,6 +647,20 @@ describe("extractApprovalDetail", () => {
     expect(extractApprovalDetail("read", { path: "/etc/hosts" })).toBe("/etc/hosts");
   });
 
+  // pi-coding-agent registers `find` (not `glob`) and `ls` — see #47.
+  it("find returns pattern", () => {
+    expect(extractApprovalDetail("find", { pattern: "**/*.env" })).toBe("**/*.env");
+  });
+
+  it("ls returns path", () => {
+    expect(extractApprovalDetail("ls", { path: "/a/b" })).toBe("/a/b");
+  });
+
+  it("regression: bare search arm is dropped — falls through to '' (#47)", () => {
+    // Was a dead arm; pi-coding-agent never registered a `search` tool.
+    expect(extractApprovalDetail("search", { query: "anything" })).toBe("");
+  });
+
   it("unknown tool returns ''", () => {
     expect(extractApprovalDetail("unknown_tool", { foo: "bar" })).toBe("");
   });

@@ -76,8 +76,12 @@ describe("extractIdentityKey", () => {
     expect(extractIdentityKey("web_search", { query: "node security" })).toBe("node security");
   });
 
-  it("extracts query for search tool", () => {
-    expect(extractIdentityKey("search", { query: "find bugs" })).toBe("find bugs");
+  // pi-coding-agent never registered a bare `search` tool — that handler was
+  // dead code. After #47, a `search` call falls through to the JSON-fallback
+  // branch. Locks the dead arm out so a future re-add can't quietly resurrect
+  // it without an explicit decision.
+  it("regression: bare search tool falls through to JSON fallback (#47)", () => {
+    expect(extractIdentityKey("search", { query: "find bugs" })).toBe('{"query":"find bugs"}');
   });
 
   // Browser tool uses {action, target, url} — sub-actions on the same URL must
@@ -315,9 +319,6 @@ describe("extractIdentityKey", () => {
         "node security",
       );
     });
-    it("trims and lowercases search query", () => {
-      expect(extractIdentityKey("search", { query: "FIND Bugs" })).toBe("find bugs");
-    });
     it("trims and lowercases memory_search query", () => {
       expect(extractIdentityKey("memory_search", { query: "  API Keys  " })).toBe("api keys");
     });
@@ -334,18 +335,29 @@ describe("extractIdentityKey", () => {
     });
   });
 
-  // ── Glob and grep tool coverage ───────────────────────────
+  // ── Find / grep / ls tool coverage ────────────────────────
 
-  describe("glob and grep tool coverage", () => {
-    it("extracts pattern for glob tool", () => {
-      expect(extractIdentityKey("glob", { pattern: "**/*.env" })).toBe("**/*.env");
+  describe("find, grep, and ls tool coverage", () => {
+    it("extracts pattern for find tool", () => {
+      // pi-coding-agent registers `name: "find"` (find.js:72) — not `glob`.
+      // Param shape is { pattern: "**/*.ext" }, identical to grep's.
+      expect(extractIdentityKey("find", { pattern: "**/*.env" })).toBe("**/*.env");
     });
     it("extracts pattern for grep tool", () => {
       expect(extractIdentityKey("grep", { pattern: "API_KEY" })).toBe("API_KEY");
     });
-    it("glob ignores non-pattern params", () => {
-      expect(extractIdentityKey("glob", { pattern: "**/*.ts", path: "/app" })).toBe("**/*.ts");
-      expect(extractIdentityKey("glob", { pattern: "**/*.ts", limit: 10 })).toBe("**/*.ts");
+    it("find ignores non-pattern params", () => {
+      expect(extractIdentityKey("find", { pattern: "**/*.ts", path: "/app" })).toBe("**/*.ts");
+      expect(extractIdentityKey("find", { pattern: "**/*.ts", limit: 10 })).toBe("**/*.ts");
+    });
+    it("extracts normalized path for ls tool", () => {
+      expect(extractIdentityKey("ls", { path: "/Users/x/code" })).toBe("/Users/x/code");
+    });
+    it("ls normalizes path the same way read/write/edit do", () => {
+      expect(extractIdentityKey("ls", { path: "./src//main" })).toBe("src/main");
+    });
+    it("ls returns empty when path missing", () => {
+      expect(extractIdentityKey("ls", {})).toBe("");
     });
   });
 });

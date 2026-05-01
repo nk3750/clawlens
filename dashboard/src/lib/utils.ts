@@ -339,8 +339,10 @@ const TOOL_TAGS: Record<string, string> = {
   write: "file-write",
   edit: "file-edit",
   grep: "search",
-  glob: "scan",
-  search: "web-search",
+  // pi-coding-agent registers `find` and `ls` (not `glob`/bare `search`).
+  // See issue #47 for the registry reconciliation that dropped the dead names.
+  find: "scan",
+  ls: "list",
   web_search: "web-search",
   web_fetch: "web-fetch",
   fetch_url: "web-fetch",

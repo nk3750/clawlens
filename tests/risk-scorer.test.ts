@@ -5,7 +5,8 @@ describe("computeRiskScore", () => {
   describe("base scores (non-exec)", () => {
     it("scores read tools at 5", () => {
       expect(computeRiskScore("read", {}).score).toBe(5);
-      expect(computeRiskScore("glob", {}).score).toBe(5);
+      expect(computeRiskScore("find", {}).score).toBe(5);
+      expect(computeRiskScore("ls", {}).score).toBe(5);
       expect(computeRiskScore("grep", {}).score).toBe(5);
       expect(computeRiskScore("memory_search", {}).score).toBe(5);
       expect(computeRiskScore("memory_get", {}).score).toBe(5);

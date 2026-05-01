@@ -29,9 +29,9 @@ describe("toolNamespace — exhaustive tool map", () => {
     ["read", "fs.read"],
     ["write", "fs.write"],
     ["edit", "fs.edit"],
-    ["glob", "fs.glob"],
+    ["find", "fs.find"],
+    ["ls", "fs.ls"],
     ["grep", "fs.grep"],
-    ["search", "web.search"],
     ["web_search", "web.search"],
     ["web_fetch", "net.fetch"],
     ["fetch_url", "net.fetch"],
@@ -105,9 +105,9 @@ describe("verbFor — base tool verbs", () => {
     ["read", "read"],
     ["write", "wrote"],
     ["edit", "edited"],
-    ["glob", "scanned"],
+    ["find", "found"],
+    ["ls", "listed"],
     ["grep", "searched"],
-    ["search", "searched"],
     ["web_search", "searched"],
     ["web_fetch", "fetched"],
     ["fetch_url", "fetched"],
@@ -214,14 +214,22 @@ describe("formatEventTarget — filesystem tools", () => {
   it("edit uses params.path", () => {
     expect(formatEventTarget(entry({ toolName: "edit", params: { path: "/a/b" } }))).toBe("/a/b");
   });
+  it("ls uses params.path (parallel to read/write/edit)", () => {
+    expect(formatEventTarget(entry({ toolName: "ls", params: { path: "/Users/x/code" } }))).toBe(
+      "/Users/x/code",
+    );
+  });
+  it("ls empty when params missing", () => {
+    expect(formatEventTarget(entry({ toolName: "ls", params: {} }))).toBe("");
+  });
   it("read empty when params missing", () => {
     expect(formatEventTarget(entry({ toolName: "read", params: {} }))).toBe("");
   });
 });
 
-describe("formatEventTarget — pattern-based tools (glob, grep)", () => {
-  it("glob quotes the pattern", () => {
-    expect(formatEventTarget(entry({ toolName: "glob", params: { pattern: "**/*.ts" } }))).toBe(
+describe("formatEventTarget — pattern-based tools (find, grep)", () => {
+  it("find quotes the pattern", () => {
+    expect(formatEventTarget(entry({ toolName: "find", params: { pattern: "**/*.ts" } }))).toBe(
       '"**/*.ts"',
     );
   });
@@ -230,17 +238,12 @@ describe("formatEventTarget — pattern-based tools (glob, grep)", () => {
       '"TODO"',
     );
   });
-  it("glob empty when pattern missing", () => {
-    expect(formatEventTarget(entry({ toolName: "glob", params: {} }))).toBe("");
+  it("find empty when pattern missing", () => {
+    expect(formatEventTarget(entry({ toolName: "find", params: {} }))).toBe("");
   });
 });
 
-describe("formatEventTarget — search-like tools (search, web_search, memory_search)", () => {
-  it("search quotes the query", () => {
-    expect(formatEventTarget(entry({ toolName: "search", params: { query: "react hooks" } }))).toBe(
-      '"react hooks"',
-    );
-  });
+describe("formatEventTarget — search-like tools (web_search, memory_search)", () => {
   it("web_search quotes the query", () => {
     expect(
       formatEventTarget(entry({ toolName: "web_search", params: { query: "typescript" } })),
@@ -250,6 +253,12 @@ describe("formatEventTarget — search-like tools (search, web_search, memory_se
     expect(
       formatEventTarget(entry({ toolName: "memory_search", params: { query: "recent" } })),
     ).toBe('"recent"');
+  });
+  it("bare search falls through to default empty (no longer routed)", () => {
+    // pi-coding-agent never registered a `search` tool; the dead arm was
+    // dropped so a hypothetical bare-search call returns "" via the
+    // unknown-tool default branch.
+    expect(formatEventTarget(entry({ toolName: "search", params: { query: "react" } }))).toBe("");
   });
 });
 

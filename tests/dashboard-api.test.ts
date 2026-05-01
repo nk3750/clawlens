@@ -496,8 +496,8 @@ describe("checkHealth", () => {
 describe("getCategory", () => {
   it("maps known tools to their new domain buckets", () => {
     expect(getCategory("read")).toBe("exploring");
-    expect(getCategory("search")).toBe("exploring");
-    expect(getCategory("glob")).toBe("exploring");
+    expect(getCategory("find")).toBe("exploring");
+    expect(getCategory("ls")).toBe("exploring");
     expect(getCategory("grep")).toBe("exploring");
     expect(getCategory("write")).toBe("changes");
     expect(getCategory("edit")).toBe("changes");

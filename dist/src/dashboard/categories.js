@@ -7,11 +7,14 @@
 import { parseExecCommand } from "../risk/exec-parser";
 import { parseSessionKey } from "./channel-catalog";
 const TOOL_TO_CATEGORY = {
-    // exploring — file/state reads only (session reads moved to orchestration)
+    // exploring — file/state reads only (session reads moved to orchestration).
+    // Tool names mirror what pi-coding-agent registers: read/find/grep/ls. The
+    // never-registered `glob` and bare `search` names were dead handlers — see
+    // issue #47 — and are intentionally absent.
     read: "exploring",
-    search: "exploring",
-    glob: "exploring",
+    find: "exploring",
     grep: "exploring",
+    ls: "exploring",
     memory_search: "exploring",
     memory_get: "exploring",
     // changes — file/system mutation
@@ -230,15 +233,18 @@ export function describeAction(entry) {
             const p = extractPath(params.path ?? params.file);
             return p ? `Edit ${p}` : "Edit file";
         }
-        case "glob": {
+        case "find": {
             const pattern = typeof params.pattern === "string" ? params.pattern : "";
-            return pattern ? `Glob ${pattern}` : "File search";
+            return pattern ? `Find ${pattern}` : "File search";
+        }
+        case "ls": {
+            const p = extractPath(params.path);
+            return p ? `List ${p}` : "List directory";
         }
         case "grep": {
             const pattern = typeof params.pattern === "string" ? params.pattern : "";
             return pattern ? `Grep "${truncate(pattern, 30)}"` : "Content search";
         }
-        case "search":
         case "web_search": {
             const q = typeof params.query === "string" ? params.query : "";
             return q ? `Search "${truncate(q, 40)}"` : "Web search";

@@ -46,7 +46,9 @@ export function groupVerb(toolName: string): { verb: string; noun: string } {
     case "exec": return { verb: "Ran", noun: "commands" };
     case "fetch_url": return { verb: "Fetched", noun: "URLs" };
     case "grep": return { verb: "Searched", noun: "patterns" };
-    case "glob": return { verb: "Scanned", noun: "patterns" };
+    // pi-coding-agent registers `find` and `ls` (not `glob`); see issue #47.
+    case "find": return { verb: "Found", noun: "files" };
+    case "ls": return { verb: "Listed", noun: "directories" };
 
     // changes
     case "apply_patch": return { verb: "Patched", noun: "files" };
