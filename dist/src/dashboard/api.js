@@ -106,8 +106,7 @@ export function mapEntry(entry, evalIndex, guardrailStore) {
     // Check if an active guardrail matches this entry
     let guardrailMatch;
     if (guardrailStore && entry.decision) {
-        const key = extractIdentityKey(entry.toolName, entry.params);
-        const matched = guardrailStore.peek(entry.agentId || "unknown", entry.toolName, key);
+        const matched = guardrailStore.peek(entry.agentId || "unknown", entry.toolName, entry.params);
         if (matched) {
             guardrailMatch = { id: matched.id, action: matched.action };
         }
@@ -142,6 +141,7 @@ export function mapEntry(entry, evalIndex, guardrailStore) {
         category: getCategory(entry.toolName, execCategory),
         execCategory,
         guardrailMatch,
+        identityKey: extractIdentityKey(entry.toolName, entry.params),
     };
 }
 /** Build an index of LLM evaluation entries keyed by the toolCallId they reference. */
@@ -345,8 +345,7 @@ export function getInterventions(entries, date, guardrailStore) {
             return false;
         // Exclude entries that have a matching guardrail
         if (guardrailStore) {
-            const key = extractIdentityKey(e.toolName, e.params);
-            if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
+            if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params))
                 return false;
         }
         return true;
@@ -471,8 +470,7 @@ export function deriveAgentAttention(entries, guardrailStore, attentionStore, no
             if (score === undefined || score < HIGH_RISK_THRESHOLD)
                 return false;
             if (guardrailStore) {
-                const key = extractIdentityKey(e.toolName, e.params);
-                if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
+                if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params))
                     return false;
             }
             return true;
@@ -667,9 +665,23 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
             // the live store — current store state diverges from the decision-time
             // state when guardrails are added/removed while an approval is pending.
             const historicalGuardrailId = typeof e.params.guardrailId === "string" ? e.params.guardrailId : undefined;
-            const historicalIdentityKey = typeof e.params.identityKey === "string" ? e.params.identityKey : undefined;
-            const guardrailMatch = historicalGuardrailId && historicalIdentityKey
-                ? { id: historicalGuardrailId, identityKey: historicalIdentityKey }
+            const historicalAction = typeof e.params.guardrailAction === "string"
+                ? e.params.guardrailAction
+                : undefined;
+            // Pre-formatted targetSummary on the audit row (post-schema-rewrite)
+            // is the canonical render. Fall back to "Identity: <legacyKey>" for
+            // any pre-rewrite rows still lingering in the log.
+            const historicalTargetSummary = typeof e.params.targetSummary === "string"
+                ? e.params.targetSummary
+                : typeof e.params.identityKey === "string"
+                    ? `Identity: ${e.params.identityKey}`
+                    : undefined;
+            const guardrailMatch = historicalGuardrailId && historicalTargetSummary && historicalAction
+                ? {
+                    id: historicalGuardrailId,
+                    targetSummary: historicalTargetSummary,
+                    action: historicalAction,
+                }
                 : undefined;
             pending.push({
                 ...common,
@@ -690,16 +702,19 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
         }
         if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
             // Skip entries with a matching active guardrail — already governed.
-            const key = extractIdentityKey(e.toolName, e.params);
-            if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key))
+            if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params))
                 continue;
             if (isEntryAcked(attentionStore, e.toolCallId))
                 continue;
+            // identityKey is still computed here for the T3 modal pre-fill
+            // (operator clicks "add guardrail"; the modal seeds an identity-glob
+            // target with this string per spec §16.4.1).
+            const identityKey = extractIdentityKey(e.toolName, e.params);
             highRisk.push({
                 ...common,
                 kind: "high_risk",
                 guardrailHint: "no matching guardrail",
-                identityKey: key,
+                identityKey,
             });
         }
     }

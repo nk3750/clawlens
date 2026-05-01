@@ -3,6 +3,7 @@ import type { AuditEntry } from "../audit/logger";
 import { AuditLogger } from "../audit/logger";
 import { extractIdentityKey } from "../guardrails/identity";
 import type { GuardrailStore } from "../guardrails/store";
+import type { Action } from "../guardrails/types";
 import { parseExecCommand } from "../risk/exec-parser";
 import type { AttentionStore } from "./attention-state";
 import { deriveScheduleLabel, extractCronRunStarts } from "./cadence";
@@ -105,8 +106,13 @@ export interface AttentionItem {
   guardrailHint?: string;
   /** T3 only — identity key derived from tool + params, pre-filled into GuardrailModal. */
   identityKey?: string;
-  /** T1 only — present when a user-defined guardrail matches the pending entry's tool + identity key. */
-  guardrailMatch?: { id: string; identityKey: string };
+  /**
+   * T1 only — present when a user-defined guardrail matched the pending
+   * entry's tool call. Carries the rule's id, a target-shape-aware label
+   * (e.g. "Path: /etc/**", "Identity: poll:*") read from the audit row at
+   * decision time, and the matched action.
+   */
+  guardrailMatch?: { id: string; targetSummary: string; action: Action };
 }
 
 export interface AttentionAgent {
@@ -158,11 +164,17 @@ export interface EntryResponse {
   category: ActivityCategory;
   /** Exec sub-category from parseExecCommand (only set for exec tool calls). */
   execCategory?: string;
-  /** Present when an active guardrail matches this entry's tool + identity key. */
+  /** Present when an active guardrail matches this entry. */
   guardrailMatch?: {
     id: string;
-    action: { type: string };
+    action: Action;
   };
+  /**
+   * Normalized identity key for this call. Pre-filled into GuardrailModal's
+   * target.pattern when the operator clicks "add guardrail" from the row;
+   * cheap to compute (no LLM, just per-tool param extraction).
+   */
+  identityKey?: string;
 }
 
 export interface HealthResponse {
@@ -387,8 +399,7 @@ export function mapEntry(
   // Check if an active guardrail matches this entry
   let guardrailMatch: EntryResponse["guardrailMatch"];
   if (guardrailStore && entry.decision) {
-    const key = extractIdentityKey(entry.toolName, entry.params);
-    const matched = guardrailStore.peek(entry.agentId || "unknown", entry.toolName, key);
+    const matched = guardrailStore.peek(entry.agentId || "unknown", entry.toolName, entry.params);
     if (matched) {
       guardrailMatch = { id: matched.id, action: matched.action };
     }
@@ -426,6 +437,7 @@ export function mapEntry(
     category: getCategory(entry.toolName, execCategory),
     execCategory,
     guardrailMatch,
+    identityKey: extractIdentityKey(entry.toolName, entry.params),
   };
 }
 
@@ -646,8 +658,7 @@ export function getInterventions(
       if (score === undefined || score < 65) return false;
       // Exclude entries that have a matching guardrail
       if (guardrailStore) {
-        const key = extractIdentityKey(e.toolName, e.params);
-        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) return false;
+        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params)) return false;
       }
       return true;
     })
@@ -781,8 +792,7 @@ export function deriveAgentAttention(
       const score = getEffectiveScore(e, evalIdx);
       if (score === undefined || score < HIGH_RISK_THRESHOLD) return false;
       if (guardrailStore) {
-        const key = extractIdentityKey(e.toolName, e.params);
-        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) return false;
+        if (guardrailStore.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params)) return false;
       }
       return true;
     });
@@ -995,11 +1005,26 @@ export function getAttention(
       // state when guardrails are added/removed while an approval is pending.
       const historicalGuardrailId =
         typeof e.params.guardrailId === "string" ? e.params.guardrailId : undefined;
-      const historicalIdentityKey =
-        typeof e.params.identityKey === "string" ? e.params.identityKey : undefined;
+      const historicalAction =
+        typeof e.params.guardrailAction === "string"
+          ? (e.params.guardrailAction as Action)
+          : undefined;
+      // Pre-formatted targetSummary on the audit row (post-schema-rewrite)
+      // is the canonical render. Fall back to "Identity: <legacyKey>" for
+      // any pre-rewrite rows still lingering in the log.
+      const historicalTargetSummary =
+        typeof e.params.targetSummary === "string"
+          ? e.params.targetSummary
+          : typeof e.params.identityKey === "string"
+            ? `Identity: ${e.params.identityKey}`
+            : undefined;
       const guardrailMatch: AttentionItem["guardrailMatch"] =
-        historicalGuardrailId && historicalIdentityKey
-          ? { id: historicalGuardrailId, identityKey: historicalIdentityKey }
+        historicalGuardrailId && historicalTargetSummary && historicalAction
+          ? {
+              id: historicalGuardrailId,
+              targetSummary: historicalTargetSummary,
+              action: historicalAction,
+            }
           : undefined;
       pending.push({
         ...common,
@@ -1021,14 +1046,17 @@ export function getAttention(
 
     if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
       // Skip entries with a matching active guardrail — already governed.
-      const key = extractIdentityKey(e.toolName, e.params);
-      if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, key)) continue;
+      if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params)) continue;
       if (isEntryAcked(attentionStore, e.toolCallId)) continue;
+      // identityKey is still computed here for the T3 modal pre-fill
+      // (operator clicks "add guardrail"; the modal seeds an identity-glob
+      // target with this string per spec §16.4.1).
+      const identityKey = extractIdentityKey(e.toolName, e.params);
       highRisk.push({
         ...common,
         kind: "high_risk",
         guardrailHint: "no matching guardrail",
-        identityKey: key,
+        identityKey,
       });
     }
   }

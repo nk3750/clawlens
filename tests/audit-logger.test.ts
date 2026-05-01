@@ -340,7 +340,7 @@ describe("AuditLogger", () => {
       toolCallId: "tc_gm_1",
       toolName: "exec",
       guardrailId: "gr_block",
-      action: { type: "block" },
+      action: "block",
       identityKey: "exec:rm -rf /",
       agentId: "baddie",
       sessionKey: "session-xyz",
@@ -366,7 +366,7 @@ describe("AuditLogger", () => {
       toolCallId: "tc_gm_2",
       toolName: "exec",
       guardrailId: "gr_appr",
-      action: { type: "require_approval" },
+      action: "require_approval",
       identityKey: "exec:curl https://example.com",
       agentId: "baddie",
     });

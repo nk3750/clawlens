@@ -138,18 +138,18 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
 
         {/* Guardrail badge */}
         {entry.guardrailMatch && (
-          <span className="shrink-0" title={`Guardrail: ${entry.guardrailMatch.action.type}`}>
+          <span className="shrink-0" title={`Guardrail: ${entry.guardrailMatch.action}`}>
             <svg
               width="12"
               height="12"
               viewBox="0 0 24 24"
               fill="none"
               stroke={
-                entry.guardrailMatch.action.type === "block"
+                entry.guardrailMatch.action === "block"
                   ? "#ef4444"
-                  : entry.guardrailMatch.action.type === "require_approval"
+                  : entry.guardrailMatch.action === "require_approval"
                     ? "#fbbf24"
-                    : "#4ade80"
+                    : "#60a5fa" /* allow_notify — low-attention info blue */
               }
               strokeWidth="2"
               strokeLinecap="round"

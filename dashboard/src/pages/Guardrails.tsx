@@ -1,25 +1,49 @@
 import { useState, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
-import type { Guardrail, GuardrailAction } from "../lib/types";
+import type { Guardrail, GuardrailAction, ToolSelector } from "../lib/types";
 import { relTime, riskTierFromScore, riskColorRaw } from "../lib/utils";
 
 const BASE = "/plugins/clawlens";
 
 function actionLabel(action: GuardrailAction): string {
-  switch (action.type) {
+  switch (action) {
     case "block":
       return "BLOCK";
     case "require_approval":
       return "REQUIRE APPROVAL";
+    case "allow_notify":
+      return "NOTIFY";
   }
 }
 
 function actionColor(action: GuardrailAction): string {
-  switch (action.type) {
+  switch (action) {
     case "block":
       return "#ef4444";
     case "require_approval":
       return "#fbbf24";
+    case "allow_notify":
+      return "#60a5fa";
+  }
+}
+
+function describeToolSelector(tools: ToolSelector): string {
+  if (tools.mode === "any") return "any tool";
+  if (tools.mode === "category") return `${tools.value} category`;
+  if (tools.values.length === 1) return tools.values[0];
+  return [...tools.values].sort().join(" / ");
+}
+
+function describeTarget(target: Guardrail["target"]): string {
+  switch (target.kind) {
+    case "path-glob":
+      return `path: ${target.pattern}`;
+    case "url-glob":
+      return `url: ${target.pattern}`;
+    case "command-glob":
+      return `command: ${target.pattern}`;
+    case "identity-glob":
+      return target.pattern;
   }
 }
 
@@ -45,16 +69,16 @@ export default function Guardrails() {
   );
 
   const guardrails = data?.guardrails ?? [];
-  const agents = [...new Set(guardrails.map((g) => g.agentId ?? "global"))].sort();
+  const agents = [...new Set(guardrails.map((g) => g.selector.agent ?? "global"))].sort();
 
   let filtered = guardrails;
   if (filterAgent) {
     filtered = filtered.filter((g) =>
-      filterAgent === "global" ? g.agentId === null : g.agentId === filterAgent,
+      filterAgent === "global" ? g.selector.agent === null : g.selector.agent === filterAgent,
     );
   }
   if (filterAction) {
-    filtered = filtered.filter((g) => g.action.type === filterAction);
+    filtered = filtered.filter((g) => g.action === filterAction);
   }
 
   return (
@@ -109,6 +133,7 @@ export default function Guardrails() {
           <option value="">All actions</option>
           <option value="block">Block</option>
           <option value="require_approval">Require Approval</option>
+          <option value="allow_notify">Notify</option>
         </select>
       </div>
 
@@ -178,14 +203,14 @@ function GuardrailRow({
       {/* Description */}
       <div className="flex-1 min-w-0">
         <p className="text-sm truncate" style={{ color: "var(--cl-text-primary)" }}>
-          {g.tool} — {g.identityKey}
+          {describeToolSelector(g.selector.tools)} — {describeTarget(g.target)}
         </p>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span className="label-mono" style={{ color: aColor }}>
             {actionLabel(g.action)}
           </span>
           <span className="text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-            {g.agentId ?? "all agents"}
+            {g.selector.agent ?? "all agents"}
           </span>
           <span className="text-xs" style={{ color: "var(--cl-text-secondary)" }}>
             added {relTime(g.createdAt)}

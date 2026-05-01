@@ -1,3 +1,4 @@
+import type { Guardrail } from "../guardrails/types";
 import type { AlertConfig, RiskScore } from "../risk/types";
 
 /**
@@ -95,6 +96,51 @@ export function formatAlert(
 
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}\u2026` : s;
+}
+
+/**
+ * Format an allow_notify alert. Distinct from formatAlert via the
+ * "[guardrail allow_notify]" prefix so operators on a single Telegram
+ * channel can tell it apart from risk-score alerts. The matched rule's
+ * note (operator-supplied) is included when present.
+ */
+export function formatGuardrailNotifyAlert(
+  guardrail: Guardrail,
+  toolName: string,
+  params: Record<string, unknown>,
+): string {
+  const lines: string[] = [];
+  lines.push("[guardrail allow_notify]");
+  lines.push(guardrail.description);
+  lines.push("");
+  lines.push(`Tool: ${toolName}`);
+
+  if (toolName === "process") {
+    const action = typeof params.action === "string" ? params.action : "";
+    const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
+    if (action) lines.push(`Action: ${truncate(action, 200)}`);
+    if (sessionId) lines.push(`Session: ${truncate(sessionId, 200)}`);
+  } else if (toolName === "message") {
+    const action = typeof params.action === "string" ? params.action : "";
+    const target = typeof params.target === "string" ? params.target : "";
+    const channel = typeof params.channel === "string" ? params.channel : "";
+    const dest = target || channel;
+    if (action) lines.push(`Action: ${truncate(action, 200)}`);
+    if (dest) lines.push(`To: ${truncate(dest, 200)}`);
+  } else if (params.command) {
+    lines.push(`Command: ${truncate(String(params.command), 200)}`);
+  } else if (params.url) {
+    lines.push(`URL: ${truncate(String(params.url), 200)}`);
+  } else if (params.path || params.file_path) {
+    lines.push(`Path: ${truncate(String(params.path ?? params.file_path), 200)}`);
+  }
+
+  if (guardrail.note) {
+    lines.push("");
+    lines.push(`Note: ${truncate(guardrail.note, 200)}`);
+  }
+
+  return lines.join("\n");
 }
 
 /**

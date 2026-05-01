@@ -4,6 +4,7 @@
  *
  * Used by api.ts (agents, sessions, entries, stats) and routes.ts (SSE).
  */
+import type { Action, Selector, Target } from "../guardrails/types";
 /**
  * Pure "domain of work" buckets. Risk severity lives on a separate axis
  * (see RiskMixMicrobar on the agent card) — nothing here encodes risk.
@@ -26,6 +27,14 @@ export declare function getCategoryFromEntry(entry: {
     params?: Record<string, unknown>;
     execCategory?: string;
 }): ActivityCategory;
+/**
+ * Set of tool names ClawLens recognizes — TOOL_TO_CATEGORY keys plus the
+ * implicit "exec" tool (routed via execCategory rather than the table).
+ * Used by the POST /api/guardrails validator to surface warnings for
+ * unknown names without rejecting them — operators may legitimately want
+ * to pre-create rules for tools ClawLens hasn't audited yet.
+ */
+export declare const KNOWN_TOOL_NAMES: ReadonlySet<string>;
 export declare const ALL_CATEGORIES: ActivityCategory[];
 /**
  * Compute percentage breakdown from a set of entries.
@@ -54,6 +63,23 @@ export declare function parseSessionContext(sessionKey: string): string | undefi
 export declare function describeAction(entry: {
     toolName: string;
     params: Record<string, unknown>;
+}): string;
+/**
+ * Extract every path a unified-diff or Codex-style patch references. Used
+ * by guardrail path-glob matching (src/guardrails/identity.ts) and by
+ * extractFirstPatchPath above. Each path is normalized via nodePath.normalize
+ * (collapses //, ./, ../) and trailing slash, then deduped.
+ *
+ * Path normalization is inlined here rather than imported from
+ * src/guardrails/identity.ts to avoid a cycle: types.ts → categories.ts is
+ * already established, and identity.ts pulls extractAllPatchPaths from us.
+ */
+export declare function extractAllPatchPaths(patch: string): string[];
+export declare function formatTargetSummary(target: Target): string;
+export declare function describeRule(input: {
+    selector: Selector;
+    target: Target;
+    action: Action;
 }): string;
 export type RiskPosture = "calm" | "elevated" | "high" | "critical";
 /**

@@ -7,6 +7,8 @@
  */
 
 import * as nodePath from "node:path";
+import { extractAllPatchPaths } from "../dashboard/categories";
+import { parseExecCommand } from "../risk/exec-parser";
 
 export function extractIdentityKey(toolName: string, params: Record<string, unknown>): string {
   switch (toolName) {
@@ -185,15 +187,86 @@ export function normalizeUrl(raw: string): string {
   }
 }
 
-/** Composite lookup key for O(1) guardrail matching. */
-export function lookupKey(agentId: string, tool: string, identityKey: string): string {
-  return `${agentId}:${tool}:${identityKey}`;
-}
-
 function sortKeys(obj: Record<string, unknown>): Record<string, unknown> {
   const sorted: Record<string, unknown> = {};
   for (const key of Object.keys(obj).sort()) {
     sorted[key] = obj[key];
   }
   return sorted;
+}
+
+// ── Per-target-kind extractors ──────────────────────────────────
+// One helper per glob target kind. Each returns a list ([] when nothing
+// extractable) — the matcher in store.ts fires only on at-least-one-match,
+// never auto-match-on-empty (spec §5.2).
+
+/**
+ * URLs to match against url-glob targets. Inspects web-shaped tools' `url`
+ * param plus URLs extracted from exec commands (closes Gap 1: a guardrail
+ * on `https://apnews.com/**` catches `web_fetch` AND `exec curl https://…`).
+ */
+export function extractUrlsForGuardrail(
+  toolName: string,
+  params: Record<string, unknown>,
+): string[] {
+  switch (toolName) {
+    case "web_fetch":
+    case "fetch_url":
+    case "browser": {
+      const raw = typeof params.url === "string" ? params.url : "";
+      return raw ? [normalizeUrl(raw)] : [];
+    }
+    case "exec": {
+      const cmd = typeof params.command === "string" ? params.command : "";
+      if (!cmd) return [];
+      return parseExecCommand(cmd).urls.map((u) => normalizeUrl(u));
+    }
+    default:
+      return [];
+  }
+}
+
+/**
+ * File paths to match against path-glob targets. For apply_patch, returns
+ * every path the patch references (closes Gap 3 across write/edit AND
+ * apply_patch). For find/grep/ls, returns the search directory — operators
+ * who want to match against the pattern itself use identity-glob, since
+ * extractIdentityKey for find/grep returns `params.pattern`.
+ */
+export function extractPathsForGuardrail(
+  toolName: string,
+  params: Record<string, unknown>,
+): string[] {
+  switch (toolName) {
+    case "read":
+    case "write":
+    case "edit": {
+      const raw = String(params.path ?? params.file_path ?? params.file ?? "");
+      return raw ? [normalizePath(raw)] : [];
+    }
+    case "find":
+    case "grep":
+    case "ls": {
+      const raw = typeof params.path === "string" ? params.path : "";
+      return raw ? [normalizePath(raw)] : [];
+    }
+    case "apply_patch": {
+      const patch = typeof params.patch === "string" ? params.patch : "";
+      return extractAllPatchPaths(patch);
+    }
+    default:
+      return [];
+  }
+}
+
+/**
+ * The shell command to match against command-glob targets. exec only —
+ * other tools have no shell-string surface.
+ */
+export function extractCommandForGuardrail(
+  toolName: string,
+  params: Record<string, unknown>,
+): string | null {
+  if (toolName !== "exec") return null;
+  return normalizeCommand(typeof params.command === "string" ? params.command : "");
 }

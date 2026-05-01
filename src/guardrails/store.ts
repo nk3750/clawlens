@@ -1,182 +1,332 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { lookupKey } from "./identity";
-import { type Guardrail, type GuardrailFile, isValidGuardrailAction } from "./types";
+import { minimatch } from "minimatch";
+import { getCategory } from "../dashboard/categories";
+import { parseExecCommand } from "../risk/exec-parser";
+import {
+  extractCommandForGuardrail,
+  extractIdentityKey,
+  extractPathsForGuardrail,
+  extractUrlsForGuardrail,
+} from "./identity";
+import {
+  type Guardrail,
+  type GuardrailFile,
+  isValidGuardrail,
+  type NewGuardrail,
+  type Selector,
+  type Target,
+} from "./types";
+
+// ── Glob predicates ─────────────────────────────────────────
+// A literal pattern (no glob metacharacters) is a per-rule fast-path
+// candidate for identity-glob targets — direct string equality vs the
+// memoized identity key, no minimatch. Cached on the rule at add/load time
+// so the matcher doesn't rescan per call. Spec §5.3.
+
+const GLOB_META_RE = /[*?[\]{}!]/;
+
+function isLiteralPattern(pattern: string): boolean {
+  return !GLOB_META_RE.test(pattern);
+}
+
+interface IndexedRule {
+  rule: Guardrail;
+  /** True iff target.kind === "identity-glob" AND pattern has no glob metachars. */
+  literalIdentity: boolean;
+}
+
+function toIndexed(rule: Guardrail): IndexedRule {
+  return {
+    rule,
+    literalIdentity: rule.target.kind === "identity-glob" && isLiteralPattern(rule.target.pattern),
+  };
+}
 
 export class GuardrailStore {
-  private byKey = new Map<string, Guardrail>();
-  private all: Guardrail[] = [];
+  private rules: IndexedRule[] = [];
   private filePath: string;
 
   constructor(filePath: string) {
     this.filePath = filePath;
   }
 
-  /** Load guardrails from disk into memory. Migrates out invalid action types. */
+  /**
+   * Load guardrails from disk. Drops invalid entries (validated end-to-end
+   * via isValidGuardrail) with a warning, then re-saves to clean up the
+   * file. No version field, no migration logic — single coherent shape.
+   */
   load(): void {
-    this.byKey.clear();
-    this.all = [];
+    this.rules = [];
 
     if (!fs.existsSync(this.filePath)) return;
 
+    let parsed: unknown;
     try {
-      const content = fs.readFileSync(this.filePath, "utf-8");
-      const data = JSON.parse(content) as GuardrailFile;
-      if (data.version !== 1 || !Array.isArray(data.guardrails)) return;
-      this.all = data.guardrails;
+      parsed = JSON.parse(fs.readFileSync(this.filePath, "utf-8"));
     } catch {
-      // Corrupted file — start fresh
+      console.warn(`[clawlens] guardrails: file ${this.filePath} is not valid JSON; ignoring`);
       return;
     }
 
-    // Migration: filter out guardrails with invalid action types (allow_once, allow_hours)
-    const before = this.all.length;
-    this.all = this.all.filter((g) => isValidGuardrailAction(g.action));
-    if (this.all.length !== before) {
-      this.save();
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray((parsed as GuardrailFile).guardrails)
+    ) {
+      console.warn(
+        `[clawlens] guardrails: file ${this.filePath} missing 'guardrails' array; ignoring`,
+      );
+      return;
     }
 
-    this.rebuildIndex();
+    const all = (parsed as GuardrailFile).guardrails;
+    const valid: Guardrail[] = [];
+    let dropped = 0;
+    for (const candidate of all) {
+      if (isValidGuardrail(candidate)) {
+        valid.push(candidate);
+      } else {
+        dropped++;
+      }
+    }
+    if (dropped > 0) {
+      console.warn(
+        `[clawlens] guardrails: dropped ${dropped} invalid entr${dropped === 1 ? "y" : "ies"} from ${this.filePath}`,
+      );
+    }
+    this.rules = valid.map(toIndexed);
+    if (dropped > 0) {
+      try {
+        this.save();
+      } catch (err) {
+        console.warn(`[clawlens] guardrails: failed to clean file: ${String(err)}`);
+      }
+    }
   }
 
-  /** Persist guardrails to disk atomically (write tmp + rename). */
+  /** Atomic save: write tmp + rename. */
   save(): void {
     const dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-
-    const data: GuardrailFile = { version: 1, guardrails: this.all };
+    const data: GuardrailFile = { guardrails: this.rules.map((r) => r.rule) };
     const tmpPath = `${this.filePath}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
     fs.renameSync(tmpPath, this.filePath);
   }
 
-  /** Add a guardrail, persist, and update the index. */
+  /**
+   * Add a rule, persist, and (on save failure) roll back. For a security-
+   * boundary store, in-memory state must never diverge from disk — a phantom
+   * guardrail could match live tool calls until the next gateway restart.
+   * Pattern mirrors src/risk/saved-searches-store.ts.
+   */
   add(guardrail: Guardrail): void {
-    this.all.push(guardrail);
-    this.indexOne(guardrail);
+    this.rules.push(toIndexed(guardrail));
     try {
       this.save();
     } catch (err) {
-      // Roll back so in-memory state never diverges from disk on save
-      // failure (ENOSPC, EISDIR, EROFS, EDQUOT, perms). For a security-
-      // boundary store like guardrails, divergence is worse than for UI
-      // state — a phantom guardrail could match live tool calls and
-      // either block legitimate work or require approval on traffic that
-      // should pass through, until the next gateway restart. Pattern
-      // mirrors src/risk/saved-searches-store.ts (Phase 2.8, df8b58f).
-      this.all.pop();
-      this.rebuildIndex();
+      this.rules.pop();
       throw err;
     }
   }
 
-  /** Remove a guardrail by ID. */
+  /** Remove by id, persist, rollback on save failure. */
   remove(id: string): boolean {
-    const idx = this.all.findIndex((g) => g.id === id);
+    const idx = this.rules.findIndex((r) => r.rule.id === id);
     if (idx === -1) return false;
-    const [removed] = this.all.splice(idx, 1);
-    this.rebuildIndex();
+    const [removed] = this.rules.splice(idx, 1);
     try {
       this.save();
     } catch (err) {
-      this.all.splice(idx, 0, removed);
-      this.rebuildIndex();
+      this.rules.splice(idx, 0, removed);
       throw err;
     }
     return true;
   }
 
-  /** Update fields on an existing guardrail. */
-  update(id: string, patch: Partial<Pick<Guardrail, "action" | "agentId">>): Guardrail | null {
-    const guardrail = this.all.find((g) => g.id === id);
-    if (!guardrail) return null;
-
-    const prevAction = guardrail.action;
-    const prevAgentId = guardrail.agentId;
-
-    if (patch.action !== undefined) guardrail.action = patch.action;
-    if (patch.agentId !== undefined) guardrail.agentId = patch.agentId;
-
-    this.rebuildIndex();
+  /**
+   * Patch action / note / selector.agent. Other fields are not editable —
+   * (selector.tools, target) define rule identity for idempotency, so
+   * mutating them silently is equivalent to creating a different rule.
+   * Rollback on save failure.
+   */
+  update(
+    id: string,
+    patch: { action?: Guardrail["action"]; note?: string; agent?: Guardrail["selector"]["agent"] },
+  ): Guardrail | null {
+    const indexed = this.rules.find((r) => r.rule.id === id);
+    if (!indexed) return null;
+    const before = {
+      action: indexed.rule.action,
+      note: indexed.rule.note,
+      selector: indexed.rule.selector,
+    };
+    if (patch.action !== undefined) indexed.rule.action = patch.action;
+    if (patch.note !== undefined) indexed.rule.note = patch.note;
+    if (patch.agent !== undefined) {
+      indexed.rule.selector = { ...indexed.rule.selector, agent: patch.agent };
+    }
     try {
       this.save();
     } catch (err) {
-      guardrail.action = prevAction;
-      guardrail.agentId = prevAgentId;
-      this.rebuildIndex();
+      indexed.rule.action = before.action;
+      indexed.rule.note = before.note;
+      indexed.rule.selector = before.selector;
       throw err;
     }
-    return guardrail;
+    return indexed.rule;
   }
 
   /**
-   * Match a tool call against guardrails.
-   * Checks agent-specific first, then global (*).
+   * Match a tool call against the rule list. Single-pass scan in operator-
+   * visible insertion order (first-match-wins, no severity precedence, no
+   * agent-specific precedence, no fast-path bucket). Memoizes
+   * extractIdentityKey across rules — invoked at most once per match() call.
+   * Spec §5.
    */
-  match(agentId: string, tool: string, identityKey: string): Guardrail | null {
-    const agentKey = lookupKey(agentId, tool, identityKey);
-    let guardrail = this.byKey.get(agentKey) ?? null;
+  match(agentId: string, toolName: string, params: Record<string, unknown>): Guardrail | null {
+    let cachedIdentityKey: string | undefined;
+    const getIdentityKey = (): string => {
+      if (cachedIdentityKey === undefined) {
+        cachedIdentityKey = extractIdentityKey(toolName, params);
+      }
+      return cachedIdentityKey;
+    };
 
-    if (!guardrail) {
-      const globalKey = lookupKey("*", tool, identityKey);
-      guardrail = this.byKey.get(globalKey) ?? null;
+    for (const indexed of this.rules) {
+      if (!matchesSelector(indexed.rule.selector, agentId, toolName, params)) continue;
+      if (!matchesTarget(indexed, toolName, params, getIdentityKey)) continue;
+      return indexed.rule;
     }
-
-    return guardrail;
+    return null;
   }
 
-  /** Read-only match — checks for a matching guardrail without side effects. */
-  peek(agentId: string, tool: string, identityKey: string): Guardrail | null {
-    const agentKey = lookupKey(agentId, tool, identityKey);
-    let guardrail = this.byKey.get(agentKey) ?? null;
-
-    if (!guardrail) {
-      const globalKey = lookupKey("*", tool, identityKey);
-      guardrail = this.byKey.get(globalKey) ?? null;
-    }
-
-    return guardrail;
+  /** Read-only mirror of match() — kept as a separate method for clarity at
+   *  call sites that want to express "I'm only inspecting, not gating." */
+  peek(agentId: string, toolName: string, params: Record<string, unknown>): Guardrail | null {
+    return this.match(agentId, toolName, params);
   }
 
   /**
-   * Exact lookup by the storage tuple (agentId, tool, identityKey). Unlike
-   * match() / peek(), this does NOT fall through to global — it returns only
-   * the guardrail stored at the *exact* scope. Used by the create endpoint
-   * to enforce idempotency (a global guardrail and an agent-scoped guardrail
-   * for the same tool+key are distinct rows).
-   *
-   * Mirrors indexOne()'s null→"*" translation so the lookup hits the same
-   * key add() registered under.
+   * Find a rule with the same canonical (selector, target). Idempotency
+   * primitive — a POST whose canonical-form rule already exists returns the
+   * existing rule. action/note differences do NOT make rules distinct;
+   * names-mode value arrays are compared in canonical-sorted order. Spec §7.4.
    */
-  findExact(agentId: string | null, tool: string, identityKey: string): Guardrail | null {
-    const key = lookupKey(agentId ?? "*", tool, identityKey);
-    return this.byKey.get(key) ?? null;
+  findEquivalent(input: Pick<NewGuardrail, "selector" | "target">): Guardrail | null {
+    for (const { rule } of this.rules) {
+      if (
+        selectorEquals(rule.selector, input.selector) &&
+        targetEquals(rule.target, input.target)
+      ) {
+        return rule;
+      }
+    }
+    return null;
   }
 
-  /** List guardrails, optionally filtered by agentId. */
+  /** List rules, optionally narrowed to one agent. Global rules (selector.agent
+   *  null) are always included in agent-filtered results. */
   list(filters?: { agentId?: string }): Guardrail[] {
-    if (!filters?.agentId) return [...this.all];
-    return this.all.filter((g) => g.agentId === filters.agentId || g.agentId === null);
+    if (!filters?.agentId) return this.rules.map((r) => r.rule);
+    return this.rules
+      .map((r) => r.rule)
+      .filter((g) => g.selector.agent === filters.agentId || g.selector.agent === null);
   }
 
-  /** Generate a guardrail ID. */
   static generateId(): string {
     return `gr_${crypto.randomBytes(6).toString("hex")}`;
   }
+}
 
-  private rebuildIndex(): void {
-    this.byKey.clear();
-    for (const g of this.all) {
-      this.indexOne(g);
+// ── Predicate helpers (module-private) ──────────────────────
+
+function matchesSelector(
+  s: Selector,
+  agentId: string,
+  toolName: string,
+  params: Record<string, unknown>,
+): boolean {
+  if (s.agent !== null && s.agent !== agentId) return false;
+  switch (s.tools.mode) {
+    case "any":
+      return true;
+    case "names":
+      return s.tools.values.includes(toolName);
+    case "category": {
+      const execCategory =
+        toolName === "exec" && typeof params.command === "string"
+          ? parseExecCommand(params.command).category
+          : undefined;
+      return getCategory(toolName, execCategory) === s.tools.value;
     }
   }
+}
 
-  private indexOne(g: Guardrail): void {
-    const agent = g.agentId ?? "*";
-    const key = lookupKey(agent, g.tool, g.identityKey);
-    this.byKey.set(key, g);
+function matchesTarget(
+  indexed: IndexedRule,
+  toolName: string,
+  params: Record<string, unknown>,
+  getIdentityKey: () => string,
+): boolean {
+  const t = indexed.rule.target;
+  switch (t.kind) {
+    case "path-glob": {
+      const paths = extractPathsForGuardrail(toolName, params);
+      return paths.some((p) => safeMinimatch(p, t.pattern));
+    }
+    case "url-glob": {
+      const urls = extractUrlsForGuardrail(toolName, params);
+      return urls.some((u) => safeMinimatch(u, t.pattern));
+    }
+    case "command-glob": {
+      const cmd = extractCommandForGuardrail(toolName, params);
+      if (!cmd) return false;
+      return safeMinimatch(cmd, t.pattern);
+    }
+    case "identity-glob": {
+      const key = getIdentityKey();
+      // Per-rule literal-pattern shortcut: direct string equality vs the
+      // memoized identity key, no minimatch. Invisible to operators —
+      // ordering is unchanged (first-match-wins, insertion order).
+      if (indexed.literalIdentity) return key === t.pattern;
+      return safeMinimatch(key, t.pattern);
+    }
   }
+}
+
+function safeMinimatch(value: string, pattern: string): boolean {
+  try {
+    return minimatch(value, pattern);
+  } catch {
+    // Malformed glob — treat as no-match so the rule stays queryable for
+    // edit/delete (spec §11). Don't crash the matcher on operator typo.
+    return false;
+  }
+}
+
+function selectorEquals(a: Selector, b: Selector): boolean {
+  if (a.agent !== b.agent) return false;
+  if (a.tools.mode !== b.tools.mode) return false;
+  switch (a.tools.mode) {
+    case "any":
+      return true;
+    case "names": {
+      if (b.tools.mode !== "names") return false;
+      const av = [...a.tools.values].sort();
+      const bv = [...b.tools.values].sort();
+      if (av.length !== bv.length) return false;
+      return av.every((v, i) => v === bv[i]);
+    }
+    case "category":
+      return b.tools.mode === "category" && a.tools.value === b.tools.value;
+  }
+}
+
+function targetEquals(a: Target, b: Target): boolean {
+  return a.kind === b.kind && a.pattern === b.pattern;
 }

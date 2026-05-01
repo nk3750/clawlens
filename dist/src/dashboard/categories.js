@@ -4,6 +4,7 @@
  *
  * Used by api.ts (agents, sessions, entries, stats) and routes.ts (SSE).
  */
+import * as nodePath from "node:path";
 import { parseExecCommand } from "../risk/exec-parser";
 import { parseSessionKey } from "./channel-catalog";
 const TOOL_TO_CATEGORY = {
@@ -102,6 +103,17 @@ export function getCategoryFromEntry(entry) {
     }
     return getCategory(entry.toolName, ec);
 }
+/**
+ * Set of tool names ClawLens recognizes — TOOL_TO_CATEGORY keys plus the
+ * implicit "exec" tool (routed via execCategory rather than the table).
+ * Used by the POST /api/guardrails validator to surface warnings for
+ * unknown names without rejecting them — operators may legitimately want
+ * to pre-create rules for tools ClawLens hasn't audited yet.
+ */
+export const KNOWN_TOOL_NAMES = new Set([
+    ...Object.keys(TOOL_TO_CATEGORY),
+    "exec",
+]);
 // ── Category breakdown ───────────────────────────────────
 export const ALL_CATEGORIES = [
     "exploring",
@@ -492,10 +504,11 @@ export function describeAction(entry) {
     }
 }
 /**
- * Pull the first path from a unified-diff `patch` blob. Tolerant of both
- * unified-diff `--- a/path` headers and Codex-style `*** Update File: …` /
- * `*** Add File: …` / `*** Delete File: …` headers. Returns "" when no path
- * is recognizable — caller falls back to a bare label.
+ * Pull the first path from a unified-diff `patch` blob. Delegates to
+ * extractAllPatchPaths so the two helpers stay in sync — describeAction's
+ * "Patch: /etc/secrets/foo" rendering keeps working unchanged while
+ * guardrail path-glob matching uses the full list (closes Gap 3 across
+ * multi-file patches).
  *
  * Mirrors the helper of the same name in `dashboard/src/lib/eventFormat.ts`.
  * Duplicated rather than imported because categories.ts is backend code and
@@ -504,11 +517,84 @@ export function describeAction(entry) {
  * known follow-up (see issue #44 body).
  */
 function extractFirstPatchPath(patch) {
+    return extractAllPatchPaths(patch)[0] ?? "";
+}
+/**
+ * Extract every path a unified-diff or Codex-style patch references. Used
+ * by guardrail path-glob matching (src/guardrails/identity.ts) and by
+ * extractFirstPatchPath above. Each path is normalized via nodePath.normalize
+ * (collapses //, ./, ../) and trailing slash, then deduped.
+ *
+ * Path normalization is inlined here rather than imported from
+ * src/guardrails/identity.ts to avoid a cycle: types.ts → categories.ts is
+ * already established, and identity.ts pulls extractAllPatchPaths from us.
+ */
+export function extractAllPatchPaths(patch) {
     if (!patch)
+        return [];
+    const paths = new Set();
+    const unifiedRe = /^[-+]{3}\s+[ab]\/(\S+)/gm;
+    for (const m of patch.matchAll(unifiedRe)) {
+        paths.add(normalizePatchPath(m[1]));
+    }
+    const codexRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(\S+)/gm;
+    for (const m of patch.matchAll(codexRe)) {
+        paths.add(normalizePatchPath(m[1]));
+    }
+    return [...paths];
+}
+function normalizePatchPath(raw) {
+    if (!raw)
         return "";
-    const m = patch.match(/^[-+]{3}\s+[ab]\/(\S+)/m) ??
-        patch.match(/^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(\S+)/m);
-    return m ? m[1] : "";
+    let result = nodePath.normalize(raw);
+    if (result.length > 1 && result.endsWith("/")) {
+        result = result.slice(0, -1);
+    }
+    return result;
+}
+// ── Target summary (audit + AttentionItem rendering) ─────────────
+// Compact, target-shape-aware label for the dashboard (replaces the legacy
+// raw identityKey rendering). Persisted on the audit row so the live store's
+// state at view time can't diverge from the rule that historically matched.
+export function formatTargetSummary(target) {
+    switch (target.kind) {
+        case "path-glob":
+            return `Path: ${target.pattern}`;
+        case "url-glob":
+            return `URL: ${target.pattern}`;
+        case "command-glob":
+            return `Command: ${target.pattern}`;
+        case "identity-glob":
+            return `Identity: ${target.pattern}`;
+    }
+}
+// ── Auto-generated rule description ──────────────────────────────
+// Server-generates `description` from (selector, target, action) when the
+// POST request omits it. Operator-supplied descriptions override this; the
+// generator runs once at POST time and the result persists to the file.
+// See spec §4.5 for the canonical phrasing.
+export function describeRule(input) {
+    const verb = input.action === "block"
+        ? "Block"
+        : input.action === "require_approval"
+            ? "Require approval for"
+            : "Notify on";
+    const tools = input.selector.tools.mode === "any"
+        ? "any tool"
+        : input.selector.tools.mode === "category"
+            ? `${input.selector.tools.value} category`
+            : input.selector.tools.values.length === 1
+                ? `${input.selector.tools.values[0]} tool`
+                : `${[...input.selector.tools.values].sort().join("/")} tools`;
+    const targetText = input.target.kind === "path-glob"
+        ? `path matching '${input.target.pattern}'`
+        : input.target.kind === "url-glob"
+            ? `URL matching '${input.target.pattern}'`
+            : input.target.kind === "command-glob"
+                ? `command matching '${input.target.pattern}'`
+                : `identity matching '${input.target.pattern}'`;
+    const agentSuffix = input.selector.agent === null ? "" : ` for agent ${input.selector.agent}`;
+    return `${verb} ${tools} ${targetText}${agentSuffix}`;
 }
 function describeExecAction(cmd) {
     const parsed = parseExecCommand(cmd);

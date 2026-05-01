@@ -121,9 +121,16 @@ describe("ActivityRow — add-guardrail mounting (Phase 2.6)", () => {
     expect(url).toBe("/plugins/clawlens/api/guardrails");
     expect(init.method).toBe("POST");
     const body = JSON.parse(init.body as string);
-    expect(body.toolCallId).toBe("tc_curl");
-    expect(body.action).toEqual({ type: "block" });
-    expect(body.agentScope).toBe("agent");
+    // Post-rewrite shape: selector + target + action + source. The legacy
+    // "block this row" flow constructs the conservative variant — single-tool
+    // names selector + identity-glob target pre-filled with the call's key.
+    expect(body.action).toBe("block");
+    expect(body.selector).toEqual({
+      agent: "alpha",
+      tools: { mode: "names", values: ["exec"] },
+    });
+    expect(body.target.kind).toBe("identity-glob");
+    expect(body.source.toolCallId).toBe("tc_curl");
   });
 
   it("submitting twice with idempotent backend (existing:true) still closes the modal — operator can re-open from another row", async () => {

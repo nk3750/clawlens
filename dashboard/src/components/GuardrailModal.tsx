@@ -8,10 +8,9 @@ interface Props {
   onClose: () => void;
   /**
    * Fired after a successful POST. `result.existing` is true when the
-   * backend recognized the (agent, tool, identityKey) tuple and returned
-   * the original guardrail unchanged (idempotency). Callers that don't
-   * care about the distinction can declare `() => void` — TS allows
-   * fewer-arg handlers.
+   * backend recognized an equivalent (selector, target) rule and returned
+   * the original unchanged (idempotency). Callers that don't care about
+   * the distinction can declare `() => void` — TS allows fewer-arg handlers.
    */
   onCreated: (result: { existing: boolean }) => void;
 }
@@ -19,7 +18,7 @@ interface Props {
 const BASE = "/plugins/clawlens";
 
 export default function GuardrailModal({ entry, description, onClose, onCreated }: Props) {
-  const [actionType, setActionType] = useState<GuardrailAction["type"]>("block");
+  const [action, setAction] = useState<GuardrailAction>("block");
   const [scope, setScope] = useState<"agent" | "global">("agent");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,16 +30,33 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
     setSaving(true);
     setError(null);
 
-    const action: GuardrailAction = { type: actionType };
+    // The legacy modal builds the most-conservative shape (per spec §16.4.1):
+    // single tool, single agent (or null for global), identity-glob target
+    // pre-filled with this call's identity key. Multi-tool / category /
+    // path-glob / url-glob / command-glob rules are exposed via the API
+    // until Phase 2's redesigned form lands.
+    const pattern = entry.identityKey ?? "";
 
     try {
       const res = await fetch(`${BASE}/api/guardrails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          toolCallId: entry.toolCallId,
+          selector: {
+            agent: scope === "global" ? null : (entry.agentId ?? null),
+            tools: { mode: "names", values: [entry.toolName] },
+          },
+          target: {
+            kind: "identity-glob",
+            pattern,
+          },
           action,
-          agentScope: scope,
+          source: {
+            toolCallId: entry.toolCallId,
+            sessionKey: entry.sessionKey ?? "",
+            agentId: entry.agentId ?? "",
+          },
+          riskScore: entry.riskScore ?? 0,
         }),
       });
       if (!res.ok) {
@@ -116,15 +132,18 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
           When this exact action happens again:
         </p>
         <div className="space-y-1.5 mb-5">
-          {([
-            ["block", "Block"],
-            ["require_approval", "Require Approval"],
-          ] as const).map(([value, label]) => (
+          {(
+            [
+              ["block", "Block"],
+              ["require_approval", "Require Approval"],
+              ["allow_notify", "Notify"],
+            ] as const
+          ).map(([value, label]) => (
             <label
               key={value}
               className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors"
               style={{
-                backgroundColor: actionType === value ? "var(--cl-elevated)" : "transparent",
+                backgroundColor: action === value ? "var(--cl-elevated)" : "transparent",
                 color: "var(--cl-text-primary)",
               }}
             >
@@ -132,8 +151,8 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
                 type="radio"
                 name="action"
                 value={value}
-                checked={actionType === value}
-                onChange={() => setActionType(value)}
+                checked={action === value}
+                onChange={() => setAction(value)}
                 className="accent-current"
                 style={{ accentColor: "var(--cl-accent)" }}
               />

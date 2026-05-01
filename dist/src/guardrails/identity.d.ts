@@ -26,5 +26,22 @@ export declare function normalizePath(raw: string): string;
  * - Falls back to raw string if URL parsing fails
  */
 export declare function normalizeUrl(raw: string): string;
-/** Composite lookup key for O(1) guardrail matching. */
-export declare function lookupKey(agentId: string, tool: string, identityKey: string): string;
+/**
+ * URLs to match against url-glob targets. Inspects web-shaped tools' `url`
+ * param plus URLs extracted from exec commands (closes Gap 1: a guardrail
+ * on `https://apnews.com/**` catches `web_fetch` AND `exec curl https://…`).
+ */
+export declare function extractUrlsForGuardrail(toolName: string, params: Record<string, unknown>): string[];
+/**
+ * File paths to match against path-glob targets. For apply_patch, returns
+ * every path the patch references (closes Gap 3 across write/edit AND
+ * apply_patch). For find/grep/ls, returns the search directory — operators
+ * who want to match against the pattern itself use identity-glob, since
+ * extractIdentityKey for find/grep returns `params.pattern`.
+ */
+export declare function extractPathsForGuardrail(toolName: string, params: Record<string, unknown>): string[];
+/**
+ * The shell command to match against command-glob targets. exec only —
+ * other tools have no shell-string surface.
+ */
+export declare function extractCommandForGuardrail(toolName: string, params: Record<string, unknown>): string | null;

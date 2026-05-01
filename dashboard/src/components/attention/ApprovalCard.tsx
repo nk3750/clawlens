@@ -110,9 +110,9 @@ export default function ApprovalCard({ item, pulsing }: Props) {
             <p style={{ marginBottom: 2 }}>
               <span
                 className="cl-pill"
-                title={`guardrail: ${item.guardrailMatch.identityKey}`}
+                title={`guardrail action: ${item.guardrailMatch.action}`}
               >
-                matched guardrail
+                matched guardrail · {item.guardrailMatch.action.replace(/_/g, " ")}
               </span>
               <span
                 style={{
@@ -122,7 +122,7 @@ export default function ApprovalCard({ item, pulsing }: Props) {
                   color: "var(--cl-text-muted)",
                 }}
               >
-                {item.guardrailMatch.identityKey}
+                {item.guardrailMatch.targetSummary}
               </span>
             </p>
           )}

@@ -95,8 +95,12 @@ export interface AttentionItem {
   guardrailHint?: string;
   /** T3 only — identity key (tool + normalized params) used to pre-fill the guardrail modal. */
   identityKey?: string;
-  /** T1 only — set when a user-defined guardrail matches; renders the "matched guardrail: …" cause line. */
-  guardrailMatch?: { id: string; identityKey: string };
+  /**
+   * T1 only — set when a user-defined guardrail matched at decision time.
+   * Carries the rule's id, a target-shape-aware label (e.g. "Path: /etc/**",
+   * "Identity: poll:*") read from the audit row, and the matched action.
+   */
+  guardrailMatch?: { id: string; targetSummary: string; action: GuardrailAction };
 }
 
 export interface AttentionAgent {
@@ -147,11 +151,15 @@ export interface EntryResponse {
   category: ActivityCategory;
   /** Exec sub-category (only set for exec tool calls). */
   execCategory?: string;
-  /** Present when an active guardrail matches this entry. */
+  /** Present when an active guardrail matches this entry. Action is the
+   *  flat string, mirrored from the backend EntryResponse type. */
   guardrailMatch?: {
     id: string;
     action: GuardrailAction;
   };
+  /** Normalized identity key — pre-fills GuardrailModal's target pattern
+   *  when the operator clicks "add guardrail" from this row. */
+  identityKey?: string;
 }
 
 
@@ -291,23 +299,43 @@ export interface FleetRiskIndexResponse {
 
 // ── Guardrails ────────────────────────────────────────
 
-export type GuardrailAction =
-  | { type: "block" }
-  | { type: "require_approval" };
+// Flat string union — NOT { type: "block" } object.
+export type GuardrailAction = "block" | "require_approval" | "allow_notify";
+
+export type AgentSelector = string | null; // null = all agents
+
+export type ToolSelector =
+  | { mode: "names"; values: string[] }
+  | { mode: "category"; value: ActivityCategory }
+  | { mode: "any" };
+
+export interface Selector {
+  agent: AgentSelector;
+  tools: ToolSelector;
+}
+
+export type Target =
+  | { kind: "path-glob"; pattern: string }
+  | { kind: "url-glob"; pattern: string }
+  | { kind: "command-glob"; pattern: string }
+  | { kind: "identity-glob"; pattern: string };
 
 export interface Guardrail {
   id: string;
-  tool: string;
-  identityKey: string;
-  matchMode: "exact";
+  selector: Selector;
+  target: Target;
   action: GuardrailAction;
-  agentId: string | null;
+  note?: string;
+  description: string;
   createdAt: string;
   source: {
     toolCallId: string;
     sessionKey: string;
     agentId: string;
   };
-  description: string;
   riskScore: number;
+  /** Audit-derived rollups attached to GET /api/guardrails responses. */
+  hits24h?: number;
+  hits7d?: number;
+  lastFiredAt?: string | null;
 }

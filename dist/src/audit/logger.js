@@ -163,12 +163,13 @@ export class AuditLogger extends EventEmitter {
             toolCallId: data.toolCallId,
             params: {
                 guardrailId: data.guardrailId,
-                guardrailAction: data.action.type,
+                guardrailAction: data.action,
                 identityKey: data.identityKey,
+                targetSummary: data.targetSummary,
             },
-            decision: data.action.type === "block"
+            decision: data.action === "block"
                 ? "block"
-                : data.action.type === "require_approval"
+                : data.action === "require_approval"
                     ? "approval_required"
                     : "allow",
             riskScore: data.riskScore,

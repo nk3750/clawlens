@@ -275,11 +275,9 @@ describe("SSE /api/stream — payload contract", () => {
     const params = { command: "rm -rf /" };
     const guardrail: Guardrail = {
       id: "g-block-rm",
-      tool: "exec",
-      identityKey: extractIdentityKey("exec", params),
-      matchMode: "exact",
-      action: { type: "block" },
-      agentId: null, // global
+      selector: { agent: null, tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: extractIdentityKey("exec", params) },
+      action: "block",
       createdAt: "2026-04-18T11:00:00.000Z",
       source: { toolCallId: "tc-x", sessionKey: "s", agentId: "agent-a" },
       description: "exec — rm -rf /",
@@ -308,7 +306,7 @@ describe("SSE /api/stream — payload contract", () => {
     const payload = parseSSEData(out.body);
     expect(payload.guardrailMatch).toEqual({
       id: "g-block-rm",
-      action: { type: "block" },
+      action: "block",
     });
   });
 

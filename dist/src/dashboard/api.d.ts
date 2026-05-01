@@ -1,6 +1,7 @@
 import { type LlmHealthSnapshot } from "../audit/llm-health";
 import type { AuditEntry } from "../audit/logger";
 import type { GuardrailStore } from "../guardrails/store";
+import type { Action } from "../guardrails/types";
 import type { AttentionStore } from "./attention-state";
 import { type ActivityCategory, type RiskPosture } from "./categories";
 /** Fallback agent ID when audit entries have no agentId. */
@@ -85,10 +86,16 @@ export interface AttentionItem {
     guardrailHint?: string;
     /** T3 only — identity key derived from tool + params, pre-filled into GuardrailModal. */
     identityKey?: string;
-    /** T1 only — present when a user-defined guardrail matches the pending entry's tool + identity key. */
+    /**
+     * T1 only — present when a user-defined guardrail matched the pending
+     * entry's tool call. Carries the rule's id, a target-shape-aware label
+     * (e.g. "Path: /etc/**", "Identity: poll:*") read from the audit row at
+     * decision time, and the matched action.
+     */
     guardrailMatch?: {
         id: string;
-        identityKey: string;
+        targetSummary: string;
+        action: Action;
     };
 }
 export interface AttentionAgent {
@@ -138,13 +145,17 @@ export interface EntryResponse {
     category: ActivityCategory;
     /** Exec sub-category from parseExecCommand (only set for exec tool calls). */
     execCategory?: string;
-    /** Present when an active guardrail matches this entry's tool + identity key. */
+    /** Present when an active guardrail matches this entry. */
     guardrailMatch?: {
         id: string;
-        action: {
-            type: string;
-        };
+        action: Action;
     };
+    /**
+     * Normalized identity key for this call. Pre-filled into GuardrailModal's
+     * target.pattern when the operator clicks "add guardrail" from the row;
+     * cheap to compute (no LLM, just per-tool param extraction).
+     */
+    identityKey?: string;
 }
 export interface HealthResponse {
     valid: boolean;

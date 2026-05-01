@@ -1,11 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { extractIdentityKey } from "../guardrails/identity";
 import { GuardrailStore } from "../guardrails/store";
-import { isValidGuardrailAction } from "../guardrails/types";
+import { isValidAction, isValidSelector, isValidTarget, } from "../guardrails/types";
 import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
-import { describeAction } from "./categories";
+import { describeRule, KNOWN_TOOL_NAMES } from "./categories";
 import { getDashboardHtml } from "./html";
 import { getSessionSummary } from "./session-summary";
 const MIME_TYPES = {
@@ -43,66 +42,45 @@ export function registerDashboardRoutes(api, deps) {
                     res.end(JSON.stringify({ error: "Guardrails not configured" }));
                     return true;
                 }
-                const body = await readBody(req);
-                const { toolCallId, action, agentScope } = body;
-                if (!toolCallId || !action) {
+                const body = (await readBody(req));
+                const validation = validateNewGuardrail(body);
+                if (!validation.ok) {
                     res.writeHead(400, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "toolCallId and action are required" }));
+                    res.end(JSON.stringify({ error: validation.error, field: validation.field }));
                     return true;
                 }
-                if (!isValidGuardrailAction(action)) {
-                    res.writeHead(400, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({
-                        error: "Invalid action. Must be block or require_approval",
-                    }));
-                    return true;
-                }
-                const entries = deps.auditLogger.readEntries();
-                const entry = entries.find((e) => e.toolCallId === toolCallId && e.decision);
-                if (!entry) {
-                    res.writeHead(404, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "Audit entry not found" }));
-                    return true;
-                }
-                const identityKey = extractIdentityKey(entry.toolName, entry.params);
-                const agentId = agentScope === "global" ? null : (entry.agentId ?? null);
-                // Idempotency: if a guardrail already exists at the exact (agentId,
-                // tool, identityKey) tuple, return it without duplicating. This
-                // protects against operator double-clicks and SSE-driven retries.
-                // Action-of-record is the existing guardrail's action — operators
-                // who want to change it should edit the row in /guardrails.
-                const existing = deps.guardrailStore.findExact(agentId, entry.toolName, identityKey);
+                const { selector, target, action, source, riskScore, note, description, warnings } = validation;
+                // Idempotency: same (selector, target) returns the existing rule
+                // untouched (action/note differences are deliberately ignored —
+                // operators who want to change action edit the existing row).
+                const existing = deps.guardrailStore.findEquivalent({ selector, target });
                 if (existing) {
-                    sendJson(res, { ...existing, existing: true });
+                    sendJson(res, {
+                        ...existing,
+                        warnings: warnings.length > 0 ? warnings : undefined,
+                        existing: true,
+                    });
                     return true;
                 }
-                // Description is sourced from the canonical describeAction in
-                // ./categories so the guardrail row reads the same as the audit
-                // surface that originated it. Issue #44 collapsed the previous
-                // four-field inline closure (command/path/url/query) which fell
-                // through to bare tool names for the 20 tools added in #42.
+                const generated = description ?? describeRule({ selector, target, action });
                 const guardrail = {
                     id: GuardrailStore.generateId(),
-                    tool: entry.toolName,
-                    identityKey,
-                    matchMode: "exact",
+                    selector,
+                    target,
                     action,
-                    agentId,
+                    ...(note !== undefined ? { note } : {}),
+                    description: generated,
                     createdAt: new Date().toISOString(),
-                    source: {
-                        toolCallId,
-                        sessionKey: entry.sessionKey ?? "",
-                        agentId: entry.agentId ?? "unknown",
-                    },
-                    description: describeAction({
-                        toolName: entry.toolName,
-                        params: entry.params,
-                    }),
-                    riskScore: entry.riskScore ?? 0,
+                    source,
+                    riskScore,
                 };
                 try {
                     deps.guardrailStore.add(guardrail);
-                    sendJson(res, { ...guardrail, existing: false });
+                    sendJson(res, {
+                        ...guardrail,
+                        warnings: warnings.length > 0 ? warnings : undefined,
+                        existing: false,
+                    });
                 }
                 catch (err) {
                     handleStorageError(res, err);
@@ -115,34 +93,98 @@ export function registerDashboardRoutes(api, deps) {
                     return true;
                 }
                 const agentId = url.searchParams.get("agentId") || undefined;
-                sendJson(res, { guardrails: deps.guardrailStore.list(agentId ? { agentId } : undefined) });
+                const rules = deps.guardrailStore.list(agentId ? { agentId } : undefined);
+                const auditEntries = deps.auditLogger.readEntries();
+                const enriched = rules.map((rule) => enrichRule(rule, auditEntries));
+                sendJson(res, { guardrails: enriched });
+                return true;
+            }
+            // /:id/stats and /:id/firings — checked BEFORE the bare /:id pattern
+            // so the more specific suffix wins.
+            const guardrailStatsMatch = subPath.match(/^api\/guardrails\/([^/]+)\/stats$/);
+            if (guardrailStatsMatch && req.method === "GET") {
+                if (!deps.guardrailStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Guardrails not configured" }));
+                    return true;
+                }
+                const id = decodeURIComponent(guardrailStatsMatch[1]);
+                const rule = deps.guardrailStore.list().find((g) => g.id === id);
+                if (!rule) {
+                    res.writeHead(404, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Guardrail not found" }));
+                    return true;
+                }
+                const auditEntries = deps.auditLogger.readEntries();
+                const stats = computeRuleStats(id, auditEntries);
+                sendJson(res, { id, ...stats });
+                return true;
+            }
+            const guardrailFiringsMatch = subPath.match(/^api\/guardrails\/([^/]+)\/firings$/);
+            if (guardrailFiringsMatch && req.method === "GET") {
+                if (!deps.guardrailStore) {
+                    res.writeHead(501, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Guardrails not configured" }));
+                    return true;
+                }
+                const id = decodeURIComponent(guardrailFiringsMatch[1]);
+                const rule = deps.guardrailStore.list().find((g) => g.id === id);
+                if (!rule) {
+                    res.writeHead(404, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Guardrail not found" }));
+                    return true;
+                }
+                const limit = clampInt(url.searchParams.get("limit"), 1, 200, 50);
+                const auditEntries = deps.auditLogger.readEntries();
+                sendJson(res, { firings: computeRuleFirings(id, auditEntries, limit) });
                 return true;
             }
             const guardrailIdMatch = subPath.match(/^api\/guardrails\/([^/]+)$/);
-            if (guardrailIdMatch && req.method === "PUT") {
+            if (guardrailIdMatch && req.method === "PATCH") {
                 if (!deps.guardrailStore) {
                     res.writeHead(501, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ error: "Guardrails not configured" }));
                     return true;
                 }
                 const id = decodeURIComponent(guardrailIdMatch[1]);
-                const body = await readBody(req);
-                const patch = body;
-                if (patch.action !== undefined && !isValidGuardrailAction(patch.action)) {
+                const body = (await readBody(req));
+                // Reject patches that touch (selector.tools, target) — those define
+                // rule identity for idempotency. Operators delete + recreate.
+                if (body.tools !== undefined || body.target !== undefined) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({
-                        error: "Invalid action. Must be block or require_approval",
+                        error: "selector.tools and target are immutable; delete and recreate",
                     }));
                     return true;
                 }
+                if (body.action !== undefined && !isValidAction(body.action)) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "Invalid action" }));
+                    return true;
+                }
+                if (body.note !== undefined && typeof body.note !== "string") {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "note must be a string" }));
+                    return true;
+                }
+                if (body.agent !== undefined && body.agent !== null && typeof body.agent !== "string") {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "agent must be a string or null" }));
+                    return true;
+                }
                 try {
-                    const updated = deps.guardrailStore.update(id, patch);
+                    const updated = deps.guardrailStore.update(id, {
+                        action: body.action,
+                        note: body.note,
+                        agent: body.agent,
+                    });
                     if (!updated) {
                         res.writeHead(404, { "Content-Type": "application/json" });
                         res.end(JSON.stringify({ error: "Guardrail not found" }));
                         return true;
                     }
-                    sendJson(res, updated);
+                    const auditEntries = deps.auditLogger.readEntries();
+                    sendJson(res, enrichRule(updated, auditEntries));
                 }
                 catch (err) {
                     handleStorageError(res, err);
@@ -670,5 +712,177 @@ function readBody(req) {
         });
         req.on("error", reject);
     });
+}
+/**
+ * Validate POST /api/guardrails body. Empty target patterns / empty
+ * tools.values / unknown ActivityCategory / invalid action are 400s.
+ * Unknown tool names are accepted with a warning (#47 mitigation —
+ * operators may pre-create rules for tools ClawLens hasn't audited yet).
+ */
+function validateNewGuardrail(body) {
+    if (!body || typeof body !== "object") {
+        return { ok: false, error: "body must be an object", field: "" };
+    }
+    if (!isValidSelector(body.selector)) {
+        return { ok: false, error: "invalid selector", field: "selector" };
+    }
+    if (!isValidTarget(body.target)) {
+        return { ok: false, error: "invalid target", field: "target" };
+    }
+    if (!isValidAction(body.action)) {
+        return { ok: false, error: "invalid action", field: "action" };
+    }
+    const source = body.source;
+    if (!source ||
+        typeof source !== "object" ||
+        typeof source.toolCallId !== "string" ||
+        typeof source.sessionKey !== "string" ||
+        typeof source.agentId !== "string") {
+        return { ok: false, error: "source is required", field: "source" };
+    }
+    const riskScore = typeof body.riskScore === "number" ? body.riskScore : 0;
+    // Names mode: dedupe + warn on unknowns.
+    const warnings = [];
+    let selector = body.selector;
+    if (selector.tools.mode === "names") {
+        const original = selector.tools.values;
+        const seen = new Set();
+        const dedup = [];
+        for (const v of original) {
+            if (seen.has(v)) {
+                warnings.push(`removed duplicate tool name '${v}' from values`);
+                continue;
+            }
+            seen.add(v);
+            dedup.push(v);
+        }
+        for (const name of dedup) {
+            if (!KNOWN_TOOL_NAMES.has(name)) {
+                warnings.push(`unknown tool name '${name}' — rule will not fire until ClawLens recognizes this tool`);
+            }
+        }
+        selector = { ...selector, tools: { mode: "names", values: dedup } };
+    }
+    return {
+        ok: true,
+        selector,
+        target: body.target,
+        action: body.action,
+        source: {
+            toolCallId: source.toolCallId,
+            sessionKey: source.sessionKey,
+            agentId: source.agentId,
+        },
+        riskScore,
+        note: typeof body.note === "string" ? body.note : undefined,
+        description: typeof body.description === "string" ? body.description : undefined,
+        warnings,
+    };
+}
+// ── Guardrail enrichment + audit-log derived stats ──────────
+const RULE_HITS_24H_MS = 24 * 3600_000;
+const RULE_HITS_7D_MS = 7 * 86400_000;
+function isGuardrailMatchEntry(e) {
+    return typeof e.params?.guardrailId === "string";
+}
+/** Wrap a rule with hits24h, hits7d, lastFiredAt computed from audit log. */
+function enrichRule(rule, entries) {
+    const now = Date.now();
+    let hits24h = 0;
+    let hits7d = 0;
+    let lastFiredAt = null;
+    for (const e of entries) {
+        if (!isGuardrailMatchEntry(e))
+            continue;
+        if (e.params.guardrailId !== rule.id)
+            continue;
+        const age = now - new Date(e.timestamp).getTime();
+        if (age <= RULE_HITS_7D_MS)
+            hits7d++;
+        if (age <= RULE_HITS_24H_MS)
+            hits24h++;
+        if (lastFiredAt === null || e.timestamp > lastFiredAt) {
+            lastFiredAt = e.timestamp;
+        }
+    }
+    return { ...rule, hits24h, hits7d, lastFiredAt };
+}
+/** /api/guardrails/:id/stats — hits24h + lastFiredAt + 24-bucket sparkline. */
+function computeRuleStats(id, entries) {
+    const now = Date.now();
+    const sparkline = new Array(24).fill(0);
+    let hits24h = 0;
+    let lastFiredAt = null;
+    for (const e of entries) {
+        if (!isGuardrailMatchEntry(e))
+            continue;
+        if (e.params.guardrailId !== id)
+            continue;
+        const t = new Date(e.timestamp).getTime();
+        const age = now - t;
+        if (age > RULE_HITS_24H_MS || age < 0)
+            continue;
+        hits24h++;
+        // Bucket index: 0 = oldest hour (23-24h ago), 23 = most recent hour.
+        const hoursAgo = Math.floor(age / 3600_000);
+        const bucket = 23 - Math.min(23, hoursAgo);
+        sparkline[bucket]++;
+        if (lastFiredAt === null || e.timestamp > lastFiredAt) {
+            lastFiredAt = e.timestamp;
+        }
+    }
+    return { hits24h, lastFiredAt, sparkline };
+}
+/** /api/guardrails/:id/firings — recent guardrail_match rows joined to
+ *  their guardrail_resolution follow-ups. allow_notify firings have no
+ *  resolution (the action allows the call through). */
+function computeRuleFirings(id, entries, limit) {
+    // Index resolution rows by toolCallId for O(1) join.
+    const resolutions = new Map();
+    for (const e of entries) {
+        const params = e.params;
+        if (typeof params?.guardrailId === "string" &&
+            params.guardrailId === id &&
+            typeof params.resolution === "string" &&
+            e.toolCallId) {
+            resolutions.set(e.toolCallId, e.userResponse === "approved" ? "approved" : "denied");
+        }
+    }
+    const firings = [];
+    for (const e of entries) {
+        if (!isGuardrailMatchEntry(e))
+            continue;
+        if (e.params.guardrailId !== id)
+            continue;
+        const params = e.params;
+        // Skip resolution rows — they ALSO carry guardrailId but represent the
+        // follow-up, not the firing itself. Distinguish by presence of the
+        // 'resolution' field on the params record.
+        if (typeof params.resolution === "string")
+            continue;
+        const action = typeof params.guardrailAction === "string" ? params.guardrailAction : "block";
+        let resolution;
+        if (action === "allow_notify") {
+            resolution = "allow_notify";
+        }
+        else if (action === "block") {
+            resolution = "denied";
+        }
+        else {
+            // require_approval: look up the resolution row
+            const found = e.toolCallId ? resolutions.get(e.toolCallId) : undefined;
+            resolution = found ?? "pending";
+        }
+        firings.push({
+            at: e.timestamp,
+            toolName: e.toolName,
+            agentId: e.agentId ?? "",
+            sessionKey: e.sessionKey,
+            resolution,
+        });
+    }
+    // Newest first.
+    firings.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    return firings.slice(0, limit);
 }
 //# sourceMappingURL=routes.js.map

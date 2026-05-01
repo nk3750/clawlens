@@ -166,11 +166,9 @@ describe("getInterventions — Tier 3 high-risk items", () => {
     // Add a guardrail that matches the entry
     store.add({
       id: "gr_test123",
-      tool: "exec",
-      identityKey: "python3 deploy.py",
-      matchMode: "exact",
-      action: { type: "block" },
-      agentId: null, // global
+      selector: { agent: null, tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: "python3 deploy.py" },
+      action: "block",
       createdAt: "2026-04-12T10:00:00Z",
       source: { toolCallId: "tc1", sessionKey: "s1", agentId: "social-manager" },
       description: "block deploy",

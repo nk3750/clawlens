@@ -102,16 +102,18 @@ export declare class AuditLogger extends EventEmitter {
         toolCallId?: string;
         toolName: string;
         guardrailId: string;
-        action: {
-            type: string;
-        };
+        /** Flat string union — "block" | "require_approval" | "allow_notify". */
+        action: "block" | "require_approval" | "allow_notify";
         identityKey: string;
+        /** Pre-formatted target rendering for the dashboard (e.g. "Path: /etc/**").
+         *  Optional to keep older audit rows readable, but always supplied in
+         *  production after the schema rewrite. */
+        targetSummary?: string;
         agentId: string;
         sessionKey?: string;
-        /** Risk fields are optional for back-compat; when supplied (always in
-         *  production after the before-tool-call refactor) they let the dashboard
-         *  bucket guardrail-blocked rows into the per-agent risk-mix bar instead
-         *  of leaving an empty segment for "decided but unscored" entries. */
+        /** Risk fields let the dashboard bucket guardrail-gated rows into the
+         *  per-agent risk-mix bar instead of leaving an empty segment for
+         *  "decided but unscored" entries. */
         riskScore?: number;
         riskTier?: "low" | "medium" | "high" | "critical";
         riskTags?: string[];

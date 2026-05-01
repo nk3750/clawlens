@@ -1,4 +1,5 @@
-import { formatAlert, sendAlert, shouldAlert } from "../alerts/telegram";
+import { formatAlert, formatGuardrailNotifyAlert, sendAlert, shouldAlert, } from "../alerts/telegram";
+import { formatTargetSummary } from "../dashboard/categories";
 import { extractIdentityKey } from "../guardrails/identity";
 import { evaluateWithLlm } from "../risk/llm-evaluator";
 import { computeRiskScore } from "../risk/scorer";
@@ -21,9 +22,14 @@ export function createBeforeToolCallHandler(deps) {
             const risk = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
             // ── Guardrail check (before risk scoring) ──────────
             if (guardrailStore) {
-                const identityKey = extractIdentityKey(toolName, params);
-                const matched = guardrailStore.match(agentId, toolName, identityKey);
+                const matched = guardrailStore.match(agentId, toolName, params);
                 if (matched) {
+                    // identityKey is recorded on the audit row for forensic trace —
+                    // the matcher itself no longer keys off it (target globs do that
+                    // job). targetSummary lets the dashboard render the matched rule's
+                    // shape without peeking the live store at view time.
+                    const identityKey = extractIdentityKey(toolName, params);
+                    const targetSummary = formatTargetSummary(matched.target);
                     auditLogger.logGuardrailMatch({
                         timestamp: new Date().toISOString(),
                         toolCallId,
@@ -31,19 +37,20 @@ export function createBeforeToolCallHandler(deps) {
                         guardrailId: matched.id,
                         action: matched.action,
                         identityKey,
+                        targetSummary,
                         agentId,
                         sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                         riskScore: risk.score,
                         riskTier: risk.tier,
                         riskTags: risk.tags,
                     });
-                    if (matched.action.type === "block") {
+                    if (matched.action === "block") {
                         return {
                             block: true,
                             blockReason: `ClawLens guardrail: "${matched.description}" is blocked`,
                         };
                     }
-                    if (matched.action.type === "require_approval") {
+                    if (matched.action === "require_approval") {
                         const approvalTimeoutMs = 300_000;
                         // Wrapper called by /api/attention/resolve via store.take(). Until
                         // OpenClaw exposes a plugin-side resolver (openclaw/openclaw#68626),
@@ -95,6 +102,16 @@ export function createBeforeToolCallHandler(deps) {
                                 onResolution,
                             },
                         };
+                    }
+                    if (matched.action === "allow_notify") {
+                        // Audit + alert, then fall through to the normal allow path
+                        // (risk + LLM eval + decision audit row). Operators get a
+                        // distinct firing on the dashboard via the audit row's
+                        // action="allow_notify" tag plus a Telegram ping.
+                        if (alertSend) {
+                            const msg = formatGuardrailNotifyAlert(matched, toolName, params);
+                            sendAlert(msg, alertSend);
+                        }
                     }
                 }
             }
@@ -265,7 +282,7 @@ function formatGuardrailApproval(guardrail, toolName, params) {
         day: "numeric",
     });
     return [
-        `Agent: ${guardrail.agentId ?? "all agents"}`,
+        `Agent: ${guardrail.selector.agent ?? "all agents"}`,
         `Action: ${action}`,
         `Risk: ${guardrail.riskScore} ${tier}`,
         `Guardrail: "Require Approval" (added ${date})`,

@@ -380,11 +380,9 @@ describe("require_approval wrap — PendingApprovalStore integration", () => {
 
   const guardrailMatch = {
     id: "gr_1",
-    tool: "exec",
-    identityKey: "exec:curl https://example.com",
-    matchMode: "exact" as const,
-    action: { type: "require_approval" as const },
-    agentId: "test-agent",
+    selector: { agent: "test-agent", tools: { mode: "names" as const, values: ["exec"] } },
+    target: { kind: "identity-glob" as const, pattern: "exec:curl https://example.com" },
+    action: "require_approval" as const,
     createdAt: new Date().toISOString(),
     source: { toolCallId: "tc_src", sessionKey: "test-session", agentId: "test-agent" },
     description: "Needs review",
@@ -518,11 +516,9 @@ describe("guardrail match audit row carries the action's risk score", () => {
   function approvalGuardrail() {
     return {
       id: "gr_appr",
-      tool: "exec",
-      identityKey: "exec:curl https://example.com",
-      matchMode: "exact" as const,
-      action: { type: "require_approval" as const },
-      agentId: "test-agent",
+      selector: { agent: "test-agent", tools: { mode: "names" as const, values: ["exec"] } },
+      target: { kind: "identity-glob" as const, pattern: "exec:curl https://example.com" },
+      action: "require_approval" as const,
       createdAt: new Date().toISOString(),
       source: { toolCallId: "tc_src", sessionKey: "test-session", agentId: "test-agent" },
       description: "Needs review",
@@ -533,11 +529,9 @@ describe("guardrail match audit row carries the action's risk score", () => {
   function blockGuardrail() {
     return {
       id: "gr_block",
-      tool: "exec",
-      identityKey: "exec:rm -rf /",
-      matchMode: "exact" as const,
-      action: { type: "block" as const },
-      agentId: "test-agent",
+      selector: { agent: "test-agent", tools: { mode: "names" as const, values: ["exec"] } },
+      target: { kind: "identity-glob" as const, pattern: "exec:rm -rf /" },
+      action: "block" as const,
       createdAt: new Date().toISOString(),
       source: { toolCallId: "tc_src", sessionKey: "test-session", agentId: "test-agent" },
       description: "Blocked",
