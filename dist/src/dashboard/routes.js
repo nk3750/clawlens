@@ -573,10 +573,13 @@ export function registerDashboardRoutes(api, deps) {
             }
             if (subPath === "api/sessions") {
                 const agentId = url.searchParams.get("agentId") || undefined;
-                const limit = clampInt(url.searchParams.get("limit"), 1, 100, 10);
+                const avgRiskTier = parseSessionRiskTier(url.searchParams.get("risk"));
+                const durationBucket = parseSessionDurationBucket(url.searchParams.get("duration"));
+                const since = parseSessionSince(url.searchParams.get("since"));
+                const limit = clampInt(url.searchParams.get("limit"), 1, 100, 25);
                 const offset = clampInt(url.searchParams.get("offset"), 0, Infinity, 0);
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, getSessions(entries, agentId, limit, offset));
+                sendJson(res, getSessions(entries, { agentId, avgRiskTier, durationBucket, since }, limit, offset));
                 return true;
             }
             const summaryMatch = subPath.match(/^api\/session\/(.+)\/summary$/);
@@ -706,6 +709,21 @@ function clampInt(raw, min, max, fallback) {
     if (Number.isNaN(n))
         return fallback;
     return Math.max(min, Math.min(max, n));
+}
+function parseSessionRiskTier(raw) {
+    if (raw === "low" || raw === "medium" || raw === "high" || raw === "critical")
+        return raw;
+    return undefined;
+}
+function parseSessionDurationBucket(raw) {
+    if (raw === "lt1m" || raw === "1to10m" || raw === "gt10m")
+        return raw;
+    return undefined;
+}
+function parseSessionSince(raw) {
+    if (raw === "1h" || raw === "6h" || raw === "24h" || raw === "7d")
+        return raw;
+    return undefined;
 }
 /**
  * Validate a POST/PATCH body's `name` field for the saved-searches endpoints.

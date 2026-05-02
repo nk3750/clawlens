@@ -1839,25 +1839,107 @@ export function getAgentDetail(
   };
 }
 
-/** Get paginated session list, optionally filtered by agent. */
+/** Spec §4.1 — fleet-wide session filter shape. */
+export interface SessionFilters {
+  agentId?: string;
+  /** Exact-match risk tier on `avgRisk`. */
+  avgRiskTier?: RiskTierLabel;
+  /** Bucketed duration filter (closed sessions only; active sessions ignore this). */
+  durationBucket?: "lt1m" | "1to10m" | "gt10m";
+  /** Rolling time window. Active sessions (endTime null) always pass. */
+  since?: "1h" | "6h" | "24h" | "7d";
+}
+
+const SINCE_MS: Record<NonNullable<SessionFilters["since"]>, number> = {
+  "1h": 3_600_000,
+  "6h": 21_600_000,
+  "24h": 86_400_000,
+  "7d": 604_800_000,
+};
+
+function passesSessionFilters(s: SessionInfo, f: SessionFilters): boolean {
+  if (f.agentId && s.agentId !== f.agentId) return false;
+  if (f.avgRiskTier && tierFromScore(s.avgRisk) !== f.avgRiskTier) return false;
+  if (f.durationBucket) {
+    const d = s.duration ?? 0;
+    if (f.durationBucket === "lt1m" && d >= 60_000) return false;
+    if (f.durationBucket === "1to10m" && (d < 60_000 || d >= 600_000)) return false;
+    if (f.durationBucket === "gt10m" && d < 600_000) return false;
+  }
+  if (f.since) {
+    if (s.endTime !== null) {
+      const cutoff = Date.now() - SINCE_MS[f.since];
+      if (new Date(s.startTime).getTime() < cutoff) return false;
+    }
+    // Active sessions (endTime null) always pass — they're current.
+  }
+  return true;
+}
+
+/**
+ * Get paginated session list, optionally filtered.
+ *
+ * Spec §4.1 backwards-compat: the old `(entries, agentId?, limit, offset)`
+ * shape is still accepted (string in slot 2 → `{ agentId }`); new callers
+ * pass a `SessionFilters` object.
+ *
+ * Spec §4.2 active marking: sessions whose last entry is within
+ * ACTIVE_THRESHOLD_MS of now are returned with `endTime: null` and
+ * `duration: null` so the page can render the LIVE indicator and skip the
+ * since-window check.
+ *
+ * Spec §4.2 tiebreaker: when end timestamps tie, peakRisk descending.
+ */
 export function getSessions(
   entries: AuditEntry[],
   agentId?: string,
+  limit?: number,
+  offset?: number,
+): { sessions: SessionInfo[]; total: number };
+export function getSessions(
+  entries: AuditEntry[],
+  filters: SessionFilters,
+  limit?: number,
+  offset?: number,
+): { sessions: SessionInfo[]; total: number };
+export function getSessions(
+  entries: AuditEntry[],
+  filtersOrAgent?: string | SessionFilters,
   limit: number = 10,
   offset: number = 0,
 ): { sessions: SessionInfo[]; total: number } {
-  let filtered = entries;
-  if (agentId) {
-    filtered = entries.filter((e) => (e.agentId || "default") === agentId);
-  }
+  const filters: SessionFilters =
+    typeof filtersOrAgent === "string" ? { agentId: filtersOrAgent } : (filtersOrAgent ?? {});
+
+  const filteredEntries = filters.agentId
+    ? entries.filter((e) => (e.agentId || "default") === filters.agentId)
+    : entries;
 
   const evalIdx = buildEvalIndex(entries);
-  const sessionMap = groupBySessions(filtered);
-  const allSessions: SessionInfo[] = [];
+  const sessionMap = groupBySessions(filteredEntries);
+  const built: SessionInfo[] = [];
+  const now = Date.now();
   for (const [key, sEntries] of sessionMap) {
-    allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
+    const info = buildSessionInfo(key, sEntries, evalIdx);
+    // Active marking: last entry within ACTIVE_THRESHOLD_MS → null out endTime + duration.
+    if (info.endTime !== null) {
+      const lastMs = new Date(info.endTime).getTime();
+      if (now - lastMs <= ACTIVE_THRESHOLD_MS) {
+        info.endTime = null;
+        info.duration = null;
+      }
+    }
+    built.push(info);
   }
-  allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
+
+  const allSessions = built.filter((s) => passesSessionFilters(s, filters));
+  allSessions.sort((a, b) => {
+    const aKey = a.endTime ?? a.startTime;
+    const bKey = b.endTime ?? b.startTime;
+    const cmp = bKey.localeCompare(aKey);
+    if (cmp !== 0) return cmp;
+    return b.peakRisk - a.peakRisk;
+  });
 
   return {
     sessions: allSessions.slice(offset, offset + limit),

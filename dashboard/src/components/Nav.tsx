@@ -80,6 +80,9 @@ export default function Nav() {
             <NavLink to="/" active={isActive("/")}>
               Agents
             </NavLink>
+            <NavLink to="/sessions" active={isActive("/sessions")}>
+              Sessions
+            </NavLink>
             <NavLink to="/activity" active={isActive("/activity")}>
               Activity
             </NavLink>

@@ -674,10 +674,16 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
 
       if (subPath === "api/sessions") {
         const agentId = url.searchParams.get("agentId") || undefined;
-        const limit = clampInt(url.searchParams.get("limit"), 1, 100, 10);
+        const avgRiskTier = parseSessionRiskTier(url.searchParams.get("risk"));
+        const durationBucket = parseSessionDurationBucket(url.searchParams.get("duration"));
+        const since = parseSessionSince(url.searchParams.get("since"));
+        const limit = clampInt(url.searchParams.get("limit"), 1, 100, 25);
         const offset = clampInt(url.searchParams.get("offset"), 0, Infinity, 0);
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getSessions(entries, agentId, limit, offset));
+        sendJson(
+          res,
+          getSessions(entries, { agentId, avgRiskTier, durationBucket, since }, limit, offset),
+        );
         return true;
       }
 
@@ -822,6 +828,23 @@ function clampInt(raw: string | null, min: number, max: number, fallback: number
   const n = parseInt(raw, 10);
   if (Number.isNaN(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+function parseSessionRiskTier(
+  raw: string | null,
+): "low" | "medium" | "high" | "critical" | undefined {
+  if (raw === "low" || raw === "medium" || raw === "high" || raw === "critical") return raw;
+  return undefined;
+}
+
+function parseSessionDurationBucket(raw: string | null): "lt1m" | "1to10m" | "gt10m" | undefined {
+  if (raw === "lt1m" || raw === "1to10m" || raw === "gt10m") return raw;
+  return undefined;
+}
+
+function parseSessionSince(raw: string | null): "1h" | "6h" | "24h" | "7d" | undefined {
+  if (raw === "1h" || raw === "6h" || raw === "24h" || raw === "7d") return raw;
+  return undefined;
 }
 
 /**

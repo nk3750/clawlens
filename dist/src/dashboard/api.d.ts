@@ -355,8 +355,35 @@ export declare function computeEnhancedStats(entries: AuditEntry[], date?: strin
 /** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */
 export declare function getAgents(entries: AuditEntry[], date?: string): AgentInfo[];
 export declare function getAgentDetail(entries: AuditEntry[], agentId: string, range?: string): AgentDetailResponse | null;
-/** Get paginated session list, optionally filtered by agent. */
+/** Spec §4.1 — fleet-wide session filter shape. */
+export interface SessionFilters {
+    agentId?: string;
+    /** Exact-match risk tier on `avgRisk`. */
+    avgRiskTier?: RiskTierLabel;
+    /** Bucketed duration filter (closed sessions only; active sessions ignore this). */
+    durationBucket?: "lt1m" | "1to10m" | "gt10m";
+    /** Rolling time window. Active sessions (endTime null) always pass. */
+    since?: "1h" | "6h" | "24h" | "7d";
+}
+/**
+ * Get paginated session list, optionally filtered.
+ *
+ * Spec §4.1 backwards-compat: the old `(entries, agentId?, limit, offset)`
+ * shape is still accepted (string in slot 2 → `{ agentId }`); new callers
+ * pass a `SessionFilters` object.
+ *
+ * Spec §4.2 active marking: sessions whose last entry is within
+ * ACTIVE_THRESHOLD_MS of now are returned with `endTime: null` and
+ * `duration: null` so the page can render the LIVE indicator and skip the
+ * since-window check.
+ *
+ * Spec §4.2 tiebreaker: when end timestamps tie, peakRisk descending.
+ */
 export declare function getSessions(entries: AuditEntry[], agentId?: string, limit?: number, offset?: number): {
+    sessions: SessionInfo[];
+    total: number;
+};
+export declare function getSessions(entries: AuditEntry[], filters: SessionFilters, limit?: number, offset?: number): {
     sessions: SessionInfo[];
     total: number;
 };

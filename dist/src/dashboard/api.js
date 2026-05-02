@@ -1420,19 +1420,66 @@ export function getAgentDetail(entries, agentId, range) {
         riskTrend,
     };
 }
-/** Get paginated session list, optionally filtered by agent. */
-export function getSessions(entries, agentId, limit = 10, offset = 0) {
-    let filtered = entries;
-    if (agentId) {
-        filtered = entries.filter((e) => (e.agentId || "default") === agentId);
+const SINCE_MS = {
+    "1h": 3_600_000,
+    "6h": 21_600_000,
+    "24h": 86_400_000,
+    "7d": 604_800_000,
+};
+function passesSessionFilters(s, f) {
+    if (f.agentId && s.agentId !== f.agentId)
+        return false;
+    if (f.avgRiskTier && tierFromScore(s.avgRisk) !== f.avgRiskTier)
+        return false;
+    if (f.durationBucket) {
+        const d = s.duration ?? 0;
+        if (f.durationBucket === "lt1m" && d >= 60_000)
+            return false;
+        if (f.durationBucket === "1to10m" && (d < 60_000 || d >= 600_000))
+            return false;
+        if (f.durationBucket === "gt10m" && d < 600_000)
+            return false;
     }
+    if (f.since) {
+        if (s.endTime !== null) {
+            const cutoff = Date.now() - SINCE_MS[f.since];
+            if (new Date(s.startTime).getTime() < cutoff)
+                return false;
+        }
+        // Active sessions (endTime null) always pass — they're current.
+    }
+    return true;
+}
+export function getSessions(entries, filtersOrAgent, limit = 10, offset = 0) {
+    const filters = typeof filtersOrAgent === "string" ? { agentId: filtersOrAgent } : (filtersOrAgent ?? {});
+    const filteredEntries = filters.agentId
+        ? entries.filter((e) => (e.agentId || "default") === filters.agentId)
+        : entries;
     const evalIdx = buildEvalIndex(entries);
-    const sessionMap = groupBySessions(filtered);
-    const allSessions = [];
+    const sessionMap = groupBySessions(filteredEntries);
+    const built = [];
+    const now = Date.now();
     for (const [key, sEntries] of sessionMap) {
-        allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
+        const info = buildSessionInfo(key, sEntries, evalIdx);
+        // Active marking: last entry within ACTIVE_THRESHOLD_MS → null out endTime + duration.
+        if (info.endTime !== null) {
+            const lastMs = new Date(info.endTime).getTime();
+            if (now - lastMs <= ACTIVE_THRESHOLD_MS) {
+                info.endTime = null;
+                info.duration = null;
+            }
+        }
+        built.push(info);
     }
-    allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
+    const allSessions = built.filter((s) => passesSessionFilters(s, filters));
+    allSessions.sort((a, b) => {
+        const aKey = a.endTime ?? a.startTime;
+        const bKey = b.endTime ?? b.startTime;
+        const cmp = bKey.localeCompare(aKey);
+        if (cmp !== 0)
+            return cmp;
+        return b.peakRisk - a.peakRisk;
+    });
     return {
         sessions: allSessions.slice(offset, offset + limit),
         total: allSessions.length,
