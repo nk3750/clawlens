@@ -445,4 +445,28 @@ describe("GuardrailModal — cosmetic regression (§5.5)", () => {
     const scope = screen.getByTestId("scope-this-agent");
     expect(scope.textContent).toContain("alpha");
   });
+
+  it("long toolCallId is middle-truncated for display, full ID retained in title attr", () => {
+    const longCallId =
+      "call_8wqYTm0NBvpYVAFHKCjXnDQz|fc_041721223a33ce780169f54b3eabe48195a7e009a8f5f10722";
+    const longEntry: EntryResponse = { ...fileEntry, toolCallId: longCallId };
+    render(
+      <GuardrailModal entry={longEntry} description="x" onClose={() => {}} onCreated={() => {}} />,
+    );
+    const span = screen.getByTestId("entry-tool-call-id");
+    expect(span.textContent ?? "").toContain("…");
+    expect((span.textContent ?? "").length).toBeLessThan(longCallId.length);
+    expect(span.getAttribute("title")).toBe(longCallId);
+  });
+
+  it("source-context container sets overflowWrap so unbreakable strings wrap", () => {
+    render(
+      <GuardrailModal entry={fileEntry} description="x" onClose={() => {}} onCreated={() => {}} />,
+    );
+    const span = screen.getByTestId("entry-tool-call-id");
+    // Walk up to the rounded source-context container; assert the wrap policy.
+    const ctx = span.closest("[class*='rounded-lg']") as HTMLElement | null;
+    expect(ctx).not.toBeNull();
+    expect((ctx as HTMLElement).style.overflowWrap).toBe("anywhere");
+  });
 });

@@ -7,6 +7,7 @@ import {
   ACTION_META,
   type ResourceKind,
   resourceKindFromToolName,
+  shortPath,
   suggestGlobs,
   targetKindFor,
   VERB_LIBRARY,
@@ -227,14 +228,14 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
         {/* Source context */}
         <div
           className="rounded-lg p-3 mb-4"
-          style={{ backgroundColor: "var(--cl-elevated)" }}
+          style={{
+            backgroundColor: "var(--cl-elevated)",
+            overflowWrap: "anywhere",
+          }}
         >
           <p
             className="text-sm mb-1"
-            style={{
-              color: "var(--cl-text-primary)",
-              wordBreak: "break-all",
-            }}
+            style={{ color: "var(--cl-text-primary)" }}
           >
             {description}
           </p>
@@ -255,7 +256,13 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
             )}
             {entry.agentId && <span>{entry.agentId}</span>}
             {entry.toolCallId && (
-              <span style={{ fontFamily: "var(--cl-font-mono)" }}>{entry.toolCallId}</span>
+              <span
+                data-testid="entry-tool-call-id"
+                style={{ fontFamily: "var(--cl-font-mono)" }}
+                title={entry.toolCallId}
+              >
+                {shortPath(entry.toolCallId, 28)}
+              </span>
             )}
           </div>
         </div>
