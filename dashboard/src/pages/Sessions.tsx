@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import SessionRow from "../components/sessions/SessionRow";
 import SessionsActiveFilterChips from "../components/sessions/SessionsActiveFilterChips";
@@ -29,6 +29,71 @@ export default function Sessions() {
 
   const isMobile = useMediaQuery(MEDIA_DRAWER);
 
+  // Drawer state — session-only, no persistence. Mirrors Activity.tsx.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-close when the viewport widens past the drawer breakpoint — leaving
+  // it stuck open while in desktop layout would lock the body scroll.
+  useEffect(() => {
+    if (!isMobile && drawerOpen) setDrawerOpen(false);
+  }, [isMobile, drawerOpen]);
+
+  // Body overflow lock while the drawer is open.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [drawerOpen]);
+
+  // ESC closes the drawer.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
+  // Hand-rolled focus trap inside the drawer.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const drawerEl = drawerRef.current;
+    if (!drawerEl) return;
+    const focusables = drawerEl.querySelectorAll<HTMLElement>(
+      'button, [href], input, [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusables.length > 0) focusables[0].focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const els = drawerEl.querySelectorAll<HTMLElement>(
+        'button, [href], input, [tabindex]:not([tabindex="-1"])',
+      );
+      if (els.length === 0) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    drawerEl.addEventListener("keydown", onKey);
+    return () => drawerEl.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
+  const toggleDrawer = useCallback(() => setDrawerOpen((open) => !open), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
   // Spec §5.7 — set since=24h on first mount when the URL doesn't already
   // include a since param, so refresh / share preserve the default.
   useEffect(() => {
@@ -58,6 +123,10 @@ export default function Sessions() {
         next[key] = value;
       }
       writeFilters(next);
+      // Mobile UX: collapse the drawer once a filter is picked so the
+      // operator immediately sees the narrowed feed. No-op on desktop
+      // because the drawer is never open there.
+      setDrawerOpen(false);
     },
     [filters, writeFilters],
   );
@@ -127,22 +196,63 @@ export default function Sessions() {
           <header
             style={{
               display: "flex",
-              alignItems: "baseline",
+              alignItems: "center",
               justifyContent: "space-between",
+              gap: 14,
               marginBottom: 14,
             }}
           >
-            <h1
-              style={{
-                fontFamily: "var(--cl-font-sans)",
-                fontSize: 18,
-                fontWeight: 510,
-                color: "var(--cl-text-primary)",
-                margin: 0,
-              }}
-            >
-              Sessions
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {isMobile && (
+                <button
+                  type="button"
+                  data-testid="sessions-drawer-toggle"
+                  aria-label="Open filter drawer"
+                  onClick={toggleDrawer}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "transparent",
+                    border: "1px solid var(--cl-border-subtle)",
+                    borderRadius: 6,
+                    color: "var(--cl-text-secondary)",
+                    cursor: "pointer",
+                    padding: 0,
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </svg>
+                </button>
+              )}
+              <h1
+                style={{
+                  fontFamily: "var(--cl-font-sans)",
+                  fontSize: 18,
+                  fontWeight: 510,
+                  color: "var(--cl-text-primary)",
+                  margin: 0,
+                }}
+              >
+                Sessions
+              </h1>
+            </div>
             <span
               data-testid="sessions-count"
               className="label-mono"
@@ -226,6 +336,50 @@ export default function Sessions() {
           )}
         </div>
       </div>
+
+      {isMobile && drawerOpen && (
+        <>
+          <div
+            data-testid="sessions-drawer-backdrop"
+            onClick={closeDrawer}
+            role="presentation"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "var(--cl-bg-08)",
+              zIndex: 50,
+            }}
+          />
+          <aside
+            ref={drawerRef}
+            data-testid="sessions-drawer"
+            aria-label="Filter drawer"
+            aria-modal="true"
+            role="dialog"
+            style={{
+              position: "fixed",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 280,
+              maxWidth: "85vw",
+              background: "var(--cl-bg-popover)",
+              borderRight: "1px solid var(--cl-border-subtle)",
+              zIndex: 51,
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+            }}
+          >
+            <SessionsFilterRail
+              filters={filters}
+              agents={agents ?? []}
+              onSelect={handleSelect}
+              onClear={handleClear}
+              isMobile
+            />
+          </aside>
+        </>
+      )}
     </div>
   );
 }
