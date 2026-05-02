@@ -51,6 +51,7 @@
     --cl-risk-low:      #4ade80;
     --cl-risk-medium:   #fbbf24;
     --cl-risk-high:     #f87171;
+    --cl-info:          #60a5fa;                        /* allow_notify chip — matches ActivityEntry / RiskPanel */
     --cl-risk-critical: #ef4444;
 
     /* Activity-category palette — strict cool/magenta. Risk owns the warm-to-
@@ -572,6 +573,17 @@ code, .code {
 @keyframes cl-pop-in-up {
   from { opacity: 0; transform: translateY(4px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* Modal entry — spec §13.2. Backdrop fades, panel pops + lifts. */
+@keyframes cl-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+@keyframes cl-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* Focus rings — indigo accent. */

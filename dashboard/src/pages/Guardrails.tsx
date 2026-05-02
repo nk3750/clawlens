@@ -1,246 +1,73 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
+import GuardrailDetailPane, {
+  type PatchBody,
+} from "../components/guardrails/GuardrailDetailPane";
+import GuardrailEmptyState from "../components/guardrails/GuardrailEmptyState";
+import GuardrailFilterRail from "../components/guardrails/GuardrailFilterRail";
+import GuardrailList from "../components/guardrails/GuardrailList";
+import { applyFilters, computeCounts, type Filters } from "../components/guardrails/shared";
 import { useApi } from "../hooks/useApi";
-import type { Guardrail, GuardrailAction, ToolSelector } from "../lib/types";
-import { relTime, riskTierFromScore, riskColorRaw } from "../lib/utils";
+import type { Guardrail } from "../lib/types";
 
 const BASE = "/plugins/clawlens";
 
-function actionLabel(action: GuardrailAction): string {
-  switch (action) {
-    case "block":
-      return "BLOCK";
-    case "require_approval":
-      return "REQUIRE APPROVAL";
-    case "allow_notify":
-      return "NOTIFY";
-  }
-}
-
-function actionColor(action: GuardrailAction): string {
-  switch (action) {
-    case "block":
-      return "#ef4444";
-    case "require_approval":
-      return "#fbbf24";
-    case "allow_notify":
-      return "#60a5fa";
-  }
-}
-
-function describeToolSelector(tools: ToolSelector): string {
-  if (tools.mode === "any") return "any tool";
-  if (tools.mode === "category") return `${tools.value} category`;
-  if (tools.values.length === 1) return tools.values[0];
-  return [...tools.values].sort().join(" / ");
-}
-
-function describeTarget(target: Guardrail["target"]): string {
-  switch (target.kind) {
-    case "path-glob":
-      return `path: ${target.pattern}`;
-    case "url-glob":
-      return `url: ${target.pattern}`;
-    case "command-glob":
-      return `command: ${target.pattern}`;
-    case "identity-glob":
-      return target.pattern;
-  }
-}
-
 export default function Guardrails() {
   const { data, loading, refetch } = useApi<{ guardrails: Guardrail[] }>("api/guardrails");
-  const [filterAgent, setFilterAgent] = useState("");
-  const [filterAction, setFilterAction] = useState("");
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Filters>({});
 
-  const handleDelete = useCallback(
-    async (id: string) => {
-      setDeleting(id);
-      try {
-        await fetch(`${BASE}/api/guardrails/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        });
-        refetch();
-      } finally {
-        setDeleting(null);
-      }
-    },
-    [refetch],
-  );
+  const rules = data?.guardrails ?? [];
+  const filtered = applyFilters(rules, filters);
+  const counts = computeCounts(rules);
+  const selected = rules.find((r) => r.id === selectedId) ?? null;
 
-  const guardrails = data?.guardrails ?? [];
-  const agents = [...new Set(guardrails.map((g) => g.selector.agent ?? "global"))].sort();
-
-  let filtered = guardrails;
-  if (filterAgent) {
-    filtered = filtered.filter((g) =>
-      filterAgent === "global" ? g.selector.agent === null : g.selector.agent === filterAgent,
-    );
+  async function handlePatch(patch: PatchBody): Promise<void> {
+    if (!selectedId) return;
+    const res = await fetch(`${BASE}/api/guardrails/${encodeURIComponent(selectedId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as Record<string, string>;
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    refetch();
   }
-  if (filterAction) {
-    filtered = filtered.filter((g) => g.action === filterAction);
+
+  async function handleDelete(): Promise<void> {
+    if (!selectedId) return;
+    const res = await fetch(`${BASE}/api/guardrails/${encodeURIComponent(selectedId)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    setSelectedId(null);
+    refetch();
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1
-            className="text-2xl font-bold tracking-tight"
-            style={{
-              fontFamily: "'Syne', sans-serif",
-              color: "var(--cl-text-primary)",
-            }}
+    <div className="flex" style={{ height: "calc(100vh - 64px)" }}>
+      <GuardrailFilterRail filters={filters} setFilters={setFilters} counts={counts} />
+      <GuardrailList
+        rules={filtered}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        hasAnyRules={rules.length > 0}
+      />
+      <main className="flex-1 overflow-auto" style={{ backgroundColor: "var(--cl-bg)" }}>
+        {loading && rules.length === 0 ? (
+          <p
+            className="px-8 py-10 text-sm"
+            style={{ color: "var(--cl-text-muted)" }}
           >
-            GUARDRAILS
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--cl-text-secondary)" }}>
-            {guardrails.length} active
+            Loading…
           </p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 mb-6">
-        <select
-          value={filterAgent}
-          onChange={(e) => setFilterAgent(e.target.value)}
-          className="px-3 py-1.5 rounded-lg text-sm"
-          style={{
-            backgroundColor: "var(--cl-surface)",
-            border: "1px solid var(--cl-border)",
-            color: "var(--cl-text-primary)",
-          }}
-        >
-          <option value="">All agents</option>
-          {agents.map((a) => (
-            <option key={a} value={a}>
-              {a === "global" ? "Global" : a}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterAction}
-          onChange={(e) => setFilterAction(e.target.value)}
-          className="px-3 py-1.5 rounded-lg text-sm"
-          style={{
-            backgroundColor: "var(--cl-surface)",
-            border: "1px solid var(--cl-border)",
-            color: "var(--cl-text-primary)",
-          }}
-        >
-          <option value="">All actions</option>
-          <option value="block">Block</option>
-          <option value="require_approval">Require Approval</option>
-          <option value="allow_notify">Notify</option>
-        </select>
-      </div>
-
-      {/* List */}
-      {loading ? (
-        <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>
-          Loading...
-        </p>
-      ) : filtered.length === 0 ? (
-        <p className="text-sm py-8 text-center" style={{ color: "var(--cl-text-muted)" }}>
-          {guardrails.length === 0
-            ? "No guardrails yet. Add one from any entry in the Activity or Agent views."
-            : "No guardrails match the current filters."}
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((g) => (
-            <GuardrailRow
-              key={g.id}
-              guardrail={g}
-              deleting={deleting === g.id}
-              onDelete={() => handleDelete(g.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GuardrailRow({
-  guardrail: g,
-  deleting,
-  onDelete,
-}: {
-  guardrail: Guardrail;
-  deleting: boolean;
-  onDelete: () => void;
-}) {
-  const tier = riskTierFromScore(g.riskScore);
-  const tierColor = riskColorRaw(tier);
-  const aColor = actionColor(g.action);
-
-  return (
-    <div
-      className="flex items-center gap-3 px-4 py-3 rounded-lg"
-      style={{
-        backgroundColor: "var(--cl-surface)",
-        border: "1px solid var(--cl-border)",
-      }}
-    >
-      {/* Shield icon */}
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={aColor}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="shrink-0"
-      >
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      </svg>
-
-      {/* Description */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm truncate" style={{ color: "var(--cl-text-primary)" }}>
-          {describeToolSelector(g.selector.tools)} — {describeTarget(g.target)}
-        </p>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span className="label-mono" style={{ color: aColor }}>
-            {actionLabel(g.action)}
-          </span>
-          <span className="text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-            {g.selector.agent ?? "all agents"}
-          </span>
-          <span className="text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-            added {relTime(g.createdAt)}
-          </span>
-          {g.riskScore > 0 && (
-            <span className="flex items-center gap-1">
-              <span
-                className="inline-block w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: tierColor }}
-              />
-              <span className="font-mono text-xs" style={{ color: "var(--cl-text-secondary)" }}>
-                {g.riskScore}
-              </span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Delete button */}
-      <button
-        onClick={onDelete}
-        disabled={deleting}
-        className="px-3 py-1.5 text-xs rounded-lg transition-colors"
-        style={{
-          backgroundColor: "var(--cl-elevated)",
-          color: deleting ? "var(--cl-text-muted)" : "var(--cl-text-secondary)",
-        }}
-      >
-        {deleting ? "..." : "Delete"}
-      </button>
+        ) : selected ? (
+          <GuardrailDetailPane rule={selected} onPatch={handlePatch} onDelete={handleDelete} />
+        ) : (
+          <GuardrailEmptyState rules={rules} onSelect={setSelectedId} />
+        )}
+      </main>
     </div>
   );
 }

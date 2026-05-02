@@ -209,17 +209,90 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         }
         const id = decodeURIComponent(guardrailIdMatch[1]);
         const body = (await readBody(req)) as Record<string, unknown>;
-        // Reject patches that touch (selector.tools, target) — those define
-        // rule identity for idempotency. Operators delete + recreate.
-        if (body.tools !== undefined || body.target !== undefined) {
+        // Phase 2: scoped allowlist for tools.values + target.pattern.
+        // tools.mode and target.kind remain immutable — they define rule
+        // identity for idempotency. Operators delete + recreate to change
+        // those discriminators.
+        const existingRule = deps.guardrailStore.list().find((g) => g.id === id);
+        if (!existingRule) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Guardrail not found" }));
+          return true;
+        }
+        const tools = body.tools as Record<string, unknown> | undefined;
+        const target = body.target as Record<string, unknown> | undefined;
+
+        if (target?.kind !== undefined) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "target.kind is immutable; delete and recreate" }));
+          return true;
+        }
+        if (tools?.mode !== undefined) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
-            JSON.stringify({
-              error: "selector.tools and target are immutable; delete and recreate",
-            }),
+            JSON.stringify({ error: "selector.tools.mode is immutable; delete and recreate" }),
           );
           return true;
         }
+
+        let toolsValues: string[] | undefined;
+        const warnings: string[] = [];
+        if (tools?.values !== undefined) {
+          if (existingRule.selector.tools.mode !== "names") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "selector.tools.values editable only on names-mode rules",
+              }),
+            );
+            return true;
+          }
+          if (!Array.isArray(tools.values) || tools.values.length === 0) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "selector.tools.values must be a non-empty string array" }),
+            );
+            return true;
+          }
+          if (!tools.values.every((v) => typeof v === "string" && v.length > 0)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "selector.tools.values entries must be non-empty strings" }),
+            );
+            return true;
+          }
+          // Dedupe + warn on duplicates and unknown tool names — same templates
+          // POST emits at routes.ts:870-883 (#47 mitigation parity).
+          const seen = new Set<string>();
+          const dedup: string[] = [];
+          for (const v of tools.values as string[]) {
+            if (seen.has(v)) {
+              warnings.push(`removed duplicate tool name '${v}' from values`);
+              continue;
+            }
+            seen.add(v);
+            dedup.push(v);
+          }
+          for (const name of dedup) {
+            if (!KNOWN_TOOL_NAMES.has(name)) {
+              warnings.push(
+                `unknown tool name '${name}' — rule will not fire until ClawLens recognizes this tool`,
+              );
+            }
+          }
+          toolsValues = dedup;
+        }
+
+        let targetPattern: string | undefined;
+        if (target?.pattern !== undefined) {
+          if (typeof target.pattern !== "string" || target.pattern.length === 0) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "target.pattern must be a non-empty string" }));
+            return true;
+          }
+          targetPattern = target.pattern;
+        }
+
         if (body.action !== undefined && !isValidAction(body.action)) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Invalid action" }));
@@ -240,6 +313,8 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
             action: body.action as Action | undefined,
             note: body.note as string | undefined,
             agent: body.agent as string | null | undefined,
+            toolsValues,
+            targetPattern,
           });
           if (!updated) {
             res.writeHead(404, { "Content-Type": "application/json" });
@@ -247,7 +322,8 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
             return true;
           }
           const auditEntries = deps.auditLogger.readEntries();
-          sendJson(res, enrichRule(updated, auditEntries));
+          const enriched = enrichRule(updated, auditEntries);
+          sendJson(res, warnings.length > 0 ? { ...enriched, warnings } : enriched);
         } catch (err) {
           handleStorageError(res, err);
         }

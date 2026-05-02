@@ -137,7 +137,7 @@ export default function ActivityEntry({ entry, description }: Props) {
               e.stopPropagation();
               setShowGuardrailModal(true);
             }}
-            className="shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+            className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
             title="Add guardrail"
           >
             <svg

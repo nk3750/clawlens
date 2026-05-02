@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { EntryResponse, GuardrailAction } from "../lib/types";
 import { riskTierFromScore, riskColorRaw } from "../lib/utils";
 
@@ -73,19 +74,28 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
     }
   };
 
-  return (
+  // §13.1: portal to document.body so the modal escapes ancestor stacking
+  // contexts (any transformed/will-change ancestor would otherwise re-anchor
+  // `position: fixed`). Mirrors SwarmPopover.tsx:60 / DateChip.tsx:189.
+  return createPortal(
     <div
       data-testid="guardrail-modal"
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        backgroundColor: "rgba(0,0,0,0.6)",
+        animation: "var(--cl-spring-duration) var(--cl-spring) both cl-fade-in",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
+        data-testid="guardrail-modal-panel"
         className="rounded-xl p-6 w-full max-w-md"
         style={{
           backgroundColor: "var(--cl-surface)",
           border: "1px solid var(--cl-border)",
-          animation: "var(--cl-spring-duration) var(--cl-spring) both modal-in",
+          animation: "var(--cl-spring-duration) var(--cl-spring) both cl-modal-in",
         }}
       >
         {/* Header */}
@@ -235,6 +245,7 @@ export default function GuardrailModal({ entry, description, onClose, onCreated 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

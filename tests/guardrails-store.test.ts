@@ -188,3 +188,162 @@ describe("GuardrailStore — atomic-write rollback (post-rewrite parity)", () =>
     expect(store.list()).toHaveLength(2);
   });
 });
+
+describe("GuardrailStore.update() — Phase 2 toolsValues + targetPattern", () => {
+  let tmpDir: string;
+  let storeFile: string;
+  let store: GuardrailStore;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-st-update-p2-"));
+    storeFile = path.join(tmpDir, "guardrails.json");
+    store = new GuardrailStore(storeFile);
+    store.load();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("toolsValues replaces selector.tools.values, preserves mode='names', persists", () => {
+    const g = mk({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+      target: { kind: "path-glob", pattern: "/etc/secrets/*" },
+    });
+    store.add(g);
+
+    const updated = store.update(g.id, { toolsValues: ["write", "edit"] });
+    expect(updated).not.toBeNull();
+    expect(updated?.selector.tools).toEqual({ mode: "names", values: ["write", "edit"] });
+
+    const reload = new GuardrailStore(storeFile);
+    reload.load();
+    const r = reload.list()[0];
+    expect(r.selector.tools).toEqual({ mode: "names", values: ["write", "edit"] });
+  });
+
+  it("toolsValues mutation rolls back on save failure", () => {
+    const g = mk({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+      target: { kind: "path-glob", pattern: "/x" },
+    });
+    store.add(g);
+
+    fs.mkdirSync(`${storeFile}.tmp`);
+    try {
+      expect(() => store.update(g.id, { toolsValues: ["write", "edit"] })).toThrow();
+    } finally {
+      fs.rmdirSync(`${storeFile}.tmp`);
+    }
+
+    const after = store.list()[0];
+    const tools = after.selector.tools;
+    if (tools.mode !== "names") throw new Error("mode unexpectedly changed");
+    expect(tools.values).toEqual(["write"]);
+  });
+
+  it("targetPattern replaces target.pattern and persists", () => {
+    const g = mk({
+      selector: { agent: null, tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "command-glob", pattern: "rm -rf *" },
+    });
+    store.add(g);
+
+    const updated = store.update(g.id, { targetPattern: "rm -rf node_modules" });
+    expect(updated?.target.pattern).toBe("rm -rf node_modules");
+
+    const reload = new GuardrailStore(storeFile);
+    reload.load();
+    expect(reload.list()[0].target.pattern).toBe("rm -rf node_modules");
+  });
+
+  it("targetPattern flips literalIdentity glob→literal — verified via match() behavior", () => {
+    // identity-glob with a glob pattern uses minimatch; with a literal,
+    // string equality. Behavioral check: glob "rm -rf *" matches both
+    // exact and other commands; literal "rm -rf node_modules" matches only
+    // the exact identity key.
+    const g = mk({
+      selector: { agent: "alpha", tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: "rm -rf *" },
+    });
+    store.add(g);
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })?.id).toBe(g.id);
+
+    store.update(g.id, { targetPattern: "rm -rf node_modules" });
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })).toBeNull();
+    expect(store.match("alpha", "exec", { command: "rm -rf node_modules" })?.id).toBe(g.id);
+  });
+
+  it("targetPattern flips literalIdentity literal→glob — verified via match() behavior", () => {
+    const g = mk({
+      selector: { agent: "alpha", tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: "rm -rf node_modules" },
+    });
+    store.add(g);
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })).toBeNull();
+
+    store.update(g.id, { targetPattern: "rm -rf *" });
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })?.id).toBe(g.id);
+    expect(store.match("alpha", "exec", { command: "rm -rf node_modules" })?.id).toBe(g.id);
+  });
+
+  it("targetPattern mutation rolls back on save failure (and so does literalIdentity)", () => {
+    const g = mk({
+      selector: { agent: "alpha", tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: "before" },
+    });
+    store.add(g);
+
+    fs.mkdirSync(`${storeFile}.tmp`);
+    try {
+      expect(() => store.update(g.id, { targetPattern: "after" })).toThrow();
+    } finally {
+      fs.rmdirSync(`${storeFile}.tmp`);
+    }
+
+    expect(store.list()[0].target.pattern).toBe("before");
+    expect(store.match("alpha", "exec", { command: "before" })?.id).toBe(g.id);
+    expect(store.match("alpha", "exec", { command: "after" })).toBeNull();
+  });
+
+  it("update() with both toolsValues and targetPattern mutates atomically", () => {
+    const g = mk({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+      target: { kind: "path-glob", pattern: "/old/*" },
+    });
+    store.add(g);
+
+    const updated = store.update(g.id, {
+      toolsValues: ["write", "edit"],
+      targetPattern: "/new/*",
+    });
+    expect(updated?.selector.tools).toEqual({ mode: "names", values: ["write", "edit"] });
+    expect(updated?.target.pattern).toBe("/new/*");
+  });
+
+  it("update() with both toolsValues and targetPattern rolls back atomically on save failure", () => {
+    const g = mk({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+      target: { kind: "path-glob", pattern: "/old/*" },
+    });
+    store.add(g);
+
+    fs.mkdirSync(`${storeFile}.tmp`);
+    try {
+      expect(() =>
+        store.update(g.id, {
+          toolsValues: ["write", "edit"],
+          targetPattern: "/new/*",
+        }),
+      ).toThrow();
+    } finally {
+      fs.rmdirSync(`${storeFile}.tmp`);
+    }
+
+    const after = store.list()[0];
+    const tools = after.selector.tools;
+    if (tools.mode !== "names") throw new Error("mode unexpectedly changed");
+    expect(tools.values).toEqual(["write"]);
+    expect(after.target.pattern).toBe("/old/*");
+  });
+});

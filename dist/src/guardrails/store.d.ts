@@ -21,15 +21,20 @@ export declare class GuardrailStore {
     /** Remove by id, persist, rollback on save failure. */
     remove(id: string): boolean;
     /**
-     * Patch action / note / selector.agent. Other fields are not editable —
-     * (selector.tools, target) define rule identity for idempotency, so
-     * mutating them silently is equivalent to creating a different rule.
-     * Rollback on save failure.
+     * Patch action / note / selector.agent / selector.tools.values / target.pattern.
+     * (selector.tools.mode, target.kind) remain immutable — they define rule
+     * identity for idempotency, so mutating them silently is equivalent to
+     * creating a different rule. Caller (the route handler) is responsible for
+     * validating that toolsValues is only supplied for `mode === "names"` rules
+     * and that targetPattern is a non-empty string. Rollback on save failure
+     * restores every mutated field plus the cached `literalIdentity` flag.
      */
     update(id: string, patch: {
         action?: Guardrail["action"];
         note?: string;
         agent?: Guardrail["selector"]["agent"];
+        toolsValues?: string[];
+        targetPattern?: string;
     }): Guardrail | null;
     /**
      * Match a tool call against the rule list. Single-pass scan in operator-

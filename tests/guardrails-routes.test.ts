@@ -428,6 +428,211 @@ describe("PATCH /api/guardrails/:id", () => {
   });
 });
 
+// ── PATCH — Phase 2 (tools.values + target.pattern relaxation) ──
+
+describe("PATCH /api/guardrails/:id — Phase 2 allowlist (tools.values + target.pattern)", () => {
+  let api: OpenClawPluginApi;
+  let getHandler: () => HttpRouteHandler;
+  let cleanupStore: () => void;
+  let store: GuardrailStore;
+
+  beforeEach(() => {
+    const made = makeApi();
+    api = made.api;
+    getHandler = made.handler;
+    const t = tmpGuardrails();
+    store = t.store;
+    cleanupStore = t.cleanup;
+    registerDashboardRoutes(api, {
+      auditLogger: buildLogger([]),
+      guardrailStore: store,
+    });
+  });
+
+  afterEach(() => {
+    cleanupStore();
+  });
+
+  function patchBody(id: string, body: unknown) {
+    const r = makeRes();
+    return getHandler()(
+      makeReq(`/plugins/clawlens/api/guardrails/${id}`, { method: "PATCH", body }),
+      r.res,
+    ).then(() => r.out);
+  }
+
+  it("PATCH tools.values on names-mode rule replaces values (200) and persists", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+      target: { kind: "path-glob", pattern: "/etc/*" },
+    });
+    store.add(r);
+
+    const out = await patchBody(r.id, { tools: { values: ["write", "edit"] } });
+    expect(out.status).toBe(200);
+    const body = JSON.parse(out.body);
+    expect(body.selector.tools).toEqual({ mode: "names", values: ["write", "edit"] });
+    // Persisted in-memory.
+    const stored = store.list()[0];
+    if (stored.selector.tools.mode !== "names") throw new Error("mode unexpectedly changed");
+    expect(stored.selector.tools.values).toEqual(["write", "edit"]);
+  });
+
+  it("PATCH tools.values empty array → 400", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { tools: { values: [] } });
+    expect(out.status).toBe(400);
+  });
+
+  it("PATCH tools.values entries must be non-empty strings → 400", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { tools: { values: ["write", ""] } });
+    expect(out.status).toBe(400);
+  });
+
+  it("PATCH tools.values on category-mode rule → 400 (editable only on names-mode)", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "category", value: "changes" } },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { tools: { values: ["write"] } });
+    expect(out.status).toBe(400);
+    expect(JSON.parse(out.body).error).toMatch(/names-mode/i);
+  });
+
+  it("PATCH tools.values on mode='any' rule → 400 (editable only on names-mode)", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "any" } },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { tools: { values: ["exec"] } });
+    expect(out.status).toBe(400);
+    expect(JSON.parse(out.body).error).toMatch(/names-mode/i);
+  });
+
+  it("PATCH tools.values with duplicates → 200 + dedup warning", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+    });
+    store.add(r);
+
+    const out = await patchBody(r.id, { tools: { values: ["write", "write", "edit"] } });
+    expect(out.status).toBe(200);
+    const body = JSON.parse(out.body);
+    expect(body.selector.tools.values).toEqual(["write", "edit"]);
+    expect(body.warnings).toBeDefined();
+    expect(body.warnings.some((w: string) => /duplicate/.test(w))).toBe(true);
+  });
+
+  it("PATCH tools.values with unknown tool name → 200 + unknown-tool warning", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["exec"] } },
+    });
+    store.add(r);
+
+    const out = await patchBody(r.id, { tools: { values: ["exec", "bogus_tool"] } });
+    expect(out.status).toBe(200);
+    const body = JSON.parse(out.body);
+    expect(body.warnings).toBeDefined();
+    expect(body.warnings.some((w: string) => /bogus_tool/.test(w))).toBe(true);
+  });
+
+  it("PATCH tools.mode → 400 (still locked)", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["exec"] } },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { tools: { mode: "any" } });
+    expect(out.status).toBe(400);
+    expect(JSON.parse(out.body).error).toMatch(/mode is immutable/i);
+  });
+
+  it("PATCH target.pattern valid → 200, store updated", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "command-glob", pattern: "rm -rf *" },
+    });
+    store.add(r);
+
+    const out = await patchBody(r.id, { target: { pattern: "rm -rf node_modules" } });
+    expect(out.status).toBe(200);
+    expect(JSON.parse(out.body).target.pattern).toBe("rm -rf node_modules");
+    expect(store.list()[0].target.pattern).toBe("rm -rf node_modules");
+  });
+
+  it("PATCH target.pattern empty → 400", async () => {
+    const r = mkRule({
+      target: { kind: "identity-glob", pattern: "before" },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { target: { pattern: "" } });
+    expect(out.status).toBe(400);
+  });
+
+  it("PATCH target.kind → 400 (still locked)", async () => {
+    const r = mkRule({
+      target: { kind: "identity-glob", pattern: "x" },
+    });
+    store.add(r);
+    const out = await patchBody(r.id, { target: { kind: "path-glob" } });
+    expect(out.status).toBe(400);
+    expect(JSON.parse(out.body).error).toMatch(/kind is immutable/i);
+  });
+
+  it("PATCH target.pattern from glob to literal flips literalIdentity (verified via match)", async () => {
+    const r = mkRule({
+      selector: { agent: "alpha", tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: "rm -rf *" },
+    });
+    store.add(r);
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })?.id).toBe(r.id);
+
+    const out = await patchBody(r.id, { target: { pattern: "rm -rf node_modules" } });
+    expect(out.status).toBe(200);
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })).toBeNull();
+    expect(store.match("alpha", "exec", { command: "rm -rf node_modules" })?.id).toBe(r.id);
+  });
+
+  it("PATCH target.pattern from literal to glob flips literalIdentity back", async () => {
+    const r = mkRule({
+      selector: { agent: "alpha", tools: { mode: "names", values: ["exec"] } },
+      target: { kind: "identity-glob", pattern: "rm -rf node_modules" },
+    });
+    store.add(r);
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })).toBeNull();
+
+    const out = await patchBody(r.id, { target: { pattern: "rm -rf *" } });
+    expect(out.status).toBe(200);
+    expect(store.match("alpha", "exec", { command: "rm -rf foo" })?.id).toBe(r.id);
+  });
+
+  it("PATCH multi-field body (action + note + tools.values) updates all atomically (200)", async () => {
+    const r = mkRule({
+      selector: { agent: null, tools: { mode: "names", values: ["write"] } },
+      action: "block",
+      note: "before",
+    });
+    store.add(r);
+
+    const out = await patchBody(r.id, {
+      action: "require_approval",
+      note: "after",
+      tools: { values: ["write", "edit"] },
+    });
+    expect(out.status).toBe(200);
+    const body = JSON.parse(out.body);
+    expect(body.action).toBe("require_approval");
+    expect(body.note).toBe("after");
+    expect(body.selector.tools.values).toEqual(["write", "edit"]);
+  });
+});
+
 // ── GET (list, enriched) ─────────────────────────────────────
 
 describe("GET /api/guardrails — enriched with hits24h / hits7d / lastFiredAt", () => {

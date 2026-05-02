@@ -149,14 +149,23 @@ export class GuardrailStore {
   }
 
   /**
-   * Patch action / note / selector.agent. Other fields are not editable —
-   * (selector.tools, target) define rule identity for idempotency, so
-   * mutating them silently is equivalent to creating a different rule.
-   * Rollback on save failure.
+   * Patch action / note / selector.agent / selector.tools.values / target.pattern.
+   * (selector.tools.mode, target.kind) remain immutable — they define rule
+   * identity for idempotency, so mutating them silently is equivalent to
+   * creating a different rule. Caller (the route handler) is responsible for
+   * validating that toolsValues is only supplied for `mode === "names"` rules
+   * and that targetPattern is a non-empty string. Rollback on save failure
+   * restores every mutated field plus the cached `literalIdentity` flag.
    */
   update(
     id: string,
-    patch: { action?: Guardrail["action"]; note?: string; agent?: Guardrail["selector"]["agent"] },
+    patch: {
+      action?: Guardrail["action"];
+      note?: string;
+      agent?: Guardrail["selector"]["agent"];
+      toolsValues?: string[];
+      targetPattern?: string;
+    },
   ): Guardrail | null {
     const indexed = this.rules.find((r) => r.rule.id === id);
     if (!indexed) return null;
@@ -164,11 +173,28 @@ export class GuardrailStore {
       action: indexed.rule.action,
       note: indexed.rule.note,
       selector: indexed.rule.selector,
+      target: indexed.rule.target,
+      literalIdentity: indexed.literalIdentity,
     };
     if (patch.action !== undefined) indexed.rule.action = patch.action;
     if (patch.note !== undefined) indexed.rule.note = patch.note;
     if (patch.agent !== undefined) {
       indexed.rule.selector = { ...indexed.rule.selector, agent: patch.agent };
+    }
+    if (patch.toolsValues !== undefined) {
+      // Caller has validated existing tools.mode === "names"; reconstruct the
+      // tool selector to preserve the discriminator narrowly.
+      indexed.rule.selector = {
+        ...indexed.rule.selector,
+        tools: { mode: "names", values: patch.toolsValues },
+      };
+    }
+    if (patch.targetPattern !== undefined) {
+      // Spread distributes across the discriminated union — every variant
+      // has `pattern: string`, so kind is preserved without an explicit switch.
+      indexed.rule.target = { ...indexed.rule.target, pattern: patch.targetPattern };
+      indexed.literalIdentity =
+        indexed.rule.target.kind === "identity-glob" && isLiteralPattern(patch.targetPattern);
     }
     try {
       this.save();
@@ -176,6 +202,8 @@ export class GuardrailStore {
       indexed.rule.action = before.action;
       indexed.rule.note = before.note;
       indexed.rule.selector = before.selector;
+      indexed.rule.target = before.target;
+      indexed.literalIdentity = before.literalIdentity;
       throw err;
     }
     return indexed.rule;
