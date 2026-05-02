@@ -274,7 +274,9 @@ export default function Sessions() {
               className="label-mono"
               style={{ fontSize: 11, color: "var(--cl-text-muted)" }}
             >
-              {visibleSessions.length} of {total} sessions
+              {filters.view
+                ? `${visibleSessions.length} ${filters.view.toUpperCase()} in current page`
+                : `${visibleSessions.length} of ${total} sessions`}
             </span>
           </header>
 

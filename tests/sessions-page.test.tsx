@@ -277,3 +277,76 @@ describe("Sessions — filter rail", () => {
     });
   });
 });
+
+describe("Sessions — count display", () => {
+  it("with no view filter, count reads 'X of Y sessions'", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/api/agents")) return jsonResp([ALPHA]);
+      if (url.includes("/api/sessions") && url.includes("limit=200")) {
+        return jsonResp({ sessions: [], total: 0 });
+      }
+      if (url.includes("/api/sessions")) {
+        return jsonResp({
+          sessions: [session({ sessionKey: "x" }), session({ sessionKey: "y" })],
+          total: 47,
+        });
+      }
+      return jsonResp([]);
+    });
+    mountSessionsAt("/sessions");
+    await waitFor(() => {
+      expect(screen.getByTestId("sessions-count").textContent).toMatch(/2 of 47 sessions/);
+    });
+  });
+
+  it("with view=live, count reads 'X LIVE in current page' (no global Y total)", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/api/agents")) return jsonResp([ALPHA]);
+      if (url.includes("/api/sessions") && url.includes("limit=200")) {
+        return jsonResp({ sessions: [], total: 0 });
+      }
+      if (url.includes("/api/sessions")) {
+        return jsonResp({
+          sessions: [
+            session({ sessionKey: "live-1", endTime: null, duration: null }),
+            session({ sessionKey: "live-2", endTime: null, duration: null }),
+            session({ sessionKey: "closed" }),
+          ],
+          total: 1871,
+        });
+      }
+      return jsonResp([]);
+    });
+    mountSessionsAt("/sessions?view=live");
+    await waitFor(() => {
+      const text = screen.getByTestId("sessions-count").textContent ?? "";
+      expect(text).toMatch(/2 LIVE in current page/);
+      expect(text).not.toMatch(/of 1871/);
+    });
+  });
+
+  it("with view=blocks, count reads 'X BLOCKS in current page' (no global Y total)", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/api/agents")) return jsonResp([ALPHA]);
+      if (url.includes("/api/sessions") && url.includes("limit=200")) {
+        return jsonResp({ sessions: [], total: 0 });
+      }
+      if (url.includes("/api/sessions")) {
+        return jsonResp({
+          sessions: [
+            session({ sessionKey: "blocked-1", blockedCount: 1 }),
+            session({ sessionKey: "clean" }),
+          ],
+          total: 200,
+        });
+      }
+      return jsonResp([]);
+    });
+    mountSessionsAt("/sessions?view=blocks");
+    await waitFor(() => {
+      const text = screen.getByTestId("sessions-count").textContent ?? "";
+      expect(text).toMatch(/1 BLOCKS in current page/);
+      expect(text).not.toMatch(/of 200/);
+    });
+  });
+});
