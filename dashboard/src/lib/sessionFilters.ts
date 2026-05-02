@@ -1,4 +1,5 @@
 import type { SessionInfo } from "./types";
+import { riskTierFromScore } from "./utils";
 
 /**
  * URL-shaped filter state for the Sessions page (spec §5.7). Mirrors
@@ -99,6 +100,37 @@ export function applyClientFilter(
     return sessions.filter((s) => s.blockedCount > 0);
   }
   return sessions;
+}
+
+/**
+ * Match a single session against a filter set, using the same semantics as
+ * the backend's `passesSessionFilters` for `agent` / `risk` / `duration`.
+ * `since` and `view` are intentionally ignored: count basis is already
+ * bounded by `since` (caller fetches with the active since), and `view` is
+ * a frontend-only narrowing that doesn't apply to rail count badges.
+ */
+export function matchesSessionFilters(s: SessionInfo, f: SessionFilters): boolean {
+  if (f.agent && s.agentId !== f.agent) return false;
+  if (f.risk && riskTierFromScore(s.avgRisk) !== f.risk) return false;
+  if (f.duration) {
+    const d = s.duration ?? 0;
+    if (f.duration === "lt1m" && d >= 60_000) return false;
+    if (f.duration === "1to10m" && (d < 60_000 || d >= 600_000)) return false;
+    if (f.duration === "gt10m" && d < 600_000) return false;
+  }
+  return true;
+}
+
+/**
+ * "How many sessions in this basis would match if I added these filters on
+ * top of the current set." Mirrors `activityFilters.countWith`.
+ */
+export function countSessionsWith(sessions: SessionInfo[], filters: SessionFilters): number {
+  let n = 0;
+  for (const s of sessions) {
+    if (matchesSessionFilters(s, filters)) n++;
+  }
+  return n;
 }
 
 /**

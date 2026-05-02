@@ -56,8 +56,19 @@ const ALPHA: AgentInfo = {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  // Default count basis: one alpha session that lives in the `1to10m`
+  // duration bucket. The rail's option counts are computed against the
+  // basis, so without at least one matching session every row would
+  // render disabled (count===0 + not active) and clicks would no-op.
+  // Tests that need an empty/different basis override the mock locally.
+  const COUNT_BASIS_DEFAULT = [
+    session({ sessionKey: "basis-alpha", agentId: "alpha", duration: 5 * 60_000 }),
+  ];
   fetchMock.mockImplementation(async (url: string) => {
     if (url.includes("/api/agents")) return jsonResp([ALPHA]);
+    if (url.includes("/api/sessions") && url.includes("limit=200")) {
+      return jsonResp({ sessions: COUNT_BASIS_DEFAULT, total: 1 });
+    }
     if (url.includes("/api/sessions")) {
       return jsonResp({ sessions: [], total: 0 });
     }

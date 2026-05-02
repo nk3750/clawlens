@@ -3,12 +3,19 @@ import GradientAvatar from "../GradientAvatar";
 import FilterGroup from "../activity/FilterGroup";
 import FilterRow from "../activity/FilterRow";
 import { riskColorRaw } from "../../lib/utils";
-import type { SessionFilters } from "../../lib/sessionFilters";
-import type { AgentInfo, RiskTier } from "../../lib/types";
+import { countSessionsWith, type SessionFilters } from "../../lib/sessionFilters";
+import type { AgentInfo, RiskTier, SessionInfo } from "../../lib/types";
 
 interface Props {
   filters: SessionFilters;
   agents: AgentInfo[];
+  /**
+   * Count basis (spec §5.6): sessions in the current `since` window with no
+   * other filters applied. Each option's count badge is computed by adding
+   * itself on top of the active filters and counting matches in this basis.
+   * Defaults to [] so storybook / standalone renders don't crash.
+   */
+  countBasis?: SessionInfo[];
   onSelect: (key: keyof SessionFilters, value: string) => void;
   onClear: (key: keyof SessionFilters) => void;
   isMobile?: boolean;
@@ -37,6 +44,7 @@ type GroupKey = "agent" | "risk" | "duration" | "since";
 export default function SessionsFilterRail({
   filters,
   agents,
+  countBasis = [],
   onSelect,
   onClear,
   isMobile = false,
@@ -56,16 +64,25 @@ export default function SessionsFilterRail({
     children: React.ReactNode,
     testId: string,
   ) => {
+    const count = countSessionsWith(countBasis, { ...filters, [key]: value });
     const isActive = activeValue === value;
+    const isDisabled = count === 0 && !isActive;
     return (
       <FilterRow
         key={value}
         active={isActive}
-        disabled={false}
+        disabled={isDisabled}
         onClick={() => onSelect(key, value)}
         testId={testId}
       >
         {children}
+        <span style={{ flex: 1 }} />
+        <span
+          className="mono"
+          style={{ fontSize: 10, color: "var(--cl-text-muted)" }}
+        >
+          {count}
+        </span>
       </FilterRow>
     );
   };

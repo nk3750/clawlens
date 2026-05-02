@@ -16,9 +16,15 @@ import {
   type SessionFilters,
   type SessionPreset,
 } from "../lib/sessionFilters";
-import type { AgentInfo } from "../lib/types";
+import type { AgentInfo, SessionInfo } from "../lib/types";
 
 const DEFAULT_SINCE = "24h";
+/**
+ * Count basis fetch size — covers a typical workday's worth of sessions per
+ * the active `since` window so the rail's option counts agree with what
+ * /api/sessions would return for each candidate filter (§5.6).
+ */
+const COUNT_BASIS_LIMIT = 200;
 
 export default function Sessions() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -149,6 +155,15 @@ export default function Sessions() {
 
   const { data: agents } = useApi<AgentInfo[]>("api/agents");
 
+  // §5.6 — count basis: sessions in the current since window with no other
+  // filters. Re-fetches when since changes (so option counts re-scope), stays
+  // stable as the operator mutates agent / risk / duration.
+  const sinceParam = filters.since ?? DEFAULT_SINCE;
+  const { data: countBasisData } = useApi<{ sessions: SessionInfo[]; total: number }>(
+    `api/sessions?since=${sinceParam}&limit=${COUNT_BASIS_LIMIT}&offset=0`,
+  );
+  const countBasis = countBasisData?.sessions ?? [];
+
   const {
     sessions,
     total,
@@ -187,6 +202,7 @@ export default function Sessions() {
           <SessionsFilterRail
             filters={filters}
             agents={agents ?? []}
+            countBasis={countBasis}
             onSelect={handleSelect}
             onClear={handleClear}
           />
@@ -373,6 +389,7 @@ export default function Sessions() {
             <SessionsFilterRail
               filters={filters}
               agents={agents ?? []}
+              countBasis={countBasis}
               onSelect={handleSelect}
               onClear={handleClear}
               isMobile
