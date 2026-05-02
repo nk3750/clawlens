@@ -22,6 +22,10 @@ function entry(overrides: Partial<EntryResponse> = {}): EntryResponse {
     riskTier: "high",
     riskScore: 70,
     riskTags: ["destructive"],
+    // identityKey is set by the backend's extractors for every real entry
+    // (src/guardrails/identity.ts:208 / :236). Phase 2.5 disables submit
+    // when pattern is empty (spec §6), so test fixtures must mirror prod.
+    identityKey: "curl https://evil.com",
     ...overrides,
   };
 }

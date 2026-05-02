@@ -38,20 +38,109 @@ export const VERB_LIBRARY: Record<Exclude<ResourceKind, "advanced">, string[]> =
 /**
  * Display metadata for the three actions. allow_notify uses --cl-info so the
  * page matches the chip color the operator already sees on every Activity /
- * RiskPanel row that mentions decisions (spec §0.1).
+ * RiskPanel row that mentions decisions (spec §0.1). The `blurb` is rendered
+ * under each action row in the create-rule modal (Phase 2.5 §5.5).
  */
 export const ACTION_META: Record<
   GuardrailAction,
-  { label: string; mono: string; color: string }
+  { label: string; mono: string; color: string; blurb: string }
 > = {
-  block: { label: "Block", mono: "BLOCK", color: "var(--cl-risk-high)" },
+  block: {
+    label: "Block",
+    mono: "BLOCK",
+    color: "var(--cl-risk-high)",
+    blurb: "Calls never reach the tool.",
+  },
   require_approval: {
     label: "Require Approval",
     mono: "REQUIRE APPROVAL",
     color: "var(--cl-risk-medium)",
+    blurb: "Pause and notify; you decide.",
   },
-  allow_notify: { label: "Allow + Notify", mono: "ALLOW + NOTIFY", color: "var(--cl-info)" },
+  allow_notify: {
+    label: "Allow + Notify",
+    mono: "ALLOW + NOTIFY",
+    color: "var(--cl-info)",
+    blurb: "Pass through, audit on the side.",
+  },
 };
+
+/**
+ * Map a non-advanced ResourceKind to the backend Target.kind it upgrades to
+ * when a rule covers > 1 verb or uses a glob pattern (Phase 2.5 §5.3, §5.4.6).
+ */
+export function targetKindFor(kind: Exclude<ResourceKind, "advanced">): Target["kind"] {
+  switch (kind) {
+    case "file":
+      return "path-glob";
+    case "exec":
+      return "command-glob";
+    case "url":
+      return "url-glob";
+  }
+}
+
+/**
+ * Resolve a tool name to the UX-facing ResourceKind by scanning each verb
+ * library bucket. Names not in any bucket (MCP / custom plugin tools) map to
+ * "advanced" — these rules can't broaden via verb count or glob pattern, so
+ * the modal renders a read-only chip and disables the pattern toggle
+ * (Phase 2.5 §5.4.5).
+ */
+export function resourceKindFromToolName(toolName: string): ResourceKind {
+  for (const kind of ["file", "exec", "url"] as const) {
+    if (VERB_LIBRARY[kind].includes(toolName)) return kind;
+  }
+  return "advanced";
+}
+
+/**
+ * Suggest up to 3 broader glob patterns for a literal identity-key, ordered
+ * recommended-first. Modal consumers read [0] as the auto-fill default
+ * when the operator flips PatternModeToggle from "exact" → "glob".
+ *
+ * Pure function — no I/O, no audit-log inspection (spec §4.1, §4.2).
+ */
+export function suggestGlobs(kind: ResourceKind, exact: string): string[] {
+  if (!exact) return [];
+
+  if (kind === "file") {
+    const base = exact.split("/").pop() ?? exact;
+    const ext = base.includes(".") ? base.slice(base.lastIndexOf(".")) : "";
+    const dir = exact.includes("/") ? exact.slice(0, exact.lastIndexOf("/")) : "";
+    const out: string[] = [];
+    if (ext) out.push(`**/*${ext}`);
+    if (dir) out.push(`${dir}/*${ext}`);
+    if (base.startsWith(".")) out.push(`**/${base}`);
+    if (out.length < 3) out.push(`${exact}*`);
+    return Array.from(new Set(out)).slice(0, 3);
+  }
+
+  if (kind === "exec") {
+    const parts = exact.trim().split(/\s+/);
+    const head = parts[0] ?? exact;
+    const flag = parts.slice(1).find((p) => p.startsWith("-"));
+    const out: string[] = [`${head} *`];
+    if (flag) out.push(`${head} ${flag} *`);
+    out.push(`${head}*`);
+    return Array.from(new Set(out)).slice(0, 3);
+  }
+
+  if (kind === "url") {
+    try {
+      const u = new URL(exact);
+      const out: string[] = [`${u.protocol}//${u.host}/**`];
+      const path = u.pathname.split("/").filter(Boolean);
+      if (path[0]) out.push(`${u.protocol}//${u.host}/${path[0]}/**`);
+      out.push(`*://${u.host}/**`);
+      return Array.from(new Set(out)).slice(0, 3);
+    } catch {
+      return [`${exact}*`];
+    }
+  }
+
+  return [];
+}
 
 export interface Filters {
   /** "global" | agentId | null (all three resolve to selector.agent === null when comparing). */
