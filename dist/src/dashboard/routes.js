@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidAction, isValidSelector, isValidTarget, } from "../guardrails/types";
-import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
+import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, isDecisionEntry, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
 import { describeRule, KNOWN_TOOL_NAMES } from "./categories";
 import { getDashboardHtml } from "./html";
@@ -627,6 +627,13 @@ export function registerDashboardRoutes(api, deps) {
                     Connection: "keep-alive",
                 });
                 const listener = (entry) => {
+                    // Skip non-decision rows (LLM-eval + execution-result follow-ups).
+                    // The audit logger writes 3 entries per tool call sharing one
+                    // toolCallId; emitting all three pushes each call into the live
+                    // feed N times. REST `/api/entries` already filters with
+                    // isDecisionEntry — keep the streams in lockstep. (#50)
+                    if (!isDecisionEntry(entry))
+                        return;
                     // Single readEntries scan per emit — feeds both buildEvalIndex (for
                     // LLM-adjusted risk fields) and resolveSplitKeyForEntry (for split
                     // session #N suffixes). Same scan the inline path used to do for the

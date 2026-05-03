@@ -50,8 +50,8 @@ export function getEffectiveDecision(entry) {
         return entry.executionResult;
     return "unknown";
 }
-/** True if the entry represents a policy decision (not a result log). */
-function isDecisionEntry(entry) {
+/** True if the entry represents a policy decision (not a result / LLM-eval log). */
+export function isDecisionEntry(entry) {
     return entry.decision !== undefined;
 }
 /** Get the final effective risk score for an entry, using LLM-adjusted score when available. */
@@ -374,6 +374,7 @@ const APPROVAL_TIMEOUT_MS = 300_000; // 5 minutes — mirrors the card copy in N
 const HIGH_RISK_THRESHOLD = 65;
 const HIGH_RISK_WINDOW_MS = 30 * 60_000; // 30 min — T3 freshness
 const T2A_BLOCKED_WINDOW_MS = 24 * 3600_000; // 24h — T2a freshness
+const ALLOW_NOTIFY_WINDOW_MS = 24 * 3600_000; // 24h — #51 freshness
 const AGENT_ATTN_WINDOW_MS = 24 * 3600_000; // rolling 24h window for agent derivation
 const BLOCK_CLUSTER_WINDOW_MS = 10 * 60_000;
 const BLOCK_CLUSTER_MIN = 2;
@@ -615,8 +616,10 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
     const pending = [];
     const blocked = [];
     const highRisk = [];
+    const allowNotify = [];
     const blockedCutoffIso = new Date(now - T2A_BLOCKED_WINDOW_MS).toISOString();
     const highRiskCutoffIso = new Date(now - HIGH_RISK_WINDOW_MS).toISOString();
+    const allowNotifyCutoffIso = new Date(now - ALLOW_NOTIFY_WINDOW_MS).toISOString();
     // Build a set of resolved toolCallIds so we can filter pending approvals
     // to only those that haven't received a resolution log yet. Approval
     // resolutions arrive as a *new* audit entry with the same toolCallId and
@@ -700,6 +703,33 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
             });
             continue;
         }
+        // #51 — allow_notify guardrail-match rows. Detect via the audit-row
+        // metadata written by logGuardrailMatch (params.guardrailAction).
+        // The follow-up logDecision row shares toolCallId but doesn't carry
+        // guardrailAction, so it cannot collide. T1 / T2a / T3 branches above
+        // are mutually exclusive with this — allow_notify rows have eff="allow"
+        // and rarely cross HIGH_RISK_THRESHOLD on their own.
+        if (typeof e.params.guardrailAction === "string" &&
+            e.params.guardrailAction === "allow_notify" &&
+            e.timestamp >= allowNotifyCutoffIso) {
+            if (isEntryAcked(attentionStore, e.toolCallId))
+                continue;
+            const guardrailId = typeof e.params.guardrailId === "string" ? e.params.guardrailId : undefined;
+            const targetSummary = typeof e.params.targetSummary === "string"
+                ? e.params.targetSummary
+                : typeof e.params.identityKey === "string"
+                    ? `Identity: ${e.params.identityKey}`
+                    : undefined;
+            const guardrailMatch = guardrailId && targetSummary
+                ? { id: guardrailId, targetSummary, action: "allow_notify" }
+                : undefined;
+            allowNotify.push({
+                ...common,
+                kind: "allow_notify",
+                guardrailMatch,
+            });
+            continue;
+        }
         if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
             // Skip entries with a matching active guardrail — already governed.
             if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params))
@@ -720,9 +750,10 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
     }
     // T1: time-remaining ascending (most urgent first).
     pending.sort((a, b) => (a.timeoutMs ?? 0) - (b.timeoutMs ?? 0));
-    // T2a / T3: newest first.
+    // T2a / T3 / allow_notify: newest first.
     blocked.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     highRisk.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    allowNotify.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     const agentAttention = deriveAgentAttention(entries, guardrailStore, attentionStore, now);
     // Cap list sizes — avoid shipping 200 rows if the log is hot. The UI expands
     // the collapsed group up to 20 items; beyond that the inbox is not the right
@@ -732,6 +763,7 @@ export function getAttention(entries, guardrailStore, attentionStore, now = Date
         blocked: blocked.slice(0, 20),
         agentAttention: agentAttention.slice(0, 20),
         highRisk: highRisk.slice(0, 20),
+        allowNotify: allowNotify.slice(0, 20),
         generatedAt: nowIso,
     };
 }
@@ -1370,7 +1402,11 @@ export function getAgentDetail(entries, agentId, range) {
     for (const [key, sEntries] of sessionMap) {
         allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
     }
-    allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
+    // Same comparator as getSessions so both paths stay in lockstep (#53).
+    // getAgentDetail doesn't currently mark active sessions, so the LIVE-pin
+    // branch never fires here — the consolidation is a defensive no-op that
+    // prevents this site from drifting if active-marking is added later.
+    allSessions.sort(compareSessions);
     // Build reverse lookup: entry key → split session key
     // so entries and riskTrend points use the correct sub-session (#2, #3, etc.)
     const splitSessionIndex = buildSplitSessionIndex(agentEntries);
@@ -1426,6 +1462,25 @@ const SINCE_MS = {
     "24h": 86_400_000,
     "7d": 604_800_000,
 };
+/**
+ * Spec §4.2 — sort comparator. LIVE sessions (endTime: null) always sort
+ * above closed sessions regardless of timestamp; within each stratum,
+ * ordering is most-recent first by the relevant timestamp (startTime for
+ * LIVE, endTime for closed). peakRisk descending tiebreaks within a
+ * stratum when timestamps tie. (#53)
+ */
+function compareSessions(a, b) {
+    const aLive = a.endTime === null;
+    const bLive = b.endTime === null;
+    if (aLive !== bLive)
+        return aLive ? -1 : 1;
+    const aKey = a.endTime ?? a.startTime;
+    const bKey = b.endTime ?? b.startTime;
+    const cmp = bKey.localeCompare(aKey);
+    if (cmp !== 0)
+        return cmp;
+    return b.peakRisk - a.peakRisk;
+}
 function passesSessionFilters(s, f) {
     if (f.agentId && s.agentId !== f.agentId)
         return false;
@@ -1472,14 +1527,7 @@ export function getSessions(entries, filtersOrAgent, limit = 10, offset = 0) {
         built.push(info);
     }
     const allSessions = built.filter((s) => passesSessionFilters(s, filters));
-    allSessions.sort((a, b) => {
-        const aKey = a.endTime ?? a.startTime;
-        const bKey = b.endTime ?? b.startTime;
-        const cmp = bKey.localeCompare(aKey);
-        if (cmp !== 0)
-            return cmp;
-        return b.peakRisk - a.peakRisk;
-    });
+    allSessions.sort(compareSessions);
     return {
         sessions: allSessions.slice(offset, offset + limit),
         total: allSessions.length,

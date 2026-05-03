@@ -70,7 +70,7 @@ export type AckScope = {
     upToIso: string;
 };
 export interface AttentionItem {
-    kind: "pending" | "blocked" | "timeout" | "high_risk";
+    kind: "pending" | "blocked" | "timeout" | "high_risk" | "allow_notify";
     toolCallId: string;
     timestamp: string;
     agentId: string;
@@ -114,6 +114,14 @@ export interface AttentionResponse {
     blocked: AttentionItem[];
     agentAttention: AttentionAgent[];
     highRisk: AttentionItem[];
+    /**
+     * #51 — guardrail rules with action: "allow_notify" fire correctly today
+     * but their notifications die at api.logger.info; OpenClaw upstream
+     * doesn't yet expose a Telegram push hook. Surface the hits in the
+     * inbox so operators see them on their next dashboard visit. Future:
+     * upstream push (#27).
+     */
+    allowNotify: AttentionItem[];
     generatedAt: string;
 }
 export interface EntryResponse {
@@ -261,6 +269,8 @@ export declare function localToday(): string;
 export declare function localDateOf(isoTimestamp: string): string;
 /** Compute the effective user-facing decision for an entry. */
 export declare function getEffectiveDecision(entry: AuditEntry): string;
+/** True if the entry represents a policy decision (not a result / LLM-eval log). */
+export declare function isDecisionEntry(entry: AuditEntry): boolean;
 /**
  * Single source of truth for tier lookup across every dashboard aggregation
  * that buckets entries by tier (todayRiskMix, riskProfile, fleet-risk crit/
