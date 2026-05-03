@@ -1,8 +1,15 @@
 import { useTotalFlash } from "../hooks/useTotalFlash";
 import type { StatsResponse } from "../lib/types";
+import AgentsRunningCard from "./fleetheader/AgentsRunningCard";
+import {
+  BIG_NUMBER_STYLE,
+  SECONDARY_LINE_STYLE,
+  StatCardShell,
+  SUBLABEL_STYLE,
+} from "./fleetheader/cardStyles";
 import DateChip from "./fleetheader/DateChip";
 import RiskMixTierRows from "./fleetheader/RiskMixTierRows";
-import { computeTrend, type RangeOption, splitAgentsRunning } from "./fleetheader/utils";
+import { computeTrend, type RangeOption } from "./fleetheader/utils";
 
 interface Props {
   stats: StatsResponse;
@@ -110,62 +117,6 @@ function RangeChromeStrip({
 
 // ── Stat cards ──────────────────────────────────────────────────────────
 
-function StatCardShell({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="cl-card"
-      style={{
-        padding: "16px 18px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        minHeight: 132,
-      }}
-    >
-      <span
-        className="label-mono"
-        style={{
-          letterSpacing: "0.04em",
-          color: "var(--cl-text-muted)",
-        }}
-      >
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-const BIG_NUMBER_STYLE: React.CSSProperties = {
-  fontFamily: "var(--cl-font-sans)",
-  fontSize: 48,
-  fontWeight: 510,
-  lineHeight: 1,
-  letterSpacing: "-1.056px",
-  color: "var(--cl-text-primary)",
-  fontVariantNumeric: "tabular-nums",
-};
-
-const SUBLABEL_STYLE: React.CSSProperties = {
-  fontFamily: "var(--cl-font-sans)",
-  fontSize: 14,
-  fontWeight: 400,
-  color: "var(--cl-text-muted)",
-};
-
-const SECONDARY_LINE_STYLE: React.CSSProperties = {
-  fontFamily: "var(--cl-font-sans)",
-  fontSize: 13,
-  fontWeight: 400,
-  color: "var(--cl-text-muted)",
-};
-
 function ActionsCard({
   total,
   yesterdayTotal,
@@ -214,34 +165,6 @@ function ActionsCard({
         <span style={SUBLABEL_STYLE}>actions</span>
       </div>
       <div style={{ minHeight: 17 }}>{trendNode}</div>
-    </StatCardShell>
-  );
-}
-
-function AgentsRunningCard({
-  active,
-  activeSessions,
-  total,
-}: {
-  active: number;
-  activeSessions: number;
-  total: number;
-}) {
-  const pct = total > 0 ? Math.round((active / total) * 100) : 0;
-  const idle = Math.max(0, total - active);
-  const { betweenSessions } = splitAgentsRunning(active, activeSessions);
-
-  return (
-    <StatCardShell label="AGENTS RUNNING">
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={BIG_NUMBER_STYLE}>{active}</span>
-        <span style={SUBLABEL_STYLE}>/{pct}%</span>
-      </div>
-      <span style={SECONDARY_LINE_STYLE}>
-        of {total}
-        {idle > 0 ? ` · ${idle} idle` : ""}
-        {betweenSessions > 0 ? ` · ${betweenSessions} between` : ""}
-      </span>
     </StatCardShell>
   );
 }
