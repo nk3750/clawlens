@@ -21,6 +21,7 @@ import {
   checkHealth,
   computeEnhancedStats,
   computeFleetRiskIndex,
+  deriveAttentionFlags,
   type EntryFilters,
   getActivityTimeline,
   getAgentDetail,
@@ -540,7 +541,17 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       if (subPath === "api/agents") {
         const date = url.searchParams.get("date") || undefined;
         const entries = deps.auditLogger.readEntries();
-        sendJson(res, getAgents(entries, date));
+        // Today-mode `needsAttention` mirrors the inbox at /api/attention so
+        // ack/window/guardrail rules apply uniformly. Past-day mode skips this
+        // — getAttention's windows are now-relative, so it cannot answer for
+        // historical days. See #13.
+        if (date === undefined) {
+          const att = getAttention(entries, deps.guardrailStore, deps.attentionStore);
+          const { agents: attentionAgents, reasons: attentionReasons } = deriveAttentionFlags(att);
+          sendJson(res, getAgents(entries, undefined, attentionAgents, attentionReasons));
+        } else {
+          sendJson(res, getAgents(entries, date));
+        }
         return true;
       }
 

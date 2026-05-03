@@ -138,7 +138,11 @@ describe("getAgents sort order", () => {
         decision: "block",
       }),
     ];
-    const agents = getAgents(entries);
+    // Inbox-membership now flows from /api/attention via routes.ts; here we
+    // pass it explicitly to mimic that orchestration. See #13.
+    const attentionAgents = new Set(["agentB"]);
+    const attentionReasons = new Map([["agentB", "Blocked: exec"]]);
+    const agents = getAgents(entries, undefined, attentionAgents, attentionReasons);
 
     // Apply frontend sort (same logic as Agents.tsx)
     const frontendSorted = [...agents].sort((a, b) => {

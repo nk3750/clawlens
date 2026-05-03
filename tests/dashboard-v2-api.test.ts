@@ -1,13 +1,19 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditEntry } from "../src/audit/logger";
 import {
   computeEnhancedStats,
+  deriveAttentionFlags,
   getAgentDetail,
   getAgents,
+  getAttention,
   getRecentEntries,
   getSessionDetail,
   getSessions,
 } from "../src/dashboard/api";
+import { AttentionStore } from "../src/dashboard/attention-state";
 
 /** Build a minimal AuditEntry with overrides. */
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
@@ -1117,10 +1123,7 @@ describe("getAgents — new fields", () => {
     expect(agents[0].riskPosture).toBe("calm");
   });
 
-  it("sets needsAttention when blocked recently", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
-
+  it("sets needsAttention from caller-provided attentionAgents Set", () => {
     const entries = [
       entry({
         agentId: "bot-1",
@@ -1130,14 +1133,34 @@ describe("getAgents — new fields", () => {
         timestamp: "2026-03-29T13:45:00Z",
       }),
     ];
-    const agents = getAgents(entries);
+    const attentionAgents = new Set(["bot-1"]);
+    const attentionReasons = new Map([["bot-1", "Blocked: exec"]]);
+    const agents = getAgents(entries, undefined, attentionAgents, attentionReasons);
     expect(agents[0].needsAttention).toBe(true);
-    expect(agents[0].attentionReason).toContain("Blocked");
-
-    vi.useRealTimers();
+    expect(agents[0].attentionReason).toBe("Blocked: exec");
   });
 
-  it("sets needsAttention when peak risk >= 75", () => {
+  it("sets attentionReason from attentionReasons Map for high-risk inbox membership", () => {
+    const entries = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        riskScore: 80,
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const attentionAgents = new Set(["bot-1"]);
+    const attentionReasons = new Map([["bot-1", "High risk activity detected"]]);
+    const agents = getAgents(entries, undefined, attentionAgents, attentionReasons);
+    expect(agents[0].needsAttention).toBe(true);
+    expect(agents[0].attentionReason).toBe("High risk activity detected");
+  });
+
+  it("does NOT flip needsAttention from peakRisk alone when caller omits inbox membership", () => {
+    // Regression guard for #13: getAgents previously hard-coded peakRisk >= 75
+    // as a today-mode rule, so a high-risk entry kept the agent flagged forever
+    // even after the operator ack'd the inbox row. The fix: needsAttention is
+    // now derived from the caller-provided Set, never from local heuristics.
     const entries = [
       entry({
         agentId: "bot-1",
@@ -1147,11 +1170,11 @@ describe("getAgents — new fields", () => {
       }),
     ];
     const agents = getAgents(entries);
-    expect(agents[0].needsAttention).toBe(true);
-    expect(agents[0].attentionReason).toBe("High risk activity detected");
+    expect(agents[0].needsAttention).toBe(false);
+    expect(agents[0].attentionReason).toBeUndefined();
   });
 
-  it("needsAttention false when all is calm", () => {
+  it("needsAttention false when all is calm and no inbox membership", () => {
     const entries = [
       entry({
         agentId: "bot-1",
@@ -1163,6 +1186,171 @@ describe("getAgents — new fields", () => {
     const agents = getAgents(entries);
     expect(agents[0].needsAttention).toBe(false);
     expect(agents[0].attentionReason).toBeUndefined();
+  });
+});
+
+describe("getAgents — needsAttention derived from inbox (#13 fix)", () => {
+  // Integration: prove that getAttention's ack-and-window awareness flows
+  // through deriveAttentionFlags into getAgents, so once the operator ack's
+  // an inbox row the corresponding agent stops carrying needsAttention=true.
+  function tmpStore(): AttentionStore {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-needsattn-"));
+    return new AttentionStore(path.join(dir, "attention.jsonl"));
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Within HIGH_RISK_WINDOW_MS (30 min) of the entry timestamps below.
+    vi.setSystemTime(new Date("2026-04-17T12:10:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("flips needsAttention false when all high-risk entries are ack'd", () => {
+    // Headline bug: peakRisk:80 today + every related toolCallId acked.
+    // Pre-fix: needsAttention=true (peakRisk>=75 rule fires regardless).
+    // Post-fix: needsAttention=false (inbox-derived; ack hides the row).
+    const entries: AuditEntry[] = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "exec",
+        toolCallId: "tc1",
+        riskScore: 80,
+        timestamp: "2026-04-17T12:00:00Z",
+      }),
+    ];
+    const store = tmpStore();
+    store.append({
+      id: AttentionStore.generateId(),
+      scope: { kind: "entry", toolCallId: "tc1" },
+      ackedAt: "2026-04-17T12:05:00Z",
+      action: "ack",
+    });
+
+    const att = getAttention(entries, undefined, store);
+    expect(att.highRisk).toHaveLength(0);
+    const { agents: attentionAgents, reasons: attentionReasons } = deriveAttentionFlags(att);
+
+    const result = getAgents(entries, undefined, attentionAgents, attentionReasons);
+    const bot = result.find((a) => a.id === "bot-1")!;
+    expect(bot.needsAttention).toBe(false);
+    expect(bot.attentionReason).toBeUndefined();
+  });
+
+  it("flips needsAttention true with 'High risk activity detected' for unack'd peak entry", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        agentId: "bot-1",
+        decision: "allow",
+        toolName: "exec",
+        toolCallId: "tc1",
+        riskScore: 80,
+        timestamp: "2026-04-17T12:00:00Z",
+      }),
+    ];
+
+    const att = getAttention(entries, undefined, undefined);
+    expect(att.highRisk).toHaveLength(1);
+    const { agents: attentionAgents, reasons: attentionReasons } = deriveAttentionFlags(att);
+
+    const result = getAgents(entries, undefined, attentionAgents, attentionReasons);
+    const bot = result.find((a) => a.id === "bot-1")!;
+    expect(bot.needsAttention).toBe(true);
+    expect(bot.attentionReason).toBe("High risk activity detected");
+  });
+
+  it("past-day mode keeps the legacy block/denied rule (no inbox in history view)", () => {
+    // getAttention's windows are now-relative — past-day requests cannot use
+    // them. The fix preserves the original block/denied rule for past-day so
+    // historical drilldowns still flag the day on which something was blocked.
+    const entries: AuditEntry[] = [
+      entry({
+        agentId: "bot-1",
+        decision: "block",
+        toolName: "exec",
+        toolCallId: "tc-past",
+        riskScore: 90,
+        timestamp: "2026-04-10T13:45:00Z",
+      }),
+    ];
+
+    const result = getAgents(entries, "2026-04-10");
+    const bot = result.find((a) => a.id === "bot-1")!;
+    expect(bot.needsAttention).toBe(true);
+    expect(bot.attentionReason).toBe("Blocked: exec");
+  });
+});
+
+describe("deriveAttentionFlags — bucket priority", () => {
+  // Routes.ts orchestration: when an agent appears in multiple buckets, the
+  // strongest reason wins. Priority: pending → blocked → agentAttention →
+  // highRisk → allowNotify (per #13 spec).
+  it("picks pending reason over blocked when both fire for same agent", () => {
+    const att = {
+      pending: [
+        {
+          kind: "pending" as const,
+          toolCallId: "tc1",
+          timestamp: "2026-04-17T12:00:00Z",
+          agentId: "bot-1",
+          agentName: "bot-1",
+          toolName: "exec",
+          description: "",
+          riskScore: 50,
+          riskTier: "medium" as const,
+          timeoutMs: 60_000,
+        },
+      ],
+      blocked: [
+        {
+          kind: "blocked" as const,
+          toolCallId: "tc2",
+          timestamp: "2026-04-17T11:55:00Z",
+          agentId: "bot-1",
+          agentName: "bot-1",
+          toolName: "rm",
+          description: "",
+          riskScore: 80,
+          riskTier: "high" as const,
+        },
+      ],
+      agentAttention: [],
+      highRisk: [],
+      allowNotify: [],
+      generatedAt: "2026-04-17T12:10:00Z",
+    };
+    const { agents, reasons } = deriveAttentionFlags(att);
+    expect(agents.has("bot-1")).toBe(true);
+    expect(reasons.get("bot-1")).toBe("Pending approval: exec");
+  });
+
+  it("picks highRisk reason when only highRisk fires", () => {
+    const att = {
+      pending: [],
+      blocked: [],
+      agentAttention: [],
+      highRisk: [
+        {
+          kind: "high_risk" as const,
+          toolCallId: "tc1",
+          timestamp: "2026-04-17T12:00:00Z",
+          agentId: "bot-1",
+          agentName: "bot-1",
+          toolName: "exec",
+          description: "",
+          riskScore: 80,
+          riskTier: "high" as const,
+        },
+      ],
+      allowNotify: [],
+      generatedAt: "2026-04-17T12:10:00Z",
+    };
+    const { agents, reasons } = deriveAttentionFlags(att);
+    expect(agents.has("bot-1")).toBe(true);
+    expect(reasons.get("bot-1")).toBe("High risk activity detected");
   });
 });
 

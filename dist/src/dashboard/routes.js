@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { GuardrailStore } from "../guardrails/store";
 import { isValidAction, isValidSelector, isValidTarget, } from "../guardrails/types";
-import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, isDecisionEntry, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
+import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, deriveAttentionFlags, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, isDecisionEntry, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
 import { AttentionStore, isValidAckScope } from "./attention-state";
 import { describeRule, KNOWN_TOOL_NAMES } from "./categories";
 import { getDashboardHtml } from "./html";
@@ -458,7 +458,18 @@ export function registerDashboardRoutes(api, deps) {
             if (subPath === "api/agents") {
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, getAgents(entries, date));
+                // Today-mode `needsAttention` mirrors the inbox at /api/attention so
+                // ack/window/guardrail rules apply uniformly. Past-day mode skips this
+                // — getAttention's windows are now-relative, so it cannot answer for
+                // historical days. See #13.
+                if (date === undefined) {
+                    const att = getAttention(entries, deps.guardrailStore, deps.attentionStore);
+                    const { agents: attentionAgents, reasons: attentionReasons } = deriveAttentionFlags(att);
+                    sendJson(res, getAgents(entries, undefined, attentionAgents, attentionReasons));
+                }
+                else {
+                    sendJson(res, getAgents(entries, date));
+                }
                 return true;
             }
             if (subPath === "api/interventions") {

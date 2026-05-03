@@ -324,6 +324,18 @@ export declare function deriveAgentAttention(entries: AuditEntry[], guardrailSto
 export declare function getAttention(entries: AuditEntry[], guardrailStore?: GuardrailStore, attentionStore?: AttentionStore, now?: number): AttentionResponse;
 export { tierRank as _tierRankForTests };
 /**
+ * Derive the inbox-membership Set + per-agent reason Map that
+ * `getAgents(entries, undefined, agents, reasons)` consumes for today-mode
+ * `needsAttention`. Reason priority: pending → blocked → agentAttention →
+ * highRisk → allowNotify (strongest first). The reason strings preserve the
+ * forms the AgentDetail attention banner already renders, so existing UI
+ * copy keeps working without churn. See #13.
+ */
+export declare function deriveAttentionFlags(att: AttentionResponse): {
+    agents: Set<string>;
+    reasons: Map<string, string>;
+};
+/**
  * Fleet-level risk index. Powers the FleetRiskTile hero.
  * Semantics: homepage-bottom-row-polish-spec §2 + polish-3 #5.
  *   current        = max effective score in last 1 hour across decision entries, 0 if none
@@ -362,8 +374,18 @@ export declare function resolveSplitKeyForEntry(allEntries: AuditEntry[], entry:
 export declare function checkHealth(entries: AuditEntry[]): HealthResponse;
 /** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */
 export declare function computeEnhancedStats(entries: AuditEntry[], date?: string): EnhancedStatsResponse;
-/** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */
-export declare function getAgents(entries: AuditEntry[], date?: string): AgentInfo[];
+/**
+ * Get aggregated agent list from audit entries. Accepts an optional `date`
+ * for past-day view, and (for today-mode) an `attentionAgents` Set + per-agent
+ * `attentionReasons` Map produced by `deriveAttentionFlags(getAttention(...))`.
+ *
+ * Today-mode `needsAttention` is sourced ENTIRELY from the inbox set — it
+ * mirrors what the operator sees in `/api/attention`, so once a row is
+ * acknowledged the agent stops carrying the flag. Past-day mode has no
+ * inbox concept (getAttention's windows are now-relative), so it falls back
+ * to the legacy block/denied rule. See #13.
+ */
+export declare function getAgents(entries: AuditEntry[], date?: string, attentionAgents?: Set<string>, attentionReasons?: Map<string, string>): AgentInfo[];
 export declare function getAgentDetail(entries: AuditEntry[], agentId: string, range?: string): AgentDetailResponse | null;
 /** Spec §4.1 — fleet-wide session filter shape. */
 export interface SessionFilters {

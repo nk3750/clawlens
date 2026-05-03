@@ -1128,6 +1128,45 @@ export function getAttention(
 
 export { tierRank as _tierRankForTests };
 
+/**
+ * Derive the inbox-membership Set + per-agent reason Map that
+ * `getAgents(entries, undefined, agents, reasons)` consumes for today-mode
+ * `needsAttention`. Reason priority: pending → blocked → agentAttention →
+ * highRisk → allowNotify (strongest first). The reason strings preserve the
+ * forms the AgentDetail attention banner already renders, so existing UI
+ * copy keeps working without churn. See #13.
+ */
+export function deriveAttentionFlags(att: AttentionResponse): {
+  agents: Set<string>;
+  reasons: Map<string, string>;
+} {
+  const agents = new Set<string>();
+  const reasons = new Map<string, string>();
+
+  const set = (agentId: string, reason: string) => {
+    agents.add(agentId);
+    if (!reasons.has(agentId)) reasons.set(agentId, reason);
+  };
+
+  for (const item of att.pending) {
+    set(item.agentId, `Pending approval: ${item.toolName}`);
+  }
+  for (const item of att.blocked) {
+    set(item.agentId, `Blocked: ${item.toolName}`);
+  }
+  for (const item of att.agentAttention) {
+    set(item.agentId, item.description);
+  }
+  for (const item of att.highRisk) {
+    set(item.agentId, "High risk activity detected");
+  }
+  for (const item of att.allowNotify) {
+    set(item.agentId, `Notify: ${item.toolName}`);
+  }
+
+  return { agents, reasons };
+}
+
 // ── Existing functions (unchanged signatures) ───────────
 
 /**
@@ -1538,8 +1577,23 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
   };
 }
 
-/** Get aggregated agent list from audit entries. Accepts optional date for past-day view. */
-export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
+/**
+ * Get aggregated agent list from audit entries. Accepts an optional `date`
+ * for past-day view, and (for today-mode) an `attentionAgents` Set + per-agent
+ * `attentionReasons` Map produced by `deriveAttentionFlags(getAttention(...))`.
+ *
+ * Today-mode `needsAttention` is sourced ENTIRELY from the inbox set — it
+ * mirrors what the operator sees in `/api/attention`, so once a row is
+ * acknowledged the agent stops carrying the flag. Past-day mode has no
+ * inbox concept (getAttention's windows are now-relative), so it falls back
+ * to the legacy block/denied rule. See #13.
+ */
+export function getAgents(
+  entries: AuditEntry[],
+  date?: string,
+  attentionAgents?: Set<string>,
+  attentionReasons?: Map<string, string>,
+): AgentInfo[] {
   const isPastDay = date !== undefined;
 
   // When viewing a past day, pre-filter all entries to that day
@@ -1571,7 +1625,6 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
 
   const now = Date.now();
   const todayStr = isPastDay ? date : localToday();
-  const thirtyMinAgo = new Date(now - 1_800_000).toISOString();
   const evalIdx = buildEvalIndex(entries);
 
   const agents: AgentInfo[] = [];
@@ -1695,7 +1748,9 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
     let attentionReason: string | undefined;
 
     if (isPastDay) {
-      // Past day: flag if any blocked entries occurred that day
+      // Past-day mode falls back to the legacy block/denied rule because
+      // getAttention's windows are now-relative — they would return zero
+      // items for any historical day. See #13.
       for (const e of agentEntries) {
         if (isDecisionEntry(e)) {
           const eff = getEffectiveDecision(e);
@@ -1707,22 +1762,14 @@ export function getAgents(entries: AuditEntry[], date?: string): AgentInfo[] {
         }
       }
     } else {
-      // Today: blocked in last 30 min
-      for (const e of agentEntries) {
-        if (e.timestamp >= thirtyMinAgo && isDecisionEntry(e)) {
-          const eff = getEffectiveDecision(e);
-          if (eff === "block" || eff === "denied") {
-            needsAttention = true;
-            attentionReason = `Blocked: ${e.toolName}`;
-            break;
-          }
-        }
+      // Today mode: derive from the inbox set passed in by the caller. This
+      // is what `/api/attention` would return, so ack/window/guardrail rules
+      // are honored uniformly — fixes the stale-flag bug from #13 where a
+      // peakRisk>=75 entry kept the agent flagged forever after ack.
+      if (attentionAgents?.has(id)) {
+        needsAttention = true;
+        attentionReason = attentionReasons?.get(id);
       }
-    }
-
-    if (!needsAttention && peakRisk >= 75) {
-      needsAttention = true;
-      attentionReason = "High risk activity detected";
     }
 
     let blockedCount = 0;

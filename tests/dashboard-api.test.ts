@@ -915,7 +915,9 @@ describe("getAgents — new fields", () => {
     expect(agents[0].mode).toBe("scheduled");
   });
 
-  it("sets needsAttention when agent has high peak risk", () => {
+  it("sets needsAttention when caller flags agent via inbox set", () => {
+    // Today-mode needsAttention is now sourced from /api/attention via the
+    // route handler. See #13.
     const entries: AuditEntry[] = [
       entry({
         timestamp: "2026-03-29T13:59:00Z",
@@ -927,8 +929,11 @@ describe("getAgents — new fields", () => {
         sessionKey: "agent:test-bot:web:session:abc",
       }),
     ];
-    const agents = getAgents(entries);
+    const attentionAgents = new Set(["test-bot"]);
+    const attentionReasons = new Map([["test-bot", "High risk activity detected"]]);
+    const agents = getAgents(entries, undefined, attentionAgents, attentionReasons);
     expect(agents[0].needsAttention).toBe(true);
+    expect(agents[0].attentionReason).toBe("High risk activity detected");
   });
 
   it("activityBreakdown sums to 100", () => {
