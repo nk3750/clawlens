@@ -8,6 +8,7 @@ import {
   SUBLABEL_STYLE,
 } from "./fleetheader/cardStyles";
 import DateChip from "./fleetheader/DateChip";
+import PendingCard from "./fleetheader/PendingCard";
 import RiskMixTierRows from "./fleetheader/RiskMixTierRows";
 import { computeTrend, type RangeOption } from "./fleetheader/utils";
 
@@ -169,46 +170,3 @@ function ActionsCard({
   );
 }
 
-function PendingCard({
-  count,
-  agentNames,
-}: {
-  count: number;
-  agentNames: string[];
-}) {
-  // Dedupe + cap to two names for the inline list; "+N more" catches the rest
-  // so the card never overflows.
-  const uniqueNames = Array.from(new Set(agentNames));
-  const shown = uniqueNames.slice(0, 2);
-  const extra = Math.max(0, uniqueNames.length - shown.length);
-
-  let secondary: React.ReactNode;
-  if (count === 0) {
-    secondary = <span style={SECONDARY_LINE_STYLE}>none waiting</span>;
-  } else if (shown.length === 0) {
-    secondary = (
-      <span style={SECONDARY_LINE_STYLE}>
-        {count === 1 ? "1 action waiting" : `${count} actions waiting`}
-      </span>
-    );
-  } else {
-    secondary = (
-      <span style={SECONDARY_LINE_STYLE}>
-        {shown.join(" · ")}
-        {extra > 0 ? ` · +${extra} more` : ""}
-      </span>
-    );
-  }
-
-  return (
-    <StatCardShell label="PENDING APPROVAL">
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={BIG_NUMBER_STYLE}>{count}</span>
-        <span style={SUBLABEL_STYLE}>
-          {count === 1 ? "pending" : "pending"}
-        </span>
-      </div>
-      <div style={{ minHeight: 17 }}>{secondary}</div>
-    </StatCardShell>
-  );
-}
