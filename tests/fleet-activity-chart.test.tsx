@@ -574,24 +574,16 @@ describe("FleetActivityChart — now line", () => {
 });
 
 describe("FleetActivityChart — legend", () => {
-  it("renders a legend chip for every ActivityCategory", () => {
+  it("does NOT render per-category chips in the bottom legend (gutter is the only category key, per #46 polish)", () => {
+    // The left gutter already shows one icon + label per lane, so the bottom
+    // category strip was a duplicated key. Removing it gives ~24px back to
+    // the chart and stops two copies of the same legend reading as noise.
     const { container } = renderChart();
     const chips = container.querySelectorAll("[data-cl-swarm-legend-chip]");
-    expect(chips.length).toBe(8);
-    const ids = [...chips].map((el) => el.getAttribute("data-cl-swarm-legend-chip"));
-    expect(ids).toEqual([
-      "exploring",
-      "changes",
-      "git",
-      "scripts",
-      "web",
-      "comms",
-      "orchestration",
-      "media",
-    ]);
+    expect(chips.length).toBe(0);
   });
 
-  it("renders two risk-key chips (high + critical) after the category chips", () => {
+  it("renders exactly two risk-key chips (high + critical) in the bottom legend", () => {
     const { container } = renderChart();
     const riskChips = [...container.querySelectorAll("[data-cl-swarm-legend-risk-chip]")];
     const tiers = riskChips.map((el) => el.getAttribute("data-cl-swarm-legend-risk-chip"));
@@ -827,5 +819,65 @@ describe("FleetActivityChart — clamp dots to now-line", () => {
     const cx = Number.parseFloat(circle?.getAttribute("cx") ?? "NaN");
     // Expected: nowX = chartWidth - NOW_LINE_INSET = 804 - 4 = 800.
     expect(cx).toBe(800);
+  });
+});
+
+// ── #46 polish — lanes / cluster +N label / card surface ──
+
+describe("FleetActivityChart — polish (#46)", () => {
+  it("uses INLINE_CHART_HEIGHT=280 for the chart body so 8 lanes get 35px each", () => {
+    // Regression guard for the lane-breathing-room bump. 200 (=25px lanes)
+    // had jitter+halo overlapping adjacent rows; 280 (=35px lanes) gives
+    // ~4.4px of clearance.
+    const { container } = renderChart();
+    const body = container.querySelector("[data-cl-swarm-body]") as HTMLElement | null;
+    expect(body).not.toBeNull();
+    expect(body?.style.height).toBe("280px");
+  });
+
+  it("wraps the inline chart in a cl-card surface so it reads as a peer tile to FleetRiskTile", () => {
+    const { container } = renderChart();
+    const wrapper = container.querySelector("[data-cl-swarm-chart]");
+    expect(wrapper).not.toBeNull();
+    // cl-card supplies background var(--cl-bg-02) + border + radius — the
+    // canonical tile surface used by FleetRiskTile/AgentCardCompact.
+    expect(wrapper?.classList.contains("cl-card")).toBe(true);
+  });
+
+  it("renders the cluster '+N' label inline-right of the cluster (textAnchor=start, x=cx+r+4, y=cy+3)", () => {
+    // Old layout: text at (cx, cy - r - 4) drew ~14px above the row center,
+    // bleeding into the lane above at the prior 25px lane height. New layout
+    // puts the label inside the same lane band.
+    const base = Date.parse(NOW) - 30 * 60_000;
+    const entries = [
+      mkEntry({
+        category: "exploring",
+        timestamp: new Date(base).toISOString(),
+        toolCallId: "a",
+      }),
+      mkEntry({
+        category: "exploring",
+        timestamp: new Date(base + 100).toISOString(),
+        toolCallId: "b",
+      }),
+    ];
+    const { container } = renderChart({ entries });
+    const cluster = container.querySelector('[data-cl-swarm-dot][data-cl-swarm-cluster="true"]');
+    if (!cluster) throw new Error("cluster missing");
+    const text = cluster.querySelector("[data-cl-swarm-cluster-count]");
+    expect(text).not.toBeNull();
+    expect(text?.getAttribute("text-anchor")).toBe("start");
+    // Hit-target circle (the only fill="transparent" circle in the group) sits
+    // at the cluster's (cx, cy) with the cluster radius — read it back to
+    // bypass jitter math in the test.
+    const hit = cluster.querySelector('circle[fill="transparent"]') as SVGCircleElement | null;
+    if (!hit) throw new Error("cluster hit-target missing");
+    const cx = Number.parseFloat(hit.getAttribute("cx") ?? "NaN");
+    const cy = Number.parseFloat(hit.getAttribute("cy") ?? "NaN");
+    const r = Number.parseFloat(hit.getAttribute("r") ?? "NaN");
+    const tx = Number.parseFloat(text?.getAttribute("x") ?? "NaN");
+    const ty = Number.parseFloat(text?.getAttribute("y") ?? "NaN");
+    expect(tx).toBeCloseTo(cx + r + 4, 5);
+    expect(ty).toBeCloseTo(cy + 3, 5);
   });
 });

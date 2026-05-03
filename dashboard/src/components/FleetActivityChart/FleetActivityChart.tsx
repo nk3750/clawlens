@@ -45,7 +45,7 @@ interface Props {
   onToggleFullscreen?: () => void;
 }
 
-const INLINE_CHART_HEIGHT = 200;
+const INLINE_CHART_HEIGHT = 280;
 const FULLSCREEN_CHART_HEIGHT = 360;
 const DOT_RADIUS = 8;
 const CLUSTER_RADIUS = 10;
@@ -300,7 +300,11 @@ export default function FleetActivityChart({
     : 0;
 
   return (
-    <div className="cl-swarm-wrapper" data-cl-swarm-chart>
+    <div
+      className="cl-card"
+      data-cl-swarm-chart
+      style={{ padding: 14, marginBottom: 16 }}
+    >
       {/* Header */}
       <div className="flex items-center mb-3 flex-wrap" style={{ gap: 8 }}>
         <span
@@ -573,9 +577,9 @@ export default function FleetActivityChart({
                   {c.isCluster && (
                     <text
                       data-cl-swarm-cluster-count
-                      x={cx}
-                      y={c.cy - r - 4}
-                      textAnchor="middle"
+                      x={cx + r + 4}
+                      y={c.cy + 3}
+                      textAnchor="start"
                       className="label-mono"
                       style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
                     >
@@ -660,46 +664,16 @@ export default function FleetActivityChart({
         </div>
       )}
 
-      {/* Legend — padded so chips sit under the chart, not under the gutter. */}
+      {/* Legend — padded so chips sit under the chart, not under the gutter.
+          Per-category chips were removed (#46): the left gutter already shows
+          one icon + label per lane, so the bottom strip was a duplicated key.
+          Risk-tier chips stay because the halo ring vocabulary is unique to
+          the chart and isn't shown anywhere else. */}
       <div
         className="flex items-center flex-wrap"
         style={{ gap: 12, marginTop: 8, paddingLeft: GUTTER_W }}
         data-cl-swarm-legend
       >
-        {LANE_ORDER.map((cat) => {
-          const meta = CATEGORY_META[cat];
-          return (
-            <span
-              key={cat}
-              className="inline-flex items-center"
-              style={{ gap: 6 }}
-              data-cl-swarm-legend-chip={cat}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={meta.color}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d={meta.iconPath} />
-              </svg>
-              <span
-                style={{
-                  color: "var(--cl-text-muted)",
-                  fontSize: 11,
-                  fontFamily: "var(--cl-font-mono)",
-                }}
-              >
-                {meta.label}
-              </span>
-            </span>
-          );
-        })}
         {/* Risk-key chips — their ring visuals must stay in lockstep with
             the halo rendering above. If strokeWidth/strokeOpacity drifts,
             the legend lies. */}

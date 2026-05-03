@@ -8,6 +8,7 @@ import {
   haloRadiusOffset,
   jitterForKey,
   LANE_ORDER,
+  laneHeight,
   laneYForCategory,
   makeTimeToX,
   type SwarmDot,
@@ -110,6 +111,20 @@ describe("laneYForCategory", () => {
     // lane height tightens by 25% relative to 6 lanes — accepted per spec §9.
     expect(a).toBe((120 / LANE_ORDER.length) * 2.5);
     expect(b).toBe((240 / LANE_ORDER.length) * 2.5);
+  });
+});
+
+describe("laneHeight", () => {
+  it("returns 35 for chartHeight=280 (matches the polish-bumped INLINE_CHART_HEIGHT, #46)", () => {
+    // 280 / 8 lanes = 35px per lane. Regression guard: bumping
+    // INLINE_CHART_HEIGHT to 280 was the whole point of #46's lane breathing
+    // room — a quiet revert to 200 (= 25px lanes) reintroduces the bug.
+    expect(laneHeight(280)).toBe(35);
+  });
+
+  it("scales linearly with chartHeight (chartHeight / LANE_ORDER.length)", () => {
+    expect(laneHeight(80)).toBe(10);
+    expect(laneHeight(360)).toBe(45); // FULLSCREEN_CHART_HEIGHT
   });
 });
 
