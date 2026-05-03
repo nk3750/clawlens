@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Link } from "react-router-dom";
 import type { EntryResponse, RiskTrendPoint } from "../lib/types";
 import { riskTierFromScore, riskColorRaw, riskLeftBorder, entryIcon } from "../lib/utils";
 import { describeEntry } from "../lib/groupEntries";
@@ -160,30 +161,51 @@ function RiskDriverRow({ entry, count }: { entry: EntryResponse; count?: number 
           </span>
         )}
 
-        {/* Shield button — add guardrail */}
-        {entry.toolCallId && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowGuardrailModal(true);
-            }}
-            className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-            title="Add guardrail"
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--cl-text-muted)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        {/* Shield button — add OR see guardrail (#52). Mirrors ActivityEntry. */}
+        {entry.toolCallId &&
+          (entry.guardrailMatch ? (
+            <Link
+              to={`/guardrails?selected=${encodeURIComponent(entry.guardrailMatch.id)}`}
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+              title={`See guardrail (${entry.guardrailMatch.action})`}
             >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-          </button>
-        )}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--cl-text-muted)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </Link>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowGuardrailModal(true);
+              }}
+              className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+              title="Add guardrail"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--cl-text-muted)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </button>
+          ))}
 
         {/* Chevron */}
         <svg

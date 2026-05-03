@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { EntryResponse } from "../lib/types";
 import { relTime, riskTierFromScore, riskColorRaw, deriveTags, entryIcon } from "../lib/utils";
 import DecisionBadge from "./DecisionBadge";
@@ -130,30 +131,54 @@ export default function ActivityEntry({ entry, description }: Props) {
           </span>
         )}
 
-        {/* Shield button — add guardrail */}
-        {entry.toolCallId && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowGuardrailModal(true);
-            }}
-            className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-            title="Add guardrail"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--cl-text-muted)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        {/* Shield button — add OR see guardrail (#52). When a guardrail
+            already matches this entry, navigate to its rule detail page
+            instead of opening the Add-Guardrail modal. Tooltip reflects
+            state. */}
+        {entry.toolCallId &&
+          (entry.guardrailMatch ? (
+            <Link
+              to={`/guardrails?selected=${encodeURIComponent(entry.guardrailMatch.id)}`}
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+              title={`See guardrail (${entry.guardrailMatch.action})`}
             >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-          </button>
-        )}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--cl-text-muted)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </Link>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowGuardrailModal(true);
+              }}
+              className="shrink-0 opacity-40 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+              title="Add guardrail"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--cl-text-muted)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </button>
+          ))}
 
         {/* Timestamp */}
         <span className="font-mono text-xs shrink-0" style={{ color: "var(--cl-text-secondary)" }}>

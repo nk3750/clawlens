@@ -37,8 +37,14 @@ export default function ActivityRowExpanded({ entry, onAddGuardrail }: Props) {
     navigator.clipboard?.writeText(command);
   };
 
-  const handleAddGuardrail = (e: MouseEvent<HTMLButtonElement>) => {
+  const existingMatch = entry.guardrailMatch;
+  const handleShield = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    if (existingMatch) {
+      // #52 — match exists: deep-link to its rule detail.
+      navigate(`/guardrails?selected=${encodeURIComponent(existingMatch.id)}`);
+      return;
+    }
     onAddGuardrail();
   };
 
@@ -68,11 +74,11 @@ export default function ActivityRowExpanded({ entry, onAddGuardrail }: Props) {
           type="button"
           data-testid="activity-row-expanded-add-guardrail"
           className="cl-btn cl-btn-primary"
-          title="add guardrail"
-          onClick={handleAddGuardrail}
+          title={existingMatch ? `see guardrail (${existingMatch.action})` : "add guardrail"}
+          onClick={handleShield}
           style={{ height: 26, fontSize: 12 }}
         >
-          add guardrail
+          {existingMatch ? "see guardrail" : "add guardrail"}
         </button>
         <button
           type="button"

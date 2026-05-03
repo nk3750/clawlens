@@ -9,6 +9,10 @@ interface Props {
    * the modal survives a hover-out (which unmounts this strip). When the
    * shield is clicked, we propagate up via this callback instead of
    * managing modal state locally.
+   *
+   * #52: Only fires when no guardrail already matches the entry. When
+   * `entry.guardrailMatch` is set, the shield navigates to that rule's
+   * detail page instead.
    */
   onAddGuardrail: () => void;
   /**
@@ -43,8 +47,17 @@ export default function RowQuickActions({
     navigator.clipboard?.writeText(command);
   };
 
-  const handleAddGuardrail = (e: MouseEvent<HTMLButtonElement>) => {
+  const existingMatch = entry.guardrailMatch;
+  const handleShield = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    if (existingMatch) {
+      // #52 — deep-link to the matched rule's detail page. Same-tab nav
+      // via the imperative useNavigate hook keeps the strip behavior
+      // (stopPropagation, no row-toggle) consistent with the other quick
+      // actions.
+      navigate(`/guardrails?selected=${encodeURIComponent(existingMatch.id)}`);
+      return;
+    }
     onAddGuardrail();
   };
 
@@ -76,8 +89,8 @@ export default function RowQuickActions({
       </QuickButton>
       <QuickButton
         testid="activity-row-quick-add-guardrail"
-        title="add guardrail"
-        onClick={handleAddGuardrail}
+        title={existingMatch ? `see guardrail (${existingMatch.action})` : "add guardrail"}
+        onClick={handleShield}
       >
         <ShieldIcon />
       </QuickButton>

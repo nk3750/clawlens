@@ -479,6 +479,49 @@ describe("ActivityRow — hover quick-actions", () => {
   });
 });
 
+describe("ActivityRow — smart shield button (#52)", () => {
+  it("expanded panel button reads 'see guardrail' when entry.guardrailMatch is set", () => {
+    renderRow({
+      entry: entry({ guardrailMatch: { id: "g_match_1", action: "block" } }),
+      isExpanded: true,
+    });
+    const btn = screen.getByTestId("activity-row-expanded-add-guardrail") as HTMLButtonElement;
+    expect(btn.title).toBe("see guardrail (block)");
+    expect(btn.textContent?.trim()).toBe("see guardrail");
+  });
+
+  it("clicking the expanded panel button navigates to /guardrails?selected=<id> when match exists", () => {
+    renderRow({
+      entry: entry({ guardrailMatch: { id: "g_match_2", action: "require_approval" } }),
+      isExpanded: true,
+    });
+    fireEvent.click(screen.getByTestId("activity-row-expanded-add-guardrail"));
+    const probe = screen.getByTestId("probe-location");
+    expect(probe.textContent).toContain(`/guardrails?selected=${encodeURIComponent("g_match_2")}`);
+  });
+
+  it("hover quick-action shield reads 'see guardrail (action)' when match exists", () => {
+    renderRow({ entry: entry({ guardrailMatch: { id: "g_qa", action: "allow_notify" } }) });
+    fireEvent.mouseEnter(screen.getByTestId("activity-row-root"));
+    const btn = screen.getByTestId("activity-row-quick-add-guardrail") as HTMLButtonElement;
+    expect(btn.title).toBe("see guardrail (allow_notify)");
+  });
+
+  it("clicking the hover quick-action shield navigates when match exists", () => {
+    renderRow({ entry: entry({ guardrailMatch: { id: "g_qa_click", action: "block" } }) });
+    fireEvent.mouseEnter(screen.getByTestId("activity-row-root"));
+    fireEvent.click(screen.getByTestId("activity-row-quick-add-guardrail"));
+    const probe = screen.getByTestId("probe-location");
+    expect(probe.textContent).toContain(`/guardrails?selected=${encodeURIComponent("g_qa_click")}`);
+  });
+
+  it("falls back to add-guardrail behavior in both surfaces when no match", () => {
+    renderRow({ isExpanded: true });
+    const expBtn = screen.getByTestId("activity-row-expanded-add-guardrail") as HTMLButtonElement;
+    expect(expBtn.title).toBe("add guardrail");
+  });
+});
+
 describe("ActivityRow — clipboard fallback", () => {
   it("copy quick-action no-ops gracefully when navigator.clipboard is unavailable", () => {
     Object.assign(navigator, { clipboard: undefined });
