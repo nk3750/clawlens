@@ -115,11 +115,12 @@ describe("laneYForCategory", () => {
 });
 
 describe("laneHeight", () => {
-  it("returns 35 for chartHeight=280 (matches the polish-bumped INLINE_CHART_HEIGHT, #46)", () => {
-    // 280 / 8 lanes = 35px per lane. Regression guard: bumping
-    // INLINE_CHART_HEIGHT to 280 was the whole point of #46's lane breathing
-    // room — a quiet revert to 200 (= 25px lanes) reintroduces the bug.
-    expect(laneHeight(280)).toBe(35);
+  it("returns 40 for chartHeight=320 (matches INLINE_CHART_HEIGHT, #46 v1.1 polish)", () => {
+    // 320 / 8 lanes = 40px per lane. Regression guard against a quiet revert.
+    // History: 200 (=25px lanes, original) → 280 (=35px, #46 first pass) →
+    // 320 (=40px, #46 §8.1 pre-approved escalation after the live walk
+    // showed +N cluster labels still felt cramped at 35px).
+    expect(laneHeight(320)).toBe(40);
   });
 
   it("scales linearly with chartHeight (chartHeight / LANE_ORDER.length)", () => {

@@ -45,7 +45,7 @@ interface Props {
   onToggleFullscreen?: () => void;
 }
 
-const INLINE_CHART_HEIGHT = 280;
+const INLINE_CHART_HEIGHT = 320;
 const FULLSCREEN_CHART_HEIGHT = 360;
 const DOT_RADIUS = 8;
 const CLUSTER_RADIUS = 10;

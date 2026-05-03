@@ -825,14 +825,16 @@ describe("FleetActivityChart — clamp dots to now-line", () => {
 // ── #46 polish — lanes / cluster +N label / card surface ──
 
 describe("FleetActivityChart — polish (#46)", () => {
-  it("uses INLINE_CHART_HEIGHT=280 for the chart body so 8 lanes get 35px each", () => {
-    // Regression guard for the lane-breathing-room bump. 200 (=25px lanes)
-    // had jitter+halo overlapping adjacent rows; 280 (=35px lanes) gives
-    // ~4.4px of clearance.
+  it("uses INLINE_CHART_HEIGHT=320 for the chart body so 8 lanes get 40px each", () => {
+    // Regression guard for the lane-breathing-room bump. History: 200
+    // (=25px) had jitter+halo overlapping adjacent rows; 280 (=35px) cleared
+    // halos but +N cluster labels still felt cramped on the live walk; 320
+    // (=40px) is the §8.1 pre-approved escalation that gives ~7px of
+    // clearance and lands +N labels comfortably in-lane.
     const { container } = renderChart();
     const body = container.querySelector("[data-cl-swarm-body]") as HTMLElement | null;
     expect(body).not.toBeNull();
-    expect(body?.style.height).toBe("280px");
+    expect(body?.style.height).toBe("320px");
   });
 
   it("wraps the inline chart in a cl-card surface so it reads as a peer tile to FleetRiskTile", () => {
