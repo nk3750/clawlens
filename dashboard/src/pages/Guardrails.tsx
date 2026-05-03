@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import GuardrailDetailPane, {
   type PatchBody,
 } from "../components/guardrails/GuardrailDetailPane";
@@ -13,13 +14,47 @@ const BASE = "/plugins/clawlens";
 
 export default function Guardrails() {
   const { data, loading, refetch } = useApi<{ guardrails: Guardrail[] }>("api/guardrails");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ?selected=<id> deep-links from activity rows, attention items, and the
+  // smart shield button. Source of truth is the URL — local state mirrors
+  // it so refresh / share preserves the selection (#52).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSelected = searchParams.get("selected") || null;
+  const [selectedId, setSelectedIdInternal] = useState<string | null>(urlSelected);
   const [filters, setFilters] = useState<Filters>({});
 
   const rules = data?.guardrails ?? [];
   const filtered = applyFilters(rules, filters);
   const counts = computeCounts(rules);
   const selected = rules.find((r) => r.id === selectedId) ?? null;
+
+  // If ?selected=<id> points at a rule that doesn't exist (deleted upstream,
+  // typo'd link), clear the URL param and the local state. Wait for rules
+  // to load so we don't drop the param before the GET resolves.
+  useEffect(() => {
+    if (!selectedId) return;
+    if (loading) return;
+    if (rules.length === 0) return;
+    if (rules.some((r) => r.id === selectedId)) return;
+    setSelectedIdInternal(null);
+    if (searchParams.has("selected")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("selected");
+      setSearchParams(next, { replace: true });
+    }
+  }, [selectedId, rules, loading, searchParams, setSearchParams]);
+
+  // Wrap the setter so every selection change writes through to the URL.
+  // Same-tab navigations (and the deep-link initial mount) stay in lockstep.
+  const setSelectedId = useCallback(
+    (id: string | null) => {
+      setSelectedIdInternal(id);
+      const next = new URLSearchParams(searchParams);
+      if (id) next.set("selected", id);
+      else next.delete("selected");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   async function handlePatch(patch: PatchBody): Promise<void> {
     if (!selectedId) return;

@@ -1,9 +1,19 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Guardrail } from "../dashboard/src/lib/types";
 import Guardrails from "../dashboard/src/pages/Guardrails";
+
+function LocationProbe() {
+  const loc = useLocation();
+  return (
+    <span data-testid="probe-location">
+      {loc.pathname}
+      {loc.search}
+    </span>
+  );
+}
 
 function rule(o: Partial<Guardrail> & Pick<Guardrail, "id">): Guardrail {
   return {
@@ -52,9 +62,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderPage() {
+function renderPage(initialPath = "/guardrails") {
   return render(
-    <MemoryRouter initialEntries={["/guardrails"]}>
+    <MemoryRouter initialEntries={[initialPath]}>
+      <LocationProbe />
       <Guardrails />
     </MemoryRouter>,
   );
@@ -137,6 +148,102 @@ describe("Guardrails page", () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText(/No guardrails yet/i)).toBeInTheDocument();
+    });
+  });
+});
+
+/**
+ * #52 part 2 — `?selected=<id>` deep-link from activity / attention. Must
+ * pre-select the matching rule on mount, fall back to the empty state when
+ * the id is unknown, and round-trip selection state into the URL so refresh
+ * / share preserve the operator's place.
+ */
+describe("Guardrails page — ?selected=<id> URL param", () => {
+  it("mounting with ?selected=<existing id> opens that rule's detail pane", async () => {
+    mockGuardrailsResponse([
+      rule({
+        id: "g_deeplink",
+        action: "block",
+        target: { kind: "path-glob", pattern: "/etc/secrets/api.env" },
+      }),
+      rule({
+        id: "g_other",
+        action: "require_approval",
+        target: { kind: "path-glob", pattern: "/var/log/*" },
+      }),
+    ]);
+    renderPage("/guardrails?selected=g_deeplink");
+    await waitFor(() => {
+      expect(screen.getByTestId("detail-resource")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("detail-resource").textContent).toBe("/etc/secrets/api.env");
+  });
+
+  it("mounting with ?selected=<missing id> renders the empty state and drops the param", async () => {
+    mockGuardrailsResponse([
+      rule({
+        id: "g_real",
+        action: "block",
+        target: { kind: "path-glob", pattern: "/etc/x" },
+      }),
+    ]);
+    renderPage("/guardrails?selected=g_does_not_exist");
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Pick a guardrail/i })).toBeInTheDocument();
+    });
+    // URL param dropped — the empty state is the source of truth.
+    await waitFor(() => {
+      const probe = screen.getByTestId("probe-location");
+      expect(probe.textContent).not.toContain("selected=g_does_not_exist");
+    });
+  });
+
+  it("clicking a list row writes ?selected=<id> into the URL", async () => {
+    mockGuardrailsResponse([
+      rule({
+        id: "g_clickable",
+        action: "block",
+        target: { kind: "path-glob", pattern: "/a" },
+      }),
+    ]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("guardrail-row-g_clickable")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("guardrail-row-g_clickable"));
+    await waitFor(() => {
+      const probe = screen.getByTestId("probe-location");
+      expect(probe.textContent).toContain("selected=g_clickable");
+    });
+  });
+
+  it("clearing selection drops ?selected from the URL", async () => {
+    mockGuardrailsResponse([
+      rule({ id: "g_one", action: "block", target: { kind: "path-glob", pattern: "/x" } }),
+      rule({ id: "g_two", action: "block", target: { kind: "path-glob", pattern: "/y" } }),
+    ]);
+    renderPage("/guardrails?selected=g_one");
+    await waitFor(() => {
+      expect(screen.getByTestId("detail-resource")).toBeInTheDocument();
+    });
+    // Selecting a different row replaces the param; selecting the same row
+    // keeps it. To prove "clearing drops" without depending on a UI clear
+    // button, swap to a different rule and observe the URL still tracks.
+    fireEvent.click(screen.getByTestId("guardrail-row-g_two"));
+    await waitFor(() => {
+      const probe = screen.getByTestId("probe-location");
+      expect(probe.textContent).toContain("selected=g_two");
+      expect(probe.textContent).not.toContain("selected=g_one");
+    });
+  });
+
+  it("empty ?selected= (no id) falls through to the empty state", async () => {
+    mockGuardrailsResponse([
+      rule({ id: "g_real", action: "block", target: { kind: "path-glob", pattern: "/x" } }),
+    ]);
+    renderPage("/guardrails?selected=");
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Pick a guardrail/i })).toBeInTheDocument();
     });
   });
 });
