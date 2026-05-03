@@ -79,7 +79,7 @@ export type AckScope =
   | { kind: "agent"; agentId: string; upToIso: string };
 
 export interface AttentionItem {
-  kind: "pending" | "blocked" | "timeout" | "high_risk";
+  kind: "pending" | "blocked" | "timeout" | "high_risk" | "allow_notify";
   toolCallId: string;
   timestamp: string;
   agentId: string;
@@ -119,6 +119,8 @@ export interface AttentionResponse {
   blocked: AttentionItem[];
   agentAttention: AttentionAgent[];
   highRisk: AttentionItem[];
+  /** #51 — allow_notify guardrail hits in the last 24h (no Telegram delivery yet). */
+  allowNotify: AttentionItem[];
   generatedAt: string;
 }
 

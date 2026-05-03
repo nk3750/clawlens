@@ -170,10 +170,12 @@ describe("GET /api/attention", () => {
     expect(Array.isArray(body.blocked)).toBe(true);
     expect(Array.isArray(body.agentAttention)).toBe(true);
     expect(Array.isArray(body.highRisk)).toBe(true);
+    expect(Array.isArray(body.allowNotify)).toBe(true);
     expect(body.blocked).toHaveLength(1);
     expect(body.blocked[0].toolCallId).toBe("tc_blocked");
     expect(body.highRisk).toHaveLength(1);
     expect(body.highRisk[0].toolCallId).toBe("tc_hr");
+    expect(body.allowNotify).toHaveLength(0);
   });
 
   it("reflects a freshly-written ack in the next GET (read-your-own-writes)", async () => {

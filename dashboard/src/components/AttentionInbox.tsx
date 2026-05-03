@@ -4,6 +4,7 @@ import { useKeyboardShortcut } from "../hooks/useKeyboardShortcut";
 import type { AttentionAgent, AttentionItem, AttentionResponse } from "../lib/types";
 import GuardrailModal from "./GuardrailModal";
 import AgentAttentionRow from "./attention/AgentAttentionRow";
+import AllowNotifyRow from "./attention/AllowNotifyRow";
 import ApprovalCard from "./attention/ApprovalCard";
 import BlockedRow from "./attention/BlockedRow";
 import HighRiskRow from "./attention/HighRiskRow";
@@ -14,7 +15,8 @@ type NonHeroItem =
   | { kind: "blocked"; item: AttentionItem }
   | { kind: "timeout"; item: AttentionItem }
   | { kind: "agent"; item: AttentionAgent }
-  | { kind: "highrisk"; item: AttentionItem };
+  | { kind: "highrisk"; item: AttentionItem }
+  | { kind: "allow_notify"; item: AttentionItem };
 
 function nonHeroKey(v: NonHeroItem): string {
   if (v.kind === "agent") return `agent:${v.item.agentId}:${v.item.triggerAt}`;
@@ -57,6 +59,10 @@ export default function AttentionInbox({ data, refetch }: Props) {
       })),
       ...data.agentAttention.map((item) => ({ kind: "agent" as const, item })),
       ...data.highRisk.map((item) => ({ kind: "highrisk" as const, item })),
+      ...(data.allowNotify ?? []).map((item) => ({
+        kind: "allow_notify" as const,
+        item,
+      })),
     ];
   }, [data]);
 
@@ -264,6 +270,17 @@ export default function AttentionInbox({ data, refetch }: Props) {
                   onOptimisticRemove={removeFn}
                   onPersisted={onPersisted}
                   onAddGuardrail={setGuardrailDraft}
+                  showShortcutHint
+                  isTopmost={isTopmost}
+                />
+              );
+            } else if (v.kind === "allow_notify") {
+              row = (
+                <AllowNotifyRow
+                  item={v.item}
+                  isLast={isLast}
+                  onOptimisticRemove={removeFn}
+                  onPersisted={onPersisted}
                   showShortcutHint
                   isTopmost={isTopmost}
                 />

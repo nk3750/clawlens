@@ -953,6 +953,205 @@ describe("getAttention — guardrailMatch on T1 pending items", () => {
   });
 });
 
+describe("getAttention — allow_notify guardrail hits (#51)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("surfaces allow_notify guardrail-match rows in 24h window", () => {
+    const grStore = tmpGuardrailStore();
+    const gr = guardrailFixture({
+      action: "allow_notify",
+      target: { kind: "identity-glob", pattern: "deploy:*" },
+    });
+    grStore.add(gr);
+    // Real prod shape: logGuardrailMatch writes decision: "allow" for
+    // allow_notify rules, with guardrail metadata in params.
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 30 * 60_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_notify_1",
+        toolName: "exec",
+        params: {
+          guardrailId: gr.id,
+          guardrailAction: "allow_notify",
+          identityKey: "deploy:prod",
+          targetSummary: "Identity: deploy:*",
+        },
+        riskScore: 30,
+        riskTier: "low",
+      }),
+    ];
+    const resp = getAttention(entries, grStore, undefined, NOW_MS);
+    expect(resp.allowNotify).toHaveLength(1);
+    const item = resp.allowNotify[0];
+    expect(item.kind).toBe("allow_notify");
+    expect(item.toolCallId).toBe("tc_notify_1");
+    expect(item.guardrailMatch).toEqual({
+      id: gr.id,
+      targetSummary: "Identity: deploy:*",
+      action: "allow_notify",
+    });
+  });
+
+  it("does NOT surface allow_notify rows older than 24h", () => {
+    const grStore = tmpGuardrailStore();
+    const gr = guardrailFixture({ action: "allow_notify" });
+    grStore.add(gr);
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 25 * 3600_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_old_notify",
+        toolName: "exec",
+        params: {
+          guardrailId: gr.id,
+          guardrailAction: "allow_notify",
+          identityKey: "deploy:prod",
+          targetSummary: "Identity: deploy:*",
+        },
+      }),
+    ];
+    const resp = getAttention(entries, grStore, undefined, NOW_MS);
+    expect(resp.allowNotify).toHaveLength(0);
+  });
+
+  it("does NOT surface acked allow_notify rows", () => {
+    const grStore = tmpGuardrailStore();
+    const gr = guardrailFixture({ action: "allow_notify" });
+    grStore.add(gr);
+    const attnStore = tmpStore();
+    attnStore.append({
+      id: "ack1",
+      scope: { kind: "entry", toolCallId: "tc_acked_notify" },
+      ackedAt: NOW_ISO,
+      action: "ack",
+    });
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_acked_notify",
+        toolName: "exec",
+        params: {
+          guardrailId: gr.id,
+          guardrailAction: "allow_notify",
+          identityKey: "deploy:prod",
+          targetSummary: "Identity: deploy:*",
+        },
+      }),
+    ];
+    const resp = getAttention(entries, grStore, attnStore, NOW_MS);
+    expect(resp.allowNotify).toHaveLength(0);
+  });
+
+  it("does NOT double-emit when a follow-up logDecision row shares the toolCallId", () => {
+    // Real prod path: before-tool-call logs guardrailMatch (params with
+    // guardrailAction: "allow_notify") AND a subsequent logDecision (params
+    // with the original tool args). Both decision-bearing, same toolCallId.
+    // Only the guardrail-match row qualifies — the logDecision row has no
+    // guardrailAction.
+    const grStore = tmpGuardrailStore();
+    const gr = guardrailFixture({ action: "allow_notify" });
+    grStore.add(gr);
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_dual",
+        toolName: "exec",
+        params: {
+          guardrailId: gr.id,
+          guardrailAction: "allow_notify",
+          identityKey: "deploy:prod",
+          targetSummary: "Identity: deploy:*",
+        },
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 60_000 + 1).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_dual",
+        toolName: "exec",
+        params: { command: "deploy prod" },
+        riskScore: 20,
+        riskTier: "low",
+      }),
+    ];
+    const resp = getAttention(entries, grStore, undefined, NOW_MS);
+    expect(resp.allowNotify).toHaveLength(1);
+    expect(resp.allowNotify[0].toolCallId).toBe("tc_dual");
+  });
+
+  it("does NOT surface block / require_approval guardrail rows in allowNotify (only allow_notify)", () => {
+    const grStore = tmpGuardrailStore();
+    const grBlock = guardrailFixture({ action: "block" });
+    grStore.add(grBlock);
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 60_000).toISOString(),
+        decision: "block",
+        agentId: "alpha",
+        toolCallId: "tc_blocked",
+        toolName: "exec",
+        params: {
+          guardrailId: grBlock.id,
+          guardrailAction: "block",
+          identityKey: "x",
+          targetSummary: "Identity: x",
+        },
+      }),
+    ];
+    const resp = getAttention(entries, grStore, undefined, NOW_MS);
+    expect(resp.allowNotify).toHaveLength(0);
+  });
+
+  it("response.allowNotify is sorted newest first", () => {
+    const grStore = tmpGuardrailStore();
+    const gr = guardrailFixture({ action: "allow_notify" });
+    grStore.add(gr);
+    const entries: AuditEntry[] = [
+      entry({
+        timestamp: new Date(NOW_MS - 5 * 60_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_recent",
+        toolName: "exec",
+        params: {
+          guardrailId: gr.id,
+          guardrailAction: "allow_notify",
+          identityKey: "x",
+          targetSummary: "Identity: x",
+        },
+      }),
+      entry({
+        timestamp: new Date(NOW_MS - 60 * 60_000).toISOString(),
+        decision: "allow",
+        agentId: "alpha",
+        toolCallId: "tc_old",
+        toolName: "exec",
+        params: {
+          guardrailId: gr.id,
+          guardrailAction: "allow_notify",
+          identityKey: "x",
+          targetSummary: "Identity: x",
+        },
+      }),
+    ];
+    const resp = getAttention(entries, grStore, undefined, NOW_MS);
+    expect(resp.allowNotify.map((i) => i.toolCallId)).toEqual(["tc_recent", "tc_old"]);
+  });
+});
+
 describe("getAttention — LLM-absent risk fallback (spec addendum)", () => {
   beforeEach(() => {
     vi.useFakeTimers();

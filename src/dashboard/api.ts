@@ -90,7 +90,7 @@ export type AckScope =
   | { kind: "agent"; agentId: string; upToIso: string };
 
 export interface AttentionItem {
-  kind: "pending" | "blocked" | "timeout" | "high_risk";
+  kind: "pending" | "blocked" | "timeout" | "high_risk" | "allow_notify";
   toolCallId: string;
   timestamp: string;
   agentId: string;
@@ -132,6 +132,14 @@ export interface AttentionResponse {
   blocked: AttentionItem[];
   agentAttention: AttentionAgent[];
   highRisk: AttentionItem[];
+  /**
+   * #51 — guardrail rules with action: "allow_notify" fire correctly today
+   * but their notifications die at api.logger.info; OpenClaw upstream
+   * doesn't yet expose a Telegram push hook. Surface the hits in the
+   * inbox so operators see them on their next dashboard visit. Future:
+   * upstream push (#27).
+   */
+  allowNotify: AttentionItem[];
   generatedAt: string;
 }
 
@@ -689,6 +697,7 @@ const APPROVAL_TIMEOUT_MS = 300_000; // 5 minutes — mirrors the card copy in N
 const HIGH_RISK_THRESHOLD = 65;
 const HIGH_RISK_WINDOW_MS = 30 * 60_000; // 30 min — T3 freshness
 const T2A_BLOCKED_WINDOW_MS = 24 * 3600_000; // 24h — T2a freshness
+const ALLOW_NOTIFY_WINDOW_MS = 24 * 3600_000; // 24h — #51 freshness
 const AGENT_ATTN_WINDOW_MS = 24 * 3600_000; // rolling 24h window for agent derivation
 const BLOCK_CLUSTER_WINDOW_MS = 10 * 60_000;
 const BLOCK_CLUSTER_MIN = 2;
@@ -949,9 +958,11 @@ export function getAttention(
   const pending: AttentionItem[] = [];
   const blocked: AttentionItem[] = [];
   const highRisk: AttentionItem[] = [];
+  const allowNotify: AttentionItem[] = [];
 
   const blockedCutoffIso = new Date(now - T2A_BLOCKED_WINDOW_MS).toISOString();
   const highRiskCutoffIso = new Date(now - HIGH_RISK_WINDOW_MS).toISOString();
+  const allowNotifyCutoffIso = new Date(now - ALLOW_NOTIFY_WINDOW_MS).toISOString();
 
   // Build a set of resolved toolCallIds so we can filter pending approvals
   // to only those that haven't received a resolution log yet. Approval
@@ -1044,6 +1055,38 @@ export function getAttention(
       continue;
     }
 
+    // #51 — allow_notify guardrail-match rows. Detect via the audit-row
+    // metadata written by logGuardrailMatch (params.guardrailAction).
+    // The follow-up logDecision row shares toolCallId but doesn't carry
+    // guardrailAction, so it cannot collide. T1 / T2a / T3 branches above
+    // are mutually exclusive with this — allow_notify rows have eff="allow"
+    // and rarely cross HIGH_RISK_THRESHOLD on their own.
+    if (
+      typeof e.params.guardrailAction === "string" &&
+      e.params.guardrailAction === "allow_notify" &&
+      e.timestamp >= allowNotifyCutoffIso
+    ) {
+      if (isEntryAcked(attentionStore, e.toolCallId)) continue;
+      const guardrailId =
+        typeof e.params.guardrailId === "string" ? e.params.guardrailId : undefined;
+      const targetSummary =
+        typeof e.params.targetSummary === "string"
+          ? e.params.targetSummary
+          : typeof e.params.identityKey === "string"
+            ? `Identity: ${e.params.identityKey}`
+            : undefined;
+      const guardrailMatch: AttentionItem["guardrailMatch"] =
+        guardrailId && targetSummary
+          ? { id: guardrailId, targetSummary, action: "allow_notify" }
+          : undefined;
+      allowNotify.push({
+        ...common,
+        kind: "allow_notify",
+        guardrailMatch,
+      });
+      continue;
+    }
+
     if (eff === "allow" && score >= HIGH_RISK_THRESHOLD && e.timestamp >= highRiskCutoffIso) {
       // Skip entries with a matching active guardrail — already governed.
       if (guardrailStore?.peek(e.agentId || DEFAULT_AGENT_ID, e.toolName, e.params)) continue;
@@ -1063,9 +1106,10 @@ export function getAttention(
 
   // T1: time-remaining ascending (most urgent first).
   pending.sort((a, b) => (a.timeoutMs ?? 0) - (b.timeoutMs ?? 0));
-  // T2a / T3: newest first.
+  // T2a / T3 / allow_notify: newest first.
   blocked.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   highRisk.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  allowNotify.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   const agentAttention = deriveAgentAttention(entries, guardrailStore, attentionStore, now);
 
@@ -1077,6 +1121,7 @@ export function getAttention(
     blocked: blocked.slice(0, 20),
     agentAttention: agentAttention.slice(0, 20),
     highRisk: highRisk.slice(0, 20),
+    allowNotify: allowNotify.slice(0, 20),
     generatedAt: nowIso,
   };
 }

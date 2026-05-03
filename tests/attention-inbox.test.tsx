@@ -16,6 +16,7 @@ function emptyResp(): AttentionResponse {
     blocked: [],
     agentAttention: [],
     highRisk: [],
+    allowNotify: [],
     generatedAt: NOW_ISO,
   };
 }
@@ -305,6 +306,72 @@ describe("AttentionInbox — row enter/leave animations (§3)", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
     });
+    expect(container.querySelector("[data-cl-attention-row='blocked']")).not.toBeNull();
+  });
+});
+
+describe("AttentionInbox — allow_notify rows (#51)", () => {
+  function makeAllowNotify(tcid: string, ruleId = "g_notify_1") {
+    return {
+      kind: "allow_notify" as const,
+      toolCallId: tcid,
+      timestamp: new Date(new Date(NOW_ISO).getTime() - 60_000).toISOString(),
+      agentId: "alpha",
+      agentName: "alpha",
+      toolName: "exec",
+      description: "deploy prod",
+      riskScore: 30,
+      riskTier: "low" as const,
+      sessionKey: "alpha:main",
+      guardrailMatch: {
+        id: ruleId,
+        targetSummary: "Identity: deploy:*",
+        action: "allow_notify" as const,
+      },
+    };
+  }
+
+  it("renders allow_notify rows with the See guardrail link", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            allowNotify: [makeAllowNotify("tc_an_1", "g_rule_x")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const row = container.querySelector("[data-cl-attention-row='allow_notify']");
+    expect(row).not.toBeNull();
+    const link = screen.getByTestId("allow-notify-rule-link-g_rule_x") as HTMLAnchorElement;
+    expect(link.href).toContain(`/guardrails?selected=${encodeURIComponent("g_rule_x")}`);
+  });
+
+  it("counts allow_notify rows in the 'items need attention' header", () => {
+    renderInbox({
+      ...emptyResp(),
+      allowNotify: [makeAllowNotify("tc_a"), makeAllowNotify("tc_b")],
+    });
+    expect(screen.getByText(/2 items need attention/i)).toBeInTheDocument();
+  });
+
+  it("falls back gracefully when allowNotify is missing from older payloads", () => {
+    // Defense for in-flight gateway → frontend version skew. The frontend
+    // should not crash if the server hasn't deployed the new field yet.
+    const partial = {
+      pending: [],
+      blocked: [makeBlocked("tc_b1")],
+      agentAttention: [],
+      highRisk: [],
+      generatedAt: NOW_ISO,
+    } as unknown as AttentionResponse;
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox data={partial} refetch={vi.fn()} />
+      </MemoryRouter>,
+    );
     expect(container.querySelector("[data-cl-attention-row='blocked']")).not.toBeNull();
   });
 });
