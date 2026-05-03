@@ -31,6 +31,7 @@ import {
   getRecentEntries,
   getSessionDetail,
   getSessions,
+  isDecisionEntry,
   localDateOf,
   localToday,
   mapEntry,
@@ -736,6 +737,12 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         });
 
         const listener = (entry: AuditEntry) => {
+          // Skip non-decision rows (LLM-eval + execution-result follow-ups).
+          // The audit logger writes 3 entries per tool call sharing one
+          // toolCallId; emitting all three pushes each call into the live
+          // feed N times. REST `/api/entries` already filters with
+          // isDecisionEntry — keep the streams in lockstep. (#50)
+          if (!isDecisionEntry(entry)) return;
           // Single readEntries scan per emit — feeds both buildEvalIndex (for
           // LLM-adjusted risk fields) and resolveSplitKeyForEntry (for split
           // session #N suffixes). Same scan the inline path used to do for the

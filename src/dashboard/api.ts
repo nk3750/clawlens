@@ -333,8 +333,8 @@ export function getEffectiveDecision(entry: AuditEntry): string {
   return "unknown";
 }
 
-/** True if the entry represents a policy decision (not a result log). */
-function isDecisionEntry(entry: AuditEntry): boolean {
+/** True if the entry represents a policy decision (not a result / LLM-eval log). */
+export function isDecisionEntry(entry: AuditEntry): boolean {
   return entry.decision !== undefined;
 }
 

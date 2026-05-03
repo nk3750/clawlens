@@ -336,6 +336,78 @@ describe("SSE /api/stream — payload contract", () => {
     expect(payload.guardrailMatch).toBeUndefined();
   });
 
+  it("emits a decision entry exactly once (no double-emit, #50)", async () => {
+    const { logger, fireEntry } = buildLogger([]);
+    const { api, getHandler } = makeApi();
+    registerDashboardRoutes(api, { auditLogger: logger });
+    const { res, out } = makeRes();
+    await getHandler()(makeReq("/plugins/clawlens/api/stream"), res);
+
+    fireEntry(
+      entry({
+        toolName: "exec",
+        decision: "allow",
+        toolCallId: "tc-once",
+        params: { command: "ls" },
+      }),
+    );
+
+    const frames = out.body.match(/data: /g);
+    expect(frames?.length ?? 0).toBe(1);
+  });
+
+  it("does NOT emit LLM evaluation follow-up entries (#50)", async () => {
+    // logGuardrailEval / logLlmEvaluation write a follow-up audit row that shares
+    // the toolCallId with the original decision but carries no `decision` field —
+    // it's a "result" row, not a policy decision. SSE listeners must skip it or
+    // each tool call gets pushed twice (once as decision, once as eval). See #50.
+    const { logger, fireEntry } = buildLogger([]);
+    const { api, getHandler } = makeApi();
+    registerDashboardRoutes(api, { auditLogger: logger });
+    const { res, out } = makeRes();
+    await getHandler()(makeReq("/plugins/clawlens/api/stream"), res);
+
+    fireEntry(
+      entry({
+        toolName: "llm_evaluation",
+        // biome-ignore lint/suspicious/noExplicitAny: refToolCallId is a known optional AuditEntry field
+        ...({ refToolCallId: "tc-1" } as any),
+        llmEvaluation: {
+          adjustedScore: 88,
+          reasoning: "scope creep",
+          tags: [],
+          confidence: "high",
+          patterns: [],
+        },
+      }),
+    );
+
+    expect(out.body).toBe("");
+  });
+
+  it("does NOT emit execution-result follow-up entries (#50)", async () => {
+    // after_tool_call writes a result row carrying executionResult / durationMs
+    // but no decision. SSE listeners must skip these — the matching decision row
+    // already covered this tool call.
+    const { logger, fireEntry } = buildLogger([]);
+    const { api, getHandler } = makeApi();
+    registerDashboardRoutes(api, { auditLogger: logger });
+    const { res, out } = makeRes();
+    await getHandler()(makeReq("/plugins/clawlens/api/stream"), res);
+
+    fireEntry(
+      entry({
+        toolName: "exec",
+        toolCallId: "tc-result",
+        executionResult: "success",
+        durationMs: 12,
+        params: { command: "ls" },
+      }),
+    );
+
+    expect(out.body).toBe("");
+  });
+
   it("preserves split-session-key resolution when the session was split by a > 30 min gap", async () => {
     // Session key "s1" reused after a 31-minute gap → splitter assigns "#2"
     // to the recent run.
