@@ -281,20 +281,26 @@ export default function ActivityFeed({
           >
             {group.rows.map((entry, i) => {
               const id = entry.toolCallId || entry.timestamp;
+              // Defense-in-depth for #50: even after the SSE filter drops
+              // follow-up eval/result rows, two decision rows can still share
+              // a toolCallId (gateway reuse). Composite the row position so
+              // expand/tap state targets one row, not all rows that happen
+              // to share `id`.
+              const rowKey = `${id}-${i}`;
               return (
                 <ActivityRow
-                  key={`${id}-${i}`}
+                  key={rowKey}
                   entry={entry}
                   isNew={newIds.has(id)}
                   onChip={onChip}
                   isLastInGroup={i === group.rows.length - 1}
-                  isExpanded={expandedId === id}
-                  onToggleExpand={() => toggleExpanded(id)}
+                  isExpanded={expandedId === rowKey}
+                  onToggleExpand={() => toggleExpanded(rowKey)}
                   isMobile={isMobile}
                   isCompact={isCompact}
                   isNarrow={isNarrow}
-                  isTapped={tappedId === id}
-                  onToggleTapped={() => toggleTapped(id)}
+                  isTapped={tappedId === rowKey}
+                  onToggleTapped={() => toggleTapped(rowKey)}
                 />
               );
             })}
