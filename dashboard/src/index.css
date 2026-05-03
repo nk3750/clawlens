@@ -314,6 +314,32 @@ code, .code {
   color: var(--cl-text-primary);
 }
 
+.cl-bulk-ack-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--cl-border);
+  background: var(--cl-bg-04);
+  border-radius: var(--cl-r-pill);
+  font-family: var(--cl-font-mono);
+  font-size: 11px;
+  color: var(--cl-text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--cl-dur-fast) var(--cl-ease),
+    color var(--cl-dur-fast) var(--cl-ease),
+    box-shadow var(--cl-dur-fast) var(--cl-ease);
+}
+.cl-bulk-ack-chip:hover {
+  background: var(--cl-bg-05);
+  color: var(--cl-text-primary);
+}
+.cl-bulk-ack-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--cl-accent-ring);
+}
+
 .cl-btn-primary {
   background: var(--cl-accent-bg);
   border-color: transparent;

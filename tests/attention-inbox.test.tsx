@@ -6,7 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AttentionInbox from "../dashboard/src/components/AttentionInbox";
-import type { AttentionResponse } from "../dashboard/src/lib/types";
+import type { AttentionAgent, AttentionItem, AttentionResponse } from "../dashboard/src/lib/types";
 
 const NOW_ISO = "2026-04-17T12:00:00.000Z";
 
@@ -33,6 +33,68 @@ function makeBlocked(tcid: string, agentId = "alpha") {
     riskScore: 82,
     riskTier: "critical" as const,
     sessionKey: `${agentId}:main`,
+  };
+}
+
+function makeHighRisk(tcid: string, agentId = "alpha"): AttentionItem {
+  return {
+    kind: "high_risk",
+    toolCallId: tcid,
+    timestamp: new Date(new Date(NOW_ISO).getTime() - 60_000).toISOString(),
+    agentId,
+    agentName: agentId,
+    toolName: "exec",
+    description: `High-risk ${tcid}`,
+    riskScore: 71,
+    riskTier: "high",
+    sessionKey: `${agentId}:main`,
+    guardrailHint: "no matching guardrail",
+    identityKey: `cmd:${tcid}`,
+  };
+}
+
+function makeAllowNotifyItem(tcid: string, agentId = "alpha", ruleId = "g_n"): AttentionItem {
+  return {
+    kind: "allow_notify",
+    toolCallId: tcid,
+    timestamp: new Date(new Date(NOW_ISO).getTime() - 60_000).toISOString(),
+    agentId,
+    agentName: agentId,
+    toolName: "exec",
+    description: `Notify ${tcid}`,
+    riskScore: 30,
+    riskTier: "low",
+    sessionKey: `${agentId}:main`,
+    guardrailMatch: { id: ruleId, targetSummary: "Identity: deploy:*", action: "allow_notify" },
+  };
+}
+
+function makePending(tcid: string, agentId = "alpha"): AttentionItem {
+  return {
+    kind: "pending",
+    toolCallId: tcid,
+    timestamp: NOW_ISO,
+    agentId,
+    agentName: agentId,
+    toolName: "exec",
+    description: `Pending ${tcid}`,
+    riskScore: 70,
+    riskTier: "high",
+    sessionKey: `${agentId}:main`,
+    timeoutMs: 240_000,
+  };
+}
+
+function makeAgentAttention(agentId = "alpha"): AttentionAgent {
+  return {
+    agentId,
+    agentName: agentId,
+    triggerAt: new Date(new Date(NOW_ISO).getTime() - 5 * 60_000).toISOString(),
+    reason: "block_cluster",
+    description: `${agentId} clustered`,
+    triggerCount: 3,
+    peakTier: "high",
+    lastSessionKey: `${agentId}:main`,
   };
 }
 
@@ -388,5 +450,201 @@ describe("AttentionInbox — 'v' keyboard shortcut", () => {
     await user.keyboard("v");
     // No-op — jsdom's location didn't change.
     expect(window.location.pathname).toBe("/");
+  });
+});
+
+describe("AttentionInbox — section grouping (#26)", () => {
+  it("renders all four section headers in severity-down DOM order with bucket counts", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            pending: [makePending("p1")],
+            blocked: [makeBlocked("b1")],
+            highRisk: [makeHighRisk("h1")],
+            allowNotify: [makeAllowNotifyItem("an1")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const headers = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-cl-attention-section-header]"),
+    );
+    expect(headers.map((h) => h.dataset.clAttentionSectionHeader)).toEqual([
+      "pending",
+      "blocked",
+      "highrisk",
+      "allow_notify",
+    ]);
+    expect(headers[0]?.textContent).toContain("PENDING APPROVAL");
+    expect(headers[0]?.textContent).toContain("· 1");
+    expect(headers[1]?.textContent).toContain("BLOCKED");
+    expect(headers[2]?.textContent).toContain("RISKY ACTIONS");
+    expect(headers[3]?.textContent).toContain("NOTIFY");
+  });
+
+  it("omits the PENDING APPROVAL header when there are no pending items", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            blocked: [makeBlocked("b1")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector("[data-cl-attention-section-header='pending']")).toBeNull();
+    expect(container.querySelector("[data-cl-attention-section-header='blocked']")).not.toBeNull();
+  });
+
+  it("only renders the section headers for buckets that have items", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            highRisk: [makeHighRisk("h1"), makeHighRisk("h2")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const headers = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-cl-attention-section-header]"),
+    );
+    expect(headers.map((h) => h.dataset.clAttentionSectionHeader)).toEqual(["highrisk"]);
+    expect(headers[0]?.textContent).toContain("RISKY ACTIONS");
+    expect(headers[0]?.textContent).toContain("· 2");
+  });
+
+  it("uses bucket length (not visible-after-collapse) for the section count suffix", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            highRisk: [
+              makeHighRisk("h1"),
+              makeHighRisk("h2"),
+              makeHighRisk("h3"),
+              makeHighRisk("h4"),
+              makeHighRisk("h5"),
+            ],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const header = container.querySelector<HTMLElement>(
+      "[data-cl-attention-section-header='highrisk']",
+    );
+    expect(header?.textContent).toContain("· 5");
+  });
+
+  it("does NOT render agentAttention items as inbox rows and excludes them from the header count", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            agentAttention: [makeAgentAttention("alpha"), makeAgentAttention("beta")],
+            highRisk: [makeHighRisk("h1")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelectorAll("[data-cl-attention-row='agent']")).toHaveLength(0);
+    expect(screen.getByText(/1 item needs attention/i)).toBeInTheDocument();
+  });
+
+  it("hides NOTIFY before RISKY ACTIONS in the collapsed view, and reveals them on expand", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            highRisk: [makeHighRisk("h1"), makeHighRisk("h2"), makeHighRisk("h3")],
+            allowNotify: [makeAllowNotifyItem("an1"), makeAllowNotifyItem("an2")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelectorAll("[data-cl-attention-row='highrisk']")).toHaveLength(3);
+    expect(container.querySelectorAll("[data-cl-attention-row='allow_notify']")).toHaveLength(0);
+    expect(container.querySelector("[data-cl-attention-section-header='allow_notify']")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Show 2 more/i }));
+
+    expect(container.querySelectorAll("[data-cl-attention-row='highrisk']")).toHaveLength(3);
+    expect(container.querySelectorAll("[data-cl-attention-row='allow_notify']")).toHaveLength(2);
+    expect(
+      container.querySelector("[data-cl-attention-section-header='allow_notify']"),
+    ).not.toBeNull();
+  });
+
+  it("renders both the pending header AND the non-hero card when both buckets are populated", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            pending: [makePending("p1"), makePending("p2")],
+            blocked: [makeBlocked("b1")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const pendingHeader = container.querySelector<HTMLElement>(
+      "[data-cl-attention-section-header='pending']",
+    );
+    expect(pendingHeader?.textContent).toContain("· 2");
+    expect(container.querySelectorAll("[data-cl-attention-row='pending']")).toHaveLength(2);
+    expect(container.querySelector("[data-cl-attention-section-header='blocked']")).not.toBeNull();
+    expect(container.querySelectorAll("[data-cl-attention-row='blocked']")).toHaveLength(1);
+  });
+});
+
+describe("AttentionInbox — bulk-ack chip strip (#26)", () => {
+  it("surfaces a chip in the inbox header when an agent has 2+ visible items across buckets", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            blocked: [makeBlocked("b1", "wtsmomma")],
+            highRisk: [makeHighRisk("h1", "wtsmomma")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const strip = container.querySelector("[data-cl-bulk-ack-chips]");
+    expect(strip).not.toBeNull();
+    expect(strip?.textContent).toContain("wtsmomma");
+    expect(strip?.textContent).toContain("· 2");
+  });
+
+  it("does NOT surface a chip when no agent reaches the threshold", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionInbox
+          data={{
+            ...emptyResp(),
+            blocked: [makeBlocked("b1", "alpha")],
+            highRisk: [makeHighRisk("h1", "beta")],
+          }}
+          refetch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector("[data-cl-bulk-ack-chips]")).toBeNull();
   });
 });
