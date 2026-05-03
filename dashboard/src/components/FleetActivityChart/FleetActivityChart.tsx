@@ -57,10 +57,27 @@ const LEFT_EDGE_FADE_PCT = 0.05;
 const ENTER_ANIMATION_MS = 280;
 const BURST_WINDOW_MS = 1000;
 const BURST_THRESHOLD = 10;
-/** Fixed-width left gutter that holds the always-visible lane icons + labels. */
-const GUTTER_W = 96;
 /** Icon glyph size in the gutter. 14px matches the agent-card category strip. */
-const LANE_ICON_SIZE = 14;
+export const LANE_ICON_SIZE = 14;
+/** Mono glyph width at fontSize=10 for var(--cl-font-mono) (SF Mono / Menlo). */
+const GUTTER_MONO_CHAR_PX = 6;
+/** Left pad — matches the lane icon's x={8} in the gutter <svg>. */
+const GUTTER_LEFT_PAD = 8;
+const GUTTER_ICON_TEXT_GAP = 8;
+/** Right pad — matches the label's x={GUTTER_W - 8} in the gutter <svg>. */
+const GUTTER_RIGHT_PAD = 8;
+const GUTTER_LONGEST_LABEL_CHARS = Math.max(
+  ...Object.values(CATEGORY_META).map((m) => m.label.length),
+);
+/** Fixed-width left gutter that holds the always-visible lane icons + labels.
+ *  Derived from CATEGORY_META so adding a longer category label auto-widens
+ *  the gutter — no magic number. */
+export const GUTTER_W =
+  GUTTER_LEFT_PAD +
+  LANE_ICON_SIZE +
+  GUTTER_ICON_TEXT_GAP +
+  GUTTER_LONGEST_LABEL_CHARS * GUTTER_MONO_CHAR_PX +
+  GUTTER_RIGHT_PAD;
 /** Distance the now-line hangs inside the right edge so it's not half-clipped. */
 const NOW_LINE_INSET = 4;
 

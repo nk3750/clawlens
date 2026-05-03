@@ -42,7 +42,9 @@ vi.mock("react-router-dom", async () => {
 
 import { useNavigate } from "react-router-dom";
 import FleetActivityChart, {
+  GUTTER_W,
   INLINE_CHART_HEIGHT,
+  LANE_ICON_SIZE,
 } from "../dashboard/src/components/FleetActivityChart/FleetActivityChart";
 import { laneHeight, laneYForCategory } from "../dashboard/src/components/FleetActivityChart/utils";
 import { useApi } from "../dashboard/src/hooks/useApi";
@@ -53,6 +55,7 @@ import type {
   FleetActivityResponse,
   RiskTier,
 } from "../dashboard/src/lib/types";
+import { CATEGORY_META } from "../dashboard/src/lib/utils";
 
 const mockedUseApi = vi.mocked(useApi);
 const mockedUseSSE = vi.mocked(useSSE);
@@ -690,10 +693,13 @@ describe("FleetActivityChart — now-line visibility", () => {
     const { container } = renderChart();
     const line = container.querySelector("[data-cl-swarm-now-line]") as SVGLineElement | null;
     expect(line).not.toBeNull();
-    // Stub returns body width = STUB_CHART_WIDTH (900). Gutter is 96 so the
-    // main chart width = 804; now line at 800.
+    // Stub returns body width = STUB_CHART_WIDTH. Main chart width is the
+    // stub minus the gutter; now line clamps 4px inside the right edge.
+    // Both terms are derived (not magic) so this test stays evergreen if
+    // GUTTER_W is widened to fit a longer category label.
+    const expectedNowX = STUB_CHART_WIDTH - GUTTER_W - 4;
     const x1 = Number.parseFloat(line?.getAttribute("x1") ?? "NaN");
-    expect(x1).toBe(804 - 4);
+    expect(x1).toBe(expectedNowX);
   });
 
   it("uses the accent color, bolder stroke, and a persistent drop-shadow aura", () => {
@@ -820,8 +826,10 @@ describe("FleetActivityChart — clamp dots to now-line", () => {
     const circle = container.querySelector("[data-cl-swarm-dot] circle") as SVGCircleElement | null;
     expect(circle).not.toBeNull();
     const cx = Number.parseFloat(circle?.getAttribute("cx") ?? "NaN");
-    // Expected: nowX = chartWidth - NOW_LINE_INSET = 804 - 4 = 800.
-    expect(cx).toBe(800);
+    // Expected: nowX = chartWidth - NOW_LINE_INSET = (stub - gutter) - 4.
+    // Derived so a future GUTTER_W bump doesn't silently break this guard.
+    const expectedNowX = STUB_CHART_WIDTH - GUTTER_W - 4;
+    expect(cx).toBe(expectedNowX);
   });
 });
 
@@ -838,6 +846,20 @@ describe("FleetActivityChart — polish (#46)", () => {
     const body = container.querySelector("[data-cl-swarm-body]") as HTMLElement | null;
     expect(body).not.toBeNull();
     expect(body?.style.height).toBe("320px");
+  });
+
+  it("gutter is wide enough that the longest CATEGORY_META label never collides with the lane icon", () => {
+    // Lane gutter renders an icon at x=8 (extends to x=8+LANE_ICON_SIZE) and a
+    // right-anchored mono label at x={GUTTER_W - 8}. At fontSize=10 in
+    // var(--cl-font-mono), each glyph is ~6px wide. If the label's left edge
+    // (GUTTER_W - 8 - longestLabelChars*6) lands inside the icon zone, the
+    // icon overdraws the label's leading characters — the bug the live walk
+    // surfaced ("orchestration" → first "o" hidden under the network glyph).
+    // Data-driven off CATEGORY_META so adding a longer label later forces
+    // GUTTER_W to grow, or this test fails loudly.
+    const longestLabelChars = Math.max(...Object.values(CATEGORY_META).map((m) => m.label.length));
+    const minRequired = 8 + LANE_ICON_SIZE + 8 + longestLabelChars * 6 + 8;
+    expect(GUTTER_W).toBeGreaterThanOrEqual(minRequired);
   });
 
   it("wraps the inline chart in a cl-card surface so it reads as a peer tile to FleetRiskTile", () => {
