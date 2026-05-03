@@ -15,6 +15,7 @@ import { isDormant } from "../lib/homepageState";
 import { isRangeOption, type RangeOption } from "../components/fleetheader/utils";
 import { getPref, PREF_KEYS, setPref } from "../lib/prefs";
 import { worstMeaningfulTier } from "../lib/utils";
+import { shouldRefetchAttention } from "../lib/attention";
 
 const DEFAULT_RANGE: RangeOption = "12h";
 
@@ -114,18 +115,9 @@ export default function Agents() {
 
   const { data: stats } = useLiveApi<StatsResponse>(statsPath);
   const { data: agents, loading, error, refetch } = useLiveApi<AgentInfo[]>(agentsPath);
-  // Attention only changes on pending/blocked/timeout/high-risk entries; gate
-  // the SSE-driven refetch so we don't hammer the API on every low-risk allow.
-  // High-risk threshold (65) matches the cutoff used in api.ts → getAttention.
   const { data: attention, refetch: refetchAttention } = useLiveApi<AttentionResponse>(
     attentionPath,
-    {
-      filter: (e) => {
-        const eff = e.effectiveDecision;
-        const score = e.riskScore ?? 0;
-        return eff === "pending" || eff === "block" || eff === "timeout" || score >= 65;
-      },
-    },
+    { filter: shouldRefetchAttention },
   );
 
   const pendingCount = attention?.pending.length ?? 0;

@@ -126,8 +126,13 @@ describe("Agents homepage — attention filter predicate", () => {
     return fn;
   }
 
-  it("admits pending entries", () => {
-    expect(attentionFilter()(fakeEntry({ effectiveDecision: "pending" }))).toBe(true);
+  it("admits pending entries (decision=approval_required, eff coerced to allow)", () => {
+    // getEffectiveDecision coerces unresolved approval_required to "allow"
+    // under observe-mode (api.ts:338) — pending must be detected on the raw
+    // `decision` field, not on `effectiveDecision`.
+    expect(
+      attentionFilter()(fakeEntry({ decision: "approval_required", effectiveDecision: "allow" })),
+    ).toBe(true);
   });
 
   it("admits block entries", () => {
