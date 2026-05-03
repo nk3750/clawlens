@@ -41,7 +41,10 @@ vi.mock("react-router-dom", async () => {
 });
 
 import { useNavigate } from "react-router-dom";
-import FleetActivityChart from "../dashboard/src/components/FleetActivityChart/FleetActivityChart";
+import FleetActivityChart, {
+  INLINE_CHART_HEIGHT,
+} from "../dashboard/src/components/FleetActivityChart/FleetActivityChart";
+import { laneHeight, laneYForCategory } from "../dashboard/src/components/FleetActivityChart/utils";
 import { useApi } from "../dashboard/src/hooks/useApi";
 import { useSSE } from "../dashboard/src/hooks/useSSE";
 import type {
@@ -846,10 +849,15 @@ describe("FleetActivityChart — polish (#46)", () => {
     expect(wrapper?.classList.contains("cl-card")).toBe(true);
   });
 
-  it("renders the cluster '+N' label inline-right of the cluster (textAnchor=start, x=cx+r+4, y=cy+3)", () => {
-    // Old layout: text at (cx, cy - r - 4) drew ~14px above the row center,
-    // bleeding into the lane above at the prior 25px lane height. New layout
-    // puts the label inside the same lane band.
+  it("renders the cluster '+N' label stratified at lane-top (textAnchor=middle, x=cx, y=lane-top+8)", () => {
+    // Earlier inline-right layout (x=cx+r+4) put the label's tail in the path
+    // of the next cluster's icon when two clusters in the same lane sat close
+    // in time — the live walk surfaced label-on-icon overdraw. Lane-top
+    // stratification anchors every cluster's label to the same y inside the
+    // lane band (jitter-independent), so the label can never land on any
+    // cluster icon's center. Label-vs-label horizontal collision (two +Ns
+    // overlapping when adjacent clusters share a lane) is the accepted
+    // regression — operators click the cluster to disambiguate via popover.
     const base = Date.parse(NOW) - 30 * 60_000;
     const entries = [
       mkEntry({
@@ -868,18 +876,19 @@ describe("FleetActivityChart — polish (#46)", () => {
     if (!cluster) throw new Error("cluster missing");
     const text = cluster.querySelector("[data-cl-swarm-cluster-count]");
     expect(text).not.toBeNull();
-    expect(text?.getAttribute("text-anchor")).toBe("start");
+    expect(text?.getAttribute("text-anchor")).toBe("middle");
     // Hit-target circle (the only fill="transparent" circle in the group) sits
-    // at the cluster's (cx, cy) with the cluster radius — read it back to
-    // bypass jitter math in the test.
+    // at the cluster's cx — read it back to bypass jitter math in the test.
     const hit = cluster.querySelector('circle[fill="transparent"]') as SVGCircleElement | null;
     if (!hit) throw new Error("cluster hit-target missing");
     const cx = Number.parseFloat(hit.getAttribute("cx") ?? "NaN");
-    const cy = Number.parseFloat(hit.getAttribute("cy") ?? "NaN");
-    const r = Number.parseFloat(hit.getAttribute("r") ?? "NaN");
     const tx = Number.parseFloat(text?.getAttribute("x") ?? "NaN");
     const ty = Number.parseFloat(text?.getAttribute("y") ?? "NaN");
-    expect(tx).toBeCloseTo(cx + r + 4, 5);
-    expect(ty).toBeCloseTo(cy + 3, 5);
+    expect(tx).toBeCloseTo(cx, 5);
+    // Formula-driven y so the assertion stays in lockstep with the chart's
+    // own constants — no magic number.
+    const expectedY =
+      laneYForCategory("exploring", INLINE_CHART_HEIGHT) - laneHeight(INLINE_CHART_HEIGHT) / 2 + 8;
+    expect(ty).toBeCloseTo(expectedY, 5);
   });
 });

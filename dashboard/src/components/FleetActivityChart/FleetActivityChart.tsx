@@ -45,7 +45,7 @@ interface Props {
   onToggleFullscreen?: () => void;
 }
 
-const INLINE_CHART_HEIGHT = 320;
+export const INLINE_CHART_HEIGHT = 320;
 const FULLSCREEN_CHART_HEIGHT = 360;
 const DOT_RADIUS = 8;
 const CLUSTER_RADIUS = 10;
@@ -577,9 +577,9 @@ export default function FleetActivityChart({
                   {c.isCluster && (
                     <text
                       data-cl-swarm-cluster-count
-                      x={cx + r + 4}
-                      y={c.cy + 3}
-                      textAnchor="start"
+                      x={cx}
+                      y={laneYForCategory(cat, chartH) - laneHeight(chartH) / 2 + 8}
+                      textAnchor="middle"
                       className="label-mono"
                       style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
                     >
