@@ -1,7 +1,7 @@
 import { useTotalFlash } from "../hooks/useTotalFlash";
 import type { StatsResponse } from "../lib/types";
 import DateChip from "./fleetheader/DateChip";
-import RiskMixDonut from "./fleetheader/RiskMixDonut";
+import RiskMixTierRows from "./fleetheader/RiskMixTierRows";
 import { computeTrend, type RangeOption, splitAgentsRunning } from "./fleetheader/utils";
 
 interface Props {
@@ -67,7 +67,7 @@ export default function FleetHeader({
           total={totalAgents}
         />
         <PendingCard count={pendingCount} agentNames={pendingAgentNames ?? []} />
-        <RiskMixCard breakdown={stats.riskBreakdown} />
+        <RiskMixTierRows breakdown={stats.riskBreakdown} />
       </div>
     </section>
   );
@@ -286,25 +286,6 @@ function PendingCard({
         </span>
       </div>
       <div style={{ minHeight: 17 }}>{secondary}</div>
-    </StatCardShell>
-  );
-}
-
-function RiskMixCard({
-  breakdown,
-}: {
-  breakdown: StatsResponse["riskBreakdown"];
-}) {
-  return (
-    <StatCardShell label="RISK MIX · 24H">
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <RiskMixDonut
-          crit={breakdown.critical}
-          high={breakdown.high}
-          medium={breakdown.medium}
-          low={breakdown.low}
-        />
-      </div>
     </StatCardShell>
   );
 }

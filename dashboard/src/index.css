@@ -258,6 +258,22 @@ code, .code {
   border-radius: var(--cl-r-lg);
 }
 
+/* Risk Mix tier row — full-width clickable row that filters /activity by tier.
+   Hover lifts on bg-04, focus-visible drops the native outline and paints an
+   accent ring. (stat-cards-revamp §4.1.2) */
+.cl-risk-tier-row {
+  transition:
+    background var(--cl-dur-fast) var(--cl-ease),
+    box-shadow var(--cl-dur-fast) var(--cl-ease);
+}
+.cl-risk-tier-row:hover {
+  background: var(--cl-bg-04);
+}
+.cl-risk-tier-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--cl-accent-ring);
+}
+
 /* ══════════════════════════════════════════════════════════════
    BUTTON UTILITIES (spec §A)
    ══════════════════════════════════════════════════════════════ */
