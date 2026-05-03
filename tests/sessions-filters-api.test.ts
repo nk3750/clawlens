@@ -306,6 +306,109 @@ describe("getSessions — pagination on filtered totals", () => {
   });
 });
 
+describe("getSessions — LIVE sessions pin to top (#53)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("LIVE session pins above a closed session even when its startTime is older than the closed end", () => {
+    // Without LIVE-pin: closed_recent (endTime = NOW-6min) sorts above
+    // live_old (startTime = NOW-25min) because the comparator falls back
+    // to startTime for null-endTime rows. With the fix, live_old wins.
+    const closedStart = new Date(NOW.getTime() - 7 * 60_000).toISOString();
+    const closedEnd = new Date(NOW.getTime() - 6 * 60_000).toISOString();
+    const liveOldStart = new Date(NOW.getTime() - 25 * 60_000).toISOString();
+    const liveMid = new Date(NOW.getTime() - 10 * 60_000).toISOString();
+    const liveLast = new Date(NOW.getTime() - 60_000).toISOString();
+    const entries: AuditEntry[] = [
+      entry({ sessionKey: "closed_recent", agentId: "a", timestamp: closedStart }),
+      entry({ sessionKey: "closed_recent", agentId: "a", timestamp: closedEnd }),
+      entry({ sessionKey: "live_old", agentId: "a", timestamp: liveOldStart }),
+      entry({ sessionKey: "live_old", agentId: "a", timestamp: liveMid }),
+      entry({ sessionKey: "live_old", agentId: "a", timestamp: liveLast }),
+    ];
+    const result = getSessions(entries);
+    expect(result.sessions[0].sessionKey).toBe("live_old");
+    expect(result.sessions[0].endTime).toBeNull();
+    expect(result.sessions[1].sessionKey).toBe("closed_recent");
+    expect(result.sessions[1].endTime).not.toBeNull();
+  });
+
+  it("among LIVE sessions, the most-recently-started sorts first", () => {
+    const tenMinAgo = new Date(NOW.getTime() - 10 * 60_000).toISOString();
+    const twoMinAgo = new Date(NOW.getTime() - 2 * 60_000).toISOString();
+    const oneMinAgo = new Date(NOW.getTime() - 60_000).toISOString();
+    const entries: AuditEntry[] = [
+      // older LIVE
+      entry({ sessionKey: "older_live", agentId: "a", timestamp: tenMinAgo }),
+      entry({ sessionKey: "older_live", agentId: "a", timestamp: oneMinAgo }),
+      // newer LIVE — started 2 min ago
+      entry({ sessionKey: "newer_live", agentId: "a", timestamp: twoMinAgo }),
+      entry({ sessionKey: "newer_live", agentId: "a", timestamp: oneMinAgo }),
+    ];
+    const result = getSessions(entries);
+    expect(result.sessions[0].sessionKey).toBe("newer_live");
+    expect(result.sessions[1].sessionKey).toBe("older_live");
+  });
+
+  it("peakRisk tiebreaker still wins for two LIVE sessions starting at the same moment", () => {
+    const tenMinAgo = new Date(NOW.getTime() - 10 * 60_000).toISOString();
+    const oneMinAgo = new Date(NOW.getTime() - 60_000).toISOString();
+    const entries: AuditEntry[] = [
+      entry({
+        sessionKey: "calm_live",
+        agentId: "a",
+        timestamp: tenMinAgo,
+        riskScore: 5,
+      }),
+      entry({
+        sessionKey: "calm_live",
+        agentId: "a",
+        timestamp: oneMinAgo,
+        riskScore: 5,
+      }),
+      entry({
+        sessionKey: "wild_live",
+        agentId: "b",
+        timestamp: tenMinAgo,
+        riskScore: 95,
+      }),
+      entry({
+        sessionKey: "wild_live",
+        agentId: "b",
+        timestamp: oneMinAgo,
+        riskScore: 95,
+      }),
+    ];
+    const result = getSessions(entries);
+    // Same startTime + both LIVE → peakRisk descending wins.
+    expect(result.sessions[0].sessionKey).toBe("wild_live");
+    expect(result.sessions[1].sessionKey).toBe("calm_live");
+  });
+
+  it("only-closed sessions sort newest end first (no regression)", () => {
+    const entries: AuditEntry[] = [
+      entry({
+        sessionKey: "old_closed",
+        agentId: "a",
+        timestamp: "2026-03-29T08:00:00Z",
+      }),
+      entry({
+        sessionKey: "new_closed",
+        agentId: "a",
+        timestamp: "2026-03-29T10:00:00Z",
+      }),
+    ];
+    const result = getSessions(entries);
+    expect(result.sessions[0].sessionKey).toBe("new_closed");
+    expect(result.sessions[1].sessionKey).toBe("old_closed");
+  });
+});
+
 describe("getSessions — sort tiebreaker", () => {
   it("sorts by peakRisk desc when endTimes are equal", () => {
     // Two sessions ending at the exact same timestamp — the riskier one wins.

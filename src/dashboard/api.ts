@@ -1824,7 +1824,11 @@ export function getAgentDetail(
   for (const [key, sEntries] of sessionMap) {
     allSessions.push(buildSessionInfo(key, sEntries, evalIdx));
   }
-  allSessions.sort((a, b) => (b.endTime ?? b.startTime).localeCompare(a.endTime ?? a.startTime));
+  // Same comparator as getSessions so both paths stay in lockstep (#53).
+  // getAgentDetail doesn't currently mark active sessions, so the LIVE-pin
+  // branch never fires here — the consolidation is a defensive no-op that
+  // prevents this site from drifting if active-marking is added later.
+  allSessions.sort(compareSessions);
 
   // Build reverse lookup: entry key → split session key
   // so entries and riskTrend points use the correct sub-session (#2, #3, etc.)
@@ -1902,6 +1906,24 @@ const SINCE_MS: Record<NonNullable<SessionFilters["since"]>, number> = {
   "7d": 604_800_000,
 };
 
+/**
+ * Spec §4.2 — sort comparator. LIVE sessions (endTime: null) always sort
+ * above closed sessions regardless of timestamp; within each stratum,
+ * ordering is most-recent first by the relevant timestamp (startTime for
+ * LIVE, endTime for closed). peakRisk descending tiebreaks within a
+ * stratum when timestamps tie. (#53)
+ */
+function compareSessions(a: SessionInfo, b: SessionInfo): number {
+  const aLive = a.endTime === null;
+  const bLive = b.endTime === null;
+  if (aLive !== bLive) return aLive ? -1 : 1;
+  const aKey = a.endTime ?? a.startTime;
+  const bKey = b.endTime ?? b.startTime;
+  const cmp = bKey.localeCompare(aKey);
+  if (cmp !== 0) return cmp;
+  return b.peakRisk - a.peakRisk;
+}
+
 function passesSessionFilters(s: SessionInfo, f: SessionFilters): boolean {
   if (f.agentId && s.agentId !== f.agentId) return false;
   if (f.avgRiskTier && tierFromScore(s.avgRisk) !== f.avgRiskTier) return false;
@@ -1978,13 +2000,7 @@ export function getSessions(
   }
 
   const allSessions = built.filter((s) => passesSessionFilters(s, filters));
-  allSessions.sort((a, b) => {
-    const aKey = a.endTime ?? a.startTime;
-    const bKey = b.endTime ?? b.startTime;
-    const cmp = bKey.localeCompare(aKey);
-    if (cmp !== 0) return cmp;
-    return b.peakRisk - a.peakRisk;
-  });
+  allSessions.sort(compareSessions);
 
   return {
     sessions: allSessions.slice(offset, offset + limit),
