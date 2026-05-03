@@ -7,7 +7,6 @@ import type {
   FleetActivityResponse,
   FleetRiskIndexResponse,
 } from "../../lib/types";
-import type { RangeOption } from "../fleetheader/utils";
 import {
   bucketCountsByTier,
   clampTooltipX,
@@ -16,12 +15,16 @@ import {
   tierStackedPaths,
   yForCount,
 } from "./utils";
-import { buildDayTicks, buildHourTicks, cullLabelsForWidth } from "../FleetActivityChart/utils";
+import { buildHourTicks, cullLabelsForWidth } from "../FleetActivityChart/utils";
 
-interface Props {
-  range: RangeOption;
-  selectedDate: string | null;
-}
+// ── Range pinning (#22) ──────────────────────────────────────
+// Tile is pinned to a 24h window regardless of the FleetActivityChart's range
+// pill. Hero numbers, sparkline, and tape all answer "is the fleet in a
+// notable state right now?" over the same frame — parallels LiveFeed's
+// "always newest" posture and avoids reshape-on-every-pill-click.
+const PINNED_RANGE = "24h" as const;
+const PINNED_RANGE_MS = 24 * 3_600_000;
+const PINNED_BUCKET_COUNT = 24;
 
 // ── Layout constants (spec §6.2-§6.5) ─────────────────────────
 const PLOT_LEFT = 20; // gutter for left-axis labels
@@ -54,14 +57,6 @@ const TEXT_SUBDUED = "var(--cl-text-subdued)";
 const TEXT_PRIMARY = "var(--cl-text-primary)";
 const TEXT_SECONDARY = "var(--cl-text-secondary)";
 
-function parseRangeMs(range: RangeOption): number {
-  const m = range.match(/^(\d+)h$/);
-  if (m) return Number(m[1]) * 3_600_000;
-  const d = range.match(/^(\d+)d$/);
-  if (d) return Number(d[1]) * 86_400_000;
-  return 24 * 3_600_000;
-}
-
 function dotRadius(score: number): number {
   const r = 2.5 + ((score - 50) / 38) * 3.5;
   return Math.max(2.5, Math.min(6.0, r));
@@ -73,31 +68,25 @@ function heroCurrentColor(current: number): string {
   return TEXT_PRIMARY;
 }
 
-export default function FleetRiskTile({ range, selectedDate }: Props) {
+export default function FleetRiskTile() {
   const navigate = useNavigate();
 
   // Two useApi calls, both unconditional at the top of the component.
   // Handle loading/empty AFTER the hooks (per spec §6 — do not early-return
   // before hooks).
-  const activityPath = useMemo(() => {
-    const params = new URLSearchParams({ range });
-    if (selectedDate) params.set("date", selectedDate);
-    return `api/fleet-activity?${params}`;
-  }, [range, selectedDate]);
-
   // Live: both endpoints are aggregates that move on every entry, so the
   // default unfiltered useLiveApi (debounced refetch on every SSE arrival) is
   // the right shape — same return type as useApi, no other refactor.
-  const { data: activity } = useLiveApi<FleetActivityResponse>(activityPath);
+  const { data: activity } = useLiveApi<FleetActivityResponse>(
+    `api/fleet-activity?range=${PINNED_RANGE}`,
+  );
   const { data: index } = useLiveApi<FleetRiskIndexResponse>("api/fleet-risk-index");
-
-  const isToday = selectedDate === null;
 
   // ── Time window for sparkline + tape ────────────────────────
   const nowMs = Date.now();
   const startMs = useMemo(
-    () => (activity ? Date.parse(activity.startTime) : nowMs - parseRangeMs(range)),
-    [activity, nowMs, range],
+    () => (activity ? Date.parse(activity.startTime) : nowMs - PINNED_RANGE_MS),
+    [activity, nowMs],
   );
   const endMs = useMemo(
     () => (activity ? Date.parse(activity.endTime) : nowMs),
@@ -111,15 +100,16 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
   const timeToX = useCallback((ms: number) => PLOT_LEFT + timeToXLocal(ms), [timeToXLocal]);
 
   // ── Sparkline buckets — 4-tier counts per hour (volume-area spec) ─
-  const buckets = useMemo(() => {
-    const bucketCount = range === "7d" ? 7 : 24;
-    return bucketCountsByTier({
-      entries: activity?.entries ?? [],
-      startMs,
-      endMs,
-      bucketCount,
-    });
-  }, [activity, range, startMs, endMs]);
+  const buckets = useMemo(
+    () =>
+      bucketCountsByTier({
+        entries: activity?.entries ?? [],
+        startMs,
+        endMs,
+        bucketCount: PINNED_BUCKET_COUNT,
+      }),
+    [activity, startMs, endMs],
+  );
 
   // Floor the y-scale at 5 so a tiny-fleet day with one decision doesn't
   // over-zoom into a chart-filling stack.
@@ -161,10 +151,10 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
   }, [activity, timeToX]);
 
   // ── Axis ticks (shared below the tape) ──────────────────────
-  const axisTicks = useMemo(() => {
-    if (range === "7d") return buildDayTicks(startMs, endMs);
-    return buildHourTicks(startMs, endMs, range);
-  }, [range, startMs, endMs]);
+  const axisTicks = useMemo(
+    () => buildHourTicks(startMs, endMs, PINNED_RANGE),
+    [startMs, endMs],
+  );
   const labelShown = useMemo(
     () => cullLabelsForWidth(axisTicks, timeToX),
     [axisTicks, timeToX],
@@ -421,7 +411,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
               fill={TEXT_MUTED}
               style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}
             >
-              No fleet activity in last {range}
+              No fleet activity in last {PINNED_RANGE}
             </text>
           )}
 
@@ -466,8 +456,7 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
           {/* NOW dot at top-of-stack (volume-area spec). Color = worst
               present tier of the last bucket. Hidden when the last bucket
               has no decisions (empty bucket → no signal to surface). */}
-          {isToday &&
-            buckets.length > 0 &&
+          {buckets.length > 0 &&
             (() => {
               const last = buckets[buckets.length - 1];
               if (last.total === 0) return null;
@@ -596,19 +585,17 @@ export default function FleetRiskTile({ range, selectedDate }: Props) {
         </g>
 
         {/* NOW line — single element at SVG root, spans sparkline + tape (spec §6.5) */}
-        {isToday && (
-          <line
-            data-cl-fleet-risk-now-line
-            x1={nowX}
-            x2={nowX}
-            y1={0}
-            y2={VIEW_H - AXIS_H}
-            stroke={ACCENT}
-            strokeWidth={1.5}
-            strokeOpacity={0.7}
-            style={{ filter: `drop-shadow(0 0 3px ${ACCENT})` }}
-          />
-        )}
+        <line
+          data-cl-fleet-risk-now-line
+          x1={nowX}
+          x2={nowX}
+          y1={0}
+          y2={VIEW_H - AXIS_H}
+          stroke={ACCENT}
+          strokeWidth={1.5}
+          strokeOpacity={0.7}
+          style={{ filter: `drop-shadow(0 0 3px ${ACCENT})` }}
+        />
 
         {/* Hover tooltip — foreignObject + HTML body so the text can
             auto-size, wrap, and pad without clipping at SVG coords. X is

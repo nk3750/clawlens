@@ -84,15 +84,12 @@ function mockApis(activity: FleetActivityResponse, index: FleetRiskIndexResponse
   });
 }
 
-function renderTile(
-  opts: {
-    range?: "1h" | "3h" | "6h" | "12h" | "24h" | "48h" | "7d";
-    selectedDate?: string | null;
-  } = {},
-) {
+// FleetRiskTile is pinned to range=24h and today regardless of chart state (#22),
+// so the helper takes no opts — no range / selectedDate to thread through.
+function renderTile() {
   return render(
     <MemoryRouter>
-      <FleetRiskTile range={opts.range ?? "24h"} selectedDate={opts.selectedDate ?? null} />
+      <FleetRiskTile />
     </MemoryRouter>,
   );
 }
@@ -402,10 +399,10 @@ describe("FleetRiskTile sparkline — empty state", () => {
       highCount: 0,
       totalElevated: 0,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     expect(container.querySelector("[data-cl-fleet-risk-now-dot]")).toBeNull();
   });
-  it("includes the rangeLabel in the empty-state text", () => {
+  it("hardcodes '24h' in the empty-state text (tile is pinned to a 24h window, #22)", () => {
     mockApis(fleetActivity([]), {
       current: 0,
       baselineP50: 0,
@@ -414,9 +411,9 @@ describe("FleetRiskTile sparkline — empty state", () => {
       highCount: 0,
       totalElevated: 0,
     });
-    const { container } = renderTile({ range: "7d" });
+    const { container } = renderTile();
     const empty = container.querySelector("[data-cl-fleet-risk-empty]");
-    expect(empty?.textContent?.toLowerCase()).toContain("7d");
+    expect(empty?.textContent?.toLowerCase()).toContain("24h");
   });
 });
 
@@ -434,22 +431,10 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 1,
       totalElevated: 1,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector("[data-cl-fleet-risk-now-dot]");
     expect(dot).not.toBeNull();
     expect(dot?.tagName.toLowerCase()).toBe("circle");
-  });
-  it("does NOT render the NOW dot on past-day views", () => {
-    mockApis(fleetActivity([mkEntry({ riskTier: "high", riskScore: 60 })]), {
-      current: 60,
-      baselineP50: 40,
-      delta: 20,
-      critCount: 0,
-      highCount: 1,
-      totalElevated: 1,
-    });
-    const { container } = renderTile({ selectedDate: "2026-04-01" });
-    expect(container.querySelector("[data-cl-fleet-risk-now-dot]")).toBeNull();
   });
   it("colors NOW dot red when the last bucket has any critical entries", () => {
     mockApis(fleetActivity([mkEntry({ riskTier: "critical", riskScore: 90 })]), {
@@ -460,7 +445,7 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 0,
       totalElevated: 1,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-critical/);
   });
@@ -474,7 +459,7 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 1,
       totalElevated: 1,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-high/);
     expect(dot?.getAttribute("fill")).not.toMatch(/cl-risk-medium/);
@@ -488,7 +473,7 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 0,
       totalElevated: 0,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-medium/);
   });
@@ -501,7 +486,7 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 0,
       totalElevated: 0,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("fill")).toMatch(/cl-risk-low/);
   });
@@ -517,7 +502,7 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 0,
       totalElevated: 1,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("cy")).toBe("80");
   });
@@ -530,7 +515,7 @@ describe("FleetRiskTile sparkline — NOW dot (top-of-stack, worst-present-tier)
       highCount: 1,
       totalElevated: 1,
     });
-    const { container } = renderTile({ selectedDate: null });
+    const { container } = renderTile();
     const dot = container.querySelector<SVGCircleElement>("[data-cl-fleet-risk-now-dot]");
     expect(dot?.getAttribute("stroke")).toMatch(/cl-bg/);
     expect(dot?.getAttribute("stroke-width")).toBe("2");
@@ -551,7 +536,7 @@ describe("FleetRiskTile sparkline — per-bucket hover tooltip", () => {
       highCount: 1,
       totalElevated: 1,
     });
-    const { container } = renderTile({ range: "24h" });
+    const { container } = renderTile();
     const rects = container.querySelectorAll("[data-cl-fleet-risk-bucket-hover]");
     expect(rects.length).toBe(24);
   });
