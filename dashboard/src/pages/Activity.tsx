@@ -33,6 +33,16 @@ const NEW_FLASH_MS = 1800;
 const DEFAULT_SINCE = "24h";
 
 /**
+ * Tabbable elements inside the drawer. Excludes `:disabled` buttons/inputs
+ * because browsers refuse focus on disabled elements — including them in
+ * the focus-trap's first/last selection makes the trap's `active === last`
+ * comparison unreachable on real Tab presses, so wrap-around silently
+ * breaks. Exported for the focus-trap test to mirror the predicate exactly.
+ */
+export const TABBABLE_SELECTOR =
+  'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+/**
  * Build the API query string for the displayed feed. URL `tier` translates
  * to API `riskTier`; everything else passes through. Unknown tier values
  * (e.g., `?tier=banana`) are dropped from the API call (`tierToRiskTier`
@@ -114,16 +124,12 @@ export default function Activity() {
     const drawerEl = drawerRef.current;
     if (!drawerEl) return;
     // Focus the first focusable on open so screen readers announce inside.
-    const focusables = drawerEl.querySelectorAll<HTMLElement>(
-      'button, [href], input, [tabindex]:not([tabindex="-1"])',
-    );
+    const focusables = drawerEl.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR);
     if (focusables.length > 0) focusables[0].focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
-      const els = drawerEl.querySelectorAll<HTMLElement>(
-        'button, [href], input, [tabindex]:not([tabindex="-1"])',
-      );
+      const els = drawerEl.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR);
       if (els.length === 0) return;
       const first = els[0];
       const last = els[els.length - 1];

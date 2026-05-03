@@ -71,7 +71,7 @@ function installViewport(width: number): void {
 }
 
 import type { ActivityCategory, EntryResponse } from "../dashboard/src/lib/types";
-import Activity from "../dashboard/src/pages/Activity";
+import Activity, { TABBABLE_SELECTOR } from "../dashboard/src/pages/Activity";
 
 const SAMPLE_ENTRIES: EntryResponse[] = [
   {
@@ -382,9 +382,7 @@ describe("Activity — drawer focus trap", () => {
     fireEvent.click(await screen.findByTestId("activity-drawer-toggle"));
     const drawer = await screen.findByTestId("activity-drawer");
 
-    const focusables = drawer.querySelectorAll<HTMLElement>(
-      'button, [href], input, [tabindex]:not([tabindex="-1"])',
-    );
+    const focusables = drawer.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR);
     expect(focusables.length).toBeGreaterThan(1);
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
@@ -397,5 +395,43 @@ describe("Activity — drawer focus trap", () => {
     first.focus();
     fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(last);
+  });
+
+  it("Tab from last enabled focusable wraps to first when disabled rows trail (Phase 2.9 regression)", async () => {
+    // FilterRail renders disabled buttons for filter rows whose count would
+    // be 0 under the active filters. Pre-fix, the focus-trap selector
+    // included disabled buttons as the trailing tabbable, but `last.focus()`
+    // is a no-op on a disabled element — so the trap's `active === last`
+    // check could never become true on real Tab presses, and Tab from the
+    // actual last enabled button never wrapped to first.
+    installViewport(1023);
+    renderActivity();
+    fireEvent.click(await screen.findByTestId("activity-drawer-toggle"));
+    const drawer = await screen.findByTestId("activity-drawer");
+
+    // Sanity: confirm the regression scenario is reproduced — under the
+    // sample data, the OLD naive selector picks a disabled button as last.
+    const naiveCandidates = drawer.querySelectorAll<HTMLElement>(
+      'button, [href], input, [tabindex]:not([tabindex="-1"])',
+    );
+    const trailingNaive = naiveCandidates[naiveCandidates.length - 1] as HTMLButtonElement;
+    expect(trailingNaive.tagName).toBe("BUTTON");
+    expect(trailingNaive.disabled).toBe(true);
+
+    // Production-aligned selector: skip :disabled buttons/inputs.
+    const focusables = drawer.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR);
+    expect(focusables.length).toBeGreaterThan(1);
+    const first = focusables[0];
+    const lastEnabled = focusables[focusables.length - 1];
+
+    // Last enabled MUST be different from the trailing disabled button —
+    // otherwise the regression scenario isn't actually being exercised.
+    expect(lastEnabled).not.toBe(trailingNaive);
+    expect((lastEnabled as HTMLButtonElement).disabled).not.toBe(true);
+
+    lastEnabled.focus();
+    expect(document.activeElement).toBe(lastEnabled);
+    fireEvent.keyDown(lastEnabled, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
   });
 });
