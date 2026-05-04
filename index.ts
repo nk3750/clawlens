@@ -227,7 +227,7 @@ const plugin: OpenClawPluginDefinition = {
 
       registerDashboardRoutes(api, {
         auditLogger: auditLogger as AuditLogger,
-        pluginDir: import.meta.dirname,
+        pluginDir: path.join(import.meta.dirname, ".."),
         config,
         modelAuth: runtime?.modelAuth,
         provider,
