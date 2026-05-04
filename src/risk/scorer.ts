@@ -1,5 +1,5 @@
-import { EXEC_BASE_SCORES, type ParsedExecCommand, parseExecCommand } from "./exec-parser";
-import type { RiskScore, RiskTier } from "./types";
+import { EXEC_BASE_SCORES, type ParsedExecCommand, parseExecCommand } from "./exec-parser.js";
+import type { RiskScore, RiskTier } from "./types.js";
 
 // Base risk scores by tool type (non-exec). Tool names mirror what
 // pi-coding-agent registers — read/find/grep/ls — see issue #47. The dead

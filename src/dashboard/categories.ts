@@ -6,9 +6,9 @@
  */
 
 import * as nodePath from "node:path";
-import type { Action, Selector, Target } from "../guardrails/types";
-import { parseExecCommand } from "../risk/exec-parser";
-import { parseSessionKey } from "./channel-catalog";
+import type { Action, Selector, Target } from "../guardrails/types.js";
+import { parseExecCommand } from "../risk/exec-parser.js";
+import { parseSessionKey } from "./channel-catalog.js";
 
 // ── Activity categories ──────────────────────────────────
 

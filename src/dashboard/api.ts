@@ -1,12 +1,12 @@
-import { type LlmHealthSnapshot, llmHealthTracker } from "../audit/llm-health";
-import type { AuditEntry } from "../audit/logger";
-import { AuditLogger } from "../audit/logger";
-import { extractIdentityKey } from "../guardrails/identity";
-import type { GuardrailStore } from "../guardrails/store";
-import type { Action } from "../guardrails/types";
-import { parseExecCommand } from "../risk/exec-parser";
-import type { AttentionStore } from "./attention-state";
-import { deriveScheduleLabel, extractCronRunStarts } from "./cadence";
+import { type LlmHealthSnapshot, llmHealthTracker } from "../audit/llm-health.js";
+import type { AuditEntry } from "../audit/logger.js";
+import { AuditLogger } from "../audit/logger.js";
+import { extractIdentityKey } from "../guardrails/identity.js";
+import type { GuardrailStore } from "../guardrails/store.js";
+import type { Action } from "../guardrails/types.js";
+import { parseExecCommand } from "../risk/exec-parser.js";
+import type { AttentionStore } from "./attention-state.js";
+import { deriveScheduleLabel, extractCronRunStarts } from "./cadence.js";
 import {
   type ActivityCategory,
   computeBreakdown,
@@ -16,7 +16,7 @@ import {
   parseSessionContext,
   type RiskPosture,
   riskPosture,
-} from "./categories";
+} from "./categories.js";
 
 /** Fallback agent ID when audit entries have no agentId. */
 export const DEFAULT_AGENT_ID = "default";
@@ -294,7 +294,7 @@ export interface SessionDetailResponse {
 // Re-export saved-search shapes so frontend code (which imports from a single
 // "lib/types"-style barrel) and route code (which imports from "../risk/...")
 // stay in lockstep without each end of the wire learning a different name.
-export type { SavedSearch, SavedSearchFilters } from "../risk/saved-searches-store";
+export type { SavedSearch, SavedSearchFilters } from "../risk/saved-searches-store.js";
 
 // ── Internal helpers ────────────────────────────────────
 

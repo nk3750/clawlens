@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
 import type { ServerResponse } from "node:http";
 import * as path from "node:path";
-import type { AuditEntry, AuditLogger } from "../audit/logger";
-import type { ClawLensConfig } from "../config";
-import { GuardrailStore } from "../guardrails/store";
+import type { AuditEntry, AuditLogger } from "../audit/logger.js";
+import type { ClawLensConfig } from "../config.js";
+import { GuardrailStore } from "../guardrails/store.js";
 import {
   type Action,
   type Guardrail,
@@ -12,10 +12,10 @@ import {
   isValidTarget,
   type NewGuardrail,
   type Selector,
-} from "../guardrails/types";
-import type { PendingApprovalStore } from "../hooks/pending-approval-store";
-import type { SavedSearchesStore, SavedSearchFilters } from "../risk/saved-searches-store";
-import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
+} from "../guardrails/types.js";
+import type { PendingApprovalStore } from "../hooks/pending-approval-store.js";
+import type { SavedSearchesStore, SavedSearchFilters } from "../risk/saved-searches-store.js";
+import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types.js";
 import {
   buildEvalIndex,
   checkHealth,
@@ -37,11 +37,11 @@ import {
   localToday,
   mapEntry,
   resolveSplitKeyForEntry,
-} from "./api";
-import { type AckScope, AttentionStore, isValidAckScope } from "./attention-state";
-import { type ActivityCategory, describeRule, KNOWN_TOOL_NAMES } from "./categories";
-import { getDashboardHtml } from "./html";
-import { getSessionSummary } from "./session-summary";
+} from "./api.js";
+import { type AckScope, AttentionStore, isValidAckScope } from "./attention-state.js";
+import { type ActivityCategory, describeRule, KNOWN_TOOL_NAMES } from "./categories.js";
+import { getDashboardHtml } from "./html.js";
+import { getSessionSummary } from "./session-summary.js";
 
 export interface DashboardDeps {
   auditLogger: AuditLogger;

@@ -1,5 +1,5 @@
-import type { AuditLogger } from "../audit/logger";
-import type { PluginLogger, SessionEvent } from "../types";
+import type { AuditLogger } from "../audit/logger.js";
+import type { PluginLogger, SessionEvent } from "../types.js";
 
 export function createSessionStartHandler(auditLogger: AuditLogger, logger: PluginLogger) {
   return async (_event: SessionEvent, _ctx: unknown): Promise<void> => {

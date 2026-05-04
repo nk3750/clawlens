@@ -1,16 +1,16 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { llmHealthTracker } from "../audit/llm-health";
-import type { AuditEntry } from "../audit/logger";
+import { llmHealthTracker } from "../audit/llm-health.js";
+import type { AuditEntry } from "../audit/logger.js";
 import {
   callLlmApi,
   collectEmbeddedText,
   DEFAULT_EVAL_MODELS,
   PROVIDER_ENDPOINTS,
-} from "../risk/llm-evaluator";
-import type { EmbeddedAgentRuntime, ModelAuth } from "../types";
-import { describeAction } from "./categories";
+} from "../risk/llm-evaluator.js";
+import type { EmbeddedAgentRuntime, ModelAuth } from "../types.js";
+import { describeAction } from "./categories.js";
 
 /** Build index of eval entries keyed by the toolCallId they reference. */
 function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {

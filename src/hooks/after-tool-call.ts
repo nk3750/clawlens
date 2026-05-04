@@ -1,5 +1,5 @@
-import type { AuditLogger } from "../audit/logger";
-import type { AfterToolCallEvent } from "../types";
+import type { AuditLogger } from "../audit/logger.js";
+import type { AfterToolCallEvent } from "../types.js";
 
 export function createAfterToolCallHandler(auditLogger: AuditLogger) {
   return (event: AfterToolCallEvent, ctx: Record<string, unknown>): void => {

@@ -4,7 +4,7 @@
  * and frontend (fleet-chart labels via `dashboard/src/lib/utils.ts`).
  */
 
-import type { AuditEntry } from "../audit/logger";
+import type { AuditEntry } from "../audit/logger.js";
 
 const SEC = 1000;
 const MIN = 60 * SEC;

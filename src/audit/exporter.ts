@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./logger";
+import type { AuditEntry } from "./logger.js";
 
 export function exportToJSON(entries: AuditEntry[], since?: string): string {
   const filtered = filterBySince(entries, since);

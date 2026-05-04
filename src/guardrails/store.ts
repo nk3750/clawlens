@@ -2,14 +2,14 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { minimatch } from "minimatch";
-import { getCategory } from "../dashboard/categories";
-import { parseExecCommand } from "../risk/exec-parser";
+import { getCategory } from "../dashboard/categories.js";
+import { parseExecCommand } from "../risk/exec-parser.js";
 import {
   extractCommandForGuardrail,
   extractIdentityKey,
   extractPathsForGuardrail,
   extractUrlsForGuardrail,
-} from "./identity";
+} from "./identity.js";
 import {
   type Guardrail,
   type GuardrailFile,
@@ -17,7 +17,7 @@ import {
   type NewGuardrail,
   type Selector,
   type Target,
-} from "./types";
+} from "./types.js";
 
 // ── Glob predicates ─────────────────────────────────────────
 // A literal pattern (no glob metacharacters) is a per-rule fast-path

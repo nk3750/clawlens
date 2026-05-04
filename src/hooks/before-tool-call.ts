@@ -3,25 +3,25 @@ import {
   formatGuardrailNotifyAlert,
   sendAlert,
   shouldAlert,
-} from "../alerts/telegram";
-import type { AuditLogger } from "../audit/logger";
-import type { ClawLensConfig } from "../config";
-import { formatTargetSummary } from "../dashboard/categories";
-import { extractIdentityKey } from "../guardrails/identity";
-import type { GuardrailStore } from "../guardrails/store";
-import type { Guardrail } from "../guardrails/types";
-import type { EvalCache } from "../risk/eval-cache";
-import { evaluateWithLlm } from "../risk/llm-evaluator";
-import { computeRiskScore } from "../risk/scorer";
-import type { SessionContext } from "../risk/session-context";
-import type { RiskScore } from "../risk/types";
+} from "../alerts/telegram.js";
+import type { AuditLogger } from "../audit/logger.js";
+import type { ClawLensConfig } from "../config.js";
+import { formatTargetSummary } from "../dashboard/categories.js";
+import { extractIdentityKey } from "../guardrails/identity.js";
+import type { GuardrailStore } from "../guardrails/store.js";
+import type { Guardrail } from "../guardrails/types.js";
+import type { EvalCache } from "../risk/eval-cache.js";
+import { evaluateWithLlm } from "../risk/llm-evaluator.js";
+import { computeRiskScore } from "../risk/scorer.js";
+import type { SessionContext } from "../risk/session-context.js";
+import type { RiskScore } from "../risk/types.js";
 import type {
   BeforeToolCallEvent,
   BeforeToolCallResult,
   EmbeddedAgentRuntime,
   ModelAuth,
-} from "../types";
-import type { PendingApprovalStore } from "./pending-approval-store";
+} from "../types.js";
+import type { PendingApprovalStore } from "./pending-approval-store.js";
 
 export interface BeforeToolCallDeps {
   auditLogger: AuditLogger;
@@ -30,7 +30,7 @@ export interface BeforeToolCallDeps {
   guardrailStore?: GuardrailStore;
   evalCache?: EvalCache;
   alertSend?: (msg: string) => Promise<void> | void;
-  logger?: import("../types").PluginLogger;
+  logger?: import("../types.js").PluginLogger;
   runtime?: {
     agent?: EmbeddedAgentRuntime;
     modelAuth?: ModelAuth;

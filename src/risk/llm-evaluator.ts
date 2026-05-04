@@ -1,10 +1,10 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { llmHealthTracker } from "../audit/llm-health";
-import type { EmbeddedAgentRuntime, ModelAuth, PluginLogger } from "../types";
-import type { SessionAction } from "./session-context";
-import type { LlmRiskEvaluation, RiskScore } from "./types";
+import { llmHealthTracker } from "../audit/llm-health.js";
+import type { EmbeddedAgentRuntime, ModelAuth, PluginLogger } from "../types.js";
+import type { SessionAction } from "./session-context.js";
+import type { LlmRiskEvaluation, RiskScore } from "./types.js";
 
 export const EVAL_SYSTEM_PROMPT = `You are a security analyst evaluating an AI agent's tool call for risk.
 

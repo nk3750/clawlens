@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./logger";
+import type { AuditEntry } from "./logger.js";
 
 /**
  * Classify an entry for dedupe purposes. Separate kinds keep a decision

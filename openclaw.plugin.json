@@ -3,6 +3,8 @@
   "name": "ClawLens",
   "description": "Agent observatory and governance for OpenClaw — see everything your agents do, understand risk, enforce when ready",
   "version": "0.2.0",
+  "activation": { "onStartup": true },
+  "enabledByDefault": true,
   "configSchema": {
     "type": "object",
     "properties": {

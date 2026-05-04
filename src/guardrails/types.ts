@@ -1,4 +1,4 @@
-import { type ActivityCategory, ALL_CATEGORIES } from "../dashboard/categories";
+import { type ActivityCategory, ALL_CATEGORIES } from "../dashboard/categories.js";
 
 // ── Selector ────────────────────────────────────────────────
 
