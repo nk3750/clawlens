@@ -26,6 +26,9 @@ venv/
 # Orchestrator scratch (design bundles, render probes) — never commit
 .scratch/
 
+# Brainstorming visual companion — session mockups
+.superpowers/
+
 # Playwright MCP per-session snapshots + ad-hoc screenshots from review walks
 .playwright-mcp/
 *-review.png
