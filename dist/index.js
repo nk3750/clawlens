@@ -1,19 +1,19 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { exportToCSV, exportToJSON } from "./src/audit/exporter";
-import { AuditLogger } from "./src/audit/logger";
-import { resolveConfig } from "./src/config";
-import { AttentionStore } from "./src/dashboard/attention-state";
-import { registerDashboardRoutes } from "./src/dashboard/routes";
-import { GuardrailStore } from "./src/guardrails/store";
-import { createAfterToolCallHandler } from "./src/hooks/after-tool-call";
-import { createBeforeToolCallHandler } from "./src/hooks/before-tool-call";
-import { PendingApprovalStore } from "./src/hooks/pending-approval-store";
-import { createSessionEndHandler } from "./src/hooks/session-end";
-import { createSessionStartHandler } from "./src/hooks/session-start";
-import { EvalCache } from "./src/risk/eval-cache";
-import { SavedSearchesStore } from "./src/risk/saved-searches-store";
-import { SessionContext } from "./src/risk/session-context";
+import { exportToCSV, exportToJSON } from "./src/audit/exporter.js";
+import { AuditLogger } from "./src/audit/logger.js";
+import { resolveConfig } from "./src/config.js";
+import { AttentionStore } from "./src/dashboard/attention-state.js";
+import { registerDashboardRoutes } from "./src/dashboard/routes.js";
+import { GuardrailStore } from "./src/guardrails/store.js";
+import { createAfterToolCallHandler } from "./src/hooks/after-tool-call.js";
+import { createBeforeToolCallHandler, } from "./src/hooks/before-tool-call.js";
+import { PendingApprovalStore } from "./src/hooks/pending-approval-store.js";
+import { createSessionEndHandler } from "./src/hooks/session-end.js";
+import { createSessionStartHandler } from "./src/hooks/session-start.js";
+import { EvalCache } from "./src/risk/eval-cache.js";
+import { SavedSearchesStore } from "./src/risk/saved-searches-store.js";
+import { SessionContext } from "./src/risk/session-context.js";
 // ── Module-level state ──────────────────────────────────────────────────────
 // Components + handler created once. Hooks registered per unique api object
 // (gateway dispatches tool calls through different api contexts).
@@ -182,7 +182,15 @@ const plugin = {
             });
             registerDashboardRoutes(api, {
                 auditLogger: auditLogger,
-                pluginDir: __dirname,
+                // Compiled-from-dist (tarball install) puts this file in <root>/dist/, so we
+                // need to walk up one. Source-loaded mode (the OpenClaw loader reads the
+                // .ts directly per installs.json) already lands at <root>; walking up
+                // overshoots into the parent directory and the SPA static block in
+                // routes.ts falls through to the v1 placeholder. Pick by checking the
+                // basename so both modes resolve the same package root.
+                pluginDir: path.basename(import.meta.dirname) === "dist"
+                    ? path.join(import.meta.dirname, "..")
+                    : import.meta.dirname,
                 config,
                 modelAuth: runtime?.modelAuth,
                 provider,

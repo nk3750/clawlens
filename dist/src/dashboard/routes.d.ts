@@ -1,10 +1,10 @@
-import type { AuditLogger } from "../audit/logger";
-import type { ClawLensConfig } from "../config";
-import { GuardrailStore } from "../guardrails/store";
-import type { PendingApprovalStore } from "../hooks/pending-approval-store";
-import type { SavedSearchesStore } from "../risk/saved-searches-store";
-import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types";
-import { AttentionStore } from "./attention-state";
+import type { AuditLogger } from "../audit/logger.js";
+import type { ClawLensConfig } from "../config.js";
+import { GuardrailStore } from "../guardrails/store.js";
+import type { PendingApprovalStore } from "../hooks/pending-approval-store.js";
+import type { SavedSearchesStore } from "../risk/saved-searches-store.js";
+import type { EmbeddedAgentRuntime, ModelAuth, OpenClawPluginApi } from "../types.js";
+import { AttentionStore } from "./attention-state.js";
 export interface DashboardDeps {
     auditLogger: AuditLogger;
     pluginDir?: string;

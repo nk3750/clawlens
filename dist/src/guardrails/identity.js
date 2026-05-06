@@ -6,8 +6,8 @@
  * exact match guaranteed.
  */
 import * as nodePath from "node:path";
-import { extractAllPatchPaths } from "../dashboard/categories";
-import { parseExecCommand } from "../risk/exec-parser";
+import { extractAllPatchPaths } from "../dashboard/categories.js";
+import { parseExecCommand } from "../risk/exec-parser.js";
 export function extractIdentityKey(toolName, params) {
     switch (toolName) {
         case "exec":

@@ -1,4 +1,4 @@
-import { type Guardrail, type NewGuardrail } from "./types";
+import { type Guardrail, type NewGuardrail } from "./types.js";
 export declare class GuardrailStore {
     private rules;
     private filePath;

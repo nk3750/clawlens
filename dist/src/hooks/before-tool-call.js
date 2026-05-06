@@ -1,8 +1,8 @@
-import { formatAlert, formatGuardrailNotifyAlert, sendAlert, shouldAlert, } from "../alerts/telegram";
-import { formatTargetSummary } from "../dashboard/categories";
-import { extractIdentityKey } from "../guardrails/identity";
-import { evaluateWithLlm } from "../risk/llm-evaluator";
-import { computeRiskScore } from "../risk/scorer";
+import { formatAlert, formatGuardrailNotifyAlert, sendAlert, shouldAlert, } from "../alerts/telegram.js";
+import { formatTargetSummary } from "../dashboard/categories.js";
+import { extractIdentityKey } from "../guardrails/identity.js";
+import { evaluateWithLlm } from "../risk/llm-evaluator.js";
+import { computeRiskScore } from "../risk/scorer.js";
 export function createBeforeToolCallHandler(deps) {
     const { auditLogger, config, sessionContext, evalCache, alertSend, guardrailStore } = deps;
     return async (event, ctx) => {

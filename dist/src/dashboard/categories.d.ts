@@ -4,7 +4,7 @@
  *
  * Used by api.ts (agents, sessions, entries, stats) and routes.ts (SSE).
  */
-import type { Action, Selector, Target } from "../guardrails/types";
+import type { Action, Selector, Target } from "../guardrails/types.js";
 /**
  * Pure "domain of work" buckets. Risk severity lives on a separate axis
  * (see RiskMixMicrobar on the agent card) — nothing here encodes risk.

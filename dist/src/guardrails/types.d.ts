@@ -1,4 +1,4 @@
-import { type ActivityCategory } from "../dashboard/categories";
+import { type ActivityCategory } from "../dashboard/categories.js";
 export type AgentSelector = string | null;
 export type ToolSelector = {
     mode: "names";

@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./logger";
+import type { AuditEntry } from "./logger.js";
 /**
  * Drop duplicate audit entries in place (preserving input order).
  *

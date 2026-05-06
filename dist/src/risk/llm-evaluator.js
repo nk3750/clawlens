@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { llmHealthTracker } from "../audit/llm-health";
+import { llmHealthTracker } from "../audit/llm-health.js";
 export const EVAL_SYSTEM_PROMPT = `You are a security analyst evaluating an AI agent's tool call for risk.
 
 Evaluate:

@@ -1,4 +1,4 @@
-import { generateDigest } from "../audit/digest";
+import { generateDigest } from "../audit/digest.js";
 export function createSessionEndHandler(auditLogger, config, logger, sessionContext) {
     return async (event, _ctx) => {
         // Clean up session context

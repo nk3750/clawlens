@@ -1,4 +1,4 @@
-import { EXEC_BASE_SCORES, parseExecCommand } from "./exec-parser";
+import { EXEC_BASE_SCORES, parseExecCommand } from "./exec-parser.js";
 // Base risk scores by tool type (non-exec). Tool names mirror what
 // pi-coding-agent registers — read/find/grep/ls — see issue #47. The dead
 // `glob` entry was dropped because OpenClaw never renamed the tool.

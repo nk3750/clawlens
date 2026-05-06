@@ -3,7 +3,7 @@
  * session starts. Shared between backend (populates `AgentInfo.schedule`)
  * and frontend (fleet-chart labels via `dashboard/src/lib/utils.ts`).
  */
-import type { AuditEntry } from "../audit/logger";
+import type { AuditEntry } from "../audit/logger.js";
 /**
  * Extract one timestamp per cron *run* from a set of audit entries.
  *

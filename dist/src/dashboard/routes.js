@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { GuardrailStore } from "../guardrails/store";
-import { isValidAction, isValidSelector, isValidTarget, } from "../guardrails/types";
-import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, deriveAttentionFlags, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, isDecisionEntry, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api";
-import { AttentionStore, isValidAckScope } from "./attention-state";
-import { describeRule, KNOWN_TOOL_NAMES } from "./categories";
-import { getDashboardHtml } from "./html";
-import { getSessionSummary } from "./session-summary";
+import { GuardrailStore } from "../guardrails/store.js";
+import { isValidAction, isValidSelector, isValidTarget, } from "../guardrails/types.js";
+import { buildEvalIndex, checkHealth, computeEnhancedStats, computeFleetRiskIndex, deriveAttentionFlags, getActivityTimeline, getAgentDetail, getAgents, getAttention, getFleetActivity, getInterventions, getRecentEntries, getSessionDetail, getSessions, isDecisionEntry, localDateOf, localToday, mapEntry, resolveSplitKeyForEntry, } from "./api.js";
+import { AttentionStore, isValidAckScope } from "./attention-state.js";
+import { describeRule, KNOWN_TOOL_NAMES } from "./categories.js";
+import { getDashboardHtml } from "./html.js";
+import { getSessionSummary } from "./session-summary.js";
 const MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",

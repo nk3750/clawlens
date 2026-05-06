@@ -2,7 +2,7 @@ import * as crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { dedupeAuditEntries } from "./reader";
+import { dedupeAuditEntries } from "./reader.js";
 /** Window for detecting near-simultaneous double-writes of the same entry kind. */
 const DOUBLE_WRITE_WINDOW_MS = 100;
 export class AuditLogger extends EventEmitter {

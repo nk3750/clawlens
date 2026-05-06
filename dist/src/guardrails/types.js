@@ -1,4 +1,4 @@
-import { ALL_CATEGORIES } from "../dashboard/categories";
+import { ALL_CATEGORIES } from "../dashboard/categories.js";
 // ── Validators ──────────────────────────────────────────────
 // Exhaustive shape checks. Every union variant gets a switch case so that
 // adding a new variant (e.g. a fourth target kind) forces a corresponding

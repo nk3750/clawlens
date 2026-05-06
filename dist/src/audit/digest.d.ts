@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./logger";
+import type { AuditEntry } from "./logger.js";
 /**
  * Generate a narrative daily digest from audit log entries.
  * Now includes per-agent risk summaries and high-risk call highlights.

@@ -1,9 +1,9 @@
-import { llmHealthTracker } from "../audit/llm-health";
-import { AuditLogger } from "../audit/logger";
-import { extractIdentityKey } from "../guardrails/identity";
-import { parseExecCommand } from "../risk/exec-parser";
-import { deriveScheduleLabel, extractCronRunStarts } from "./cadence";
-import { computeBreakdown, describeAction, getCategory, getCategoryFromEntry, parseSessionContext, riskPosture, } from "./categories";
+import { llmHealthTracker } from "../audit/llm-health.js";
+import { AuditLogger } from "../audit/logger.js";
+import { extractIdentityKey } from "../guardrails/identity.js";
+import { parseExecCommand } from "../risk/exec-parser.js";
+import { deriveScheduleLabel, extractCronRunStarts } from "./cadence.js";
+import { computeBreakdown, describeAction, getCategory, getCategoryFromEntry, parseSessionContext, riskPosture, } from "./categories.js";
 /** Fallback agent ID when audit entries have no agentId. */
 export const DEFAULT_AGENT_ID = "default";
 // ── Internal helpers ────────────────────────────────────

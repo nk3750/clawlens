@@ -1,5 +1,5 @@
-import type { Guardrail } from "../guardrails/types";
-import type { AlertConfig, RiskScore } from "../risk/types";
+import type { Guardrail } from "../guardrails/types.js";
+import type { AlertConfig, RiskScore } from "../risk/types.js";
 /**
  * Check whether an alert should fire for the given score and config.
  * Respects quiet hours (evaluated against local system time).

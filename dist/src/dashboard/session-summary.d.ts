@@ -1,5 +1,5 @@
-import type { AuditEntry } from "../audit/logger";
-import type { EmbeddedAgentRuntime, ModelAuth } from "../types";
+import type { AuditEntry } from "../audit/logger.js";
+import type { EmbeddedAgentRuntime, ModelAuth } from "../types.js";
 export interface SessionSummary {
     sessionKey: string;
     summary: string;

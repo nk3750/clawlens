@@ -5,8 +5,8 @@
  * Used by api.ts (agents, sessions, entries, stats) and routes.ts (SSE).
  */
 import * as nodePath from "node:path";
-import { parseExecCommand } from "../risk/exec-parser";
-import { parseSessionKey } from "./channel-catalog";
+import { parseExecCommand } from "../risk/exec-parser.js";
+import { parseSessionKey } from "./channel-catalog.js";
 const TOOL_TO_CATEGORY = {
     // exploring — file/state reads only (session reads moved to orchestration).
     // Tool names mirror what pi-coding-agent registers: read/find/grep/ls. The

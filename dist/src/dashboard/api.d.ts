@@ -1,9 +1,9 @@
-import { type LlmHealthSnapshot } from "../audit/llm-health";
-import type { AuditEntry } from "../audit/logger";
-import type { GuardrailStore } from "../guardrails/store";
-import type { Action } from "../guardrails/types";
-import type { AttentionStore } from "./attention-state";
-import { type ActivityCategory, type RiskPosture } from "./categories";
+import { type LlmHealthSnapshot } from "../audit/llm-health.js";
+import type { AuditEntry } from "../audit/logger.js";
+import type { GuardrailStore } from "../guardrails/store.js";
+import type { Action } from "../guardrails/types.js";
+import type { AttentionStore } from "./attention-state.js";
+import { type ActivityCategory, type RiskPosture } from "./categories.js";
 /** Fallback agent ID when audit entries have no agentId. */
 export declare const DEFAULT_AGENT_ID = "default";
 export interface StatsResponse {
@@ -262,7 +262,7 @@ export interface SessionDetailResponse {
     session: SessionInfo;
     entries: EntryResponse[];
 }
-export type { SavedSearch, SavedSearchFilters } from "../risk/saved-searches-store";
+export type { SavedSearch, SavedSearchFilters } from "../risk/saved-searches-store.js";
 /** Today's date in local time as YYYY-MM-DD. */
 export declare function localToday(): string;
 /** Extract the local-date portion (YYYY-MM-DD) of a UTC ISO timestamp. */
