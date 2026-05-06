@@ -21,19 +21,20 @@ import RangePillGroup from "../fleetheader/RangePillGroup";
 import type { RangeOption } from "../fleetheader/utils";
 import SwarmPopover from "./SwarmPopover";
 import {
-  CLUSTER_PX,
   LANE_ORDER,
   type SwarmCluster,
   type SwarmDot,
   buildDayTicks,
   buildHourTicks,
   clusterDots,
+  clusterPxForRange,
   cullLabelsForWidth,
   haloRadiusOffset,
   jitterForKey,
   laneHeight,
   laneYForCategory,
   makeTimeToX,
+  maxClusterTimeMsForRange,
 } from "./utils";
 import "./FleetActivityChart.css";
 
@@ -227,6 +228,8 @@ export default function FleetActivityChart({
   );
 
   const clustersByLane = useMemo(() => {
+    const pxThreshold = clusterPxForRange(range);
+    const timeMsThreshold = maxClusterTimeMsForRange(range);
     const perLane = new Map<ActivityCategory, SwarmDot[]>();
     for (const cat of LANE_ORDER) perLane.set(cat, []);
     for (const e of liveEntries) {
@@ -242,10 +245,10 @@ export default function FleetActivityChart({
     }
     const result = new Map<ActivityCategory, SwarmCluster[]>();
     for (const cat of LANE_ORDER) {
-      result.set(cat, clusterDots(perLane.get(cat) ?? [], CLUSTER_PX));
+      result.set(cat, clusterDots(perLane.get(cat) ?? [], pxThreshold, timeMsThreshold));
     }
     return result;
-  }, [liveEntries, timeToX, chartH, laneH]);
+  }, [liveEntries, timeToX, chartH, laneH, range]);
 
   const axisTicks = useMemo(() => {
     if (range === "7d") return buildDayTicks(startMs, endMs);
@@ -598,7 +601,11 @@ export default function FleetActivityChart({
                       y={laneYForCategory(cat, chartH) - laneHeight(chartH) / 2 + 8}
                       textAnchor="middle"
                       className="label-mono"
-                      style={{ fill: "var(--cl-text-muted)", fontSize: 10 }}
+                      style={{
+                        fill: "var(--cl-text-primary)",
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
                     >
                       {`+${c.dots.length}`}
                     </text>

@@ -1,4 +1,5 @@
 import type { ActivityCategory, EntryResponse, RiskTier } from "../../lib/types";
+import type { RangeOption } from "../fleetheader/utils";
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -15,9 +16,42 @@ export const LANE_ORDER: ActivityCategory[] = [
   "media",
 ];
 
-/** Horizontal px threshold for merging adjacent dots within a lane.
- *  Widened to 14 to track the larger (r=8) icon-bearing single-dot shape. */
-export const CLUSTER_PX = 14;
+/** Per-range horizontal pixel threshold for merging adjacent dots within a lane.
+ *  Wider on short ranges (data is naturally sparse, no benefit to over-clustering),
+ *  tighter on long ranges so visible glyph count tracks underlying data density.
+ *  See `docs/product/fleet-chart-density-adaptive-clustering-spec.md`. */
+const CLUSTER_PX_BY_RANGE: Record<RangeOption, number> = {
+  "1h": 14,
+  "3h": 14,
+  "6h": 12,
+  "12h": 10,
+  "24h": 8,
+  "48h": 6,
+  "7d": 5,
+};
+
+/** Per-range maximum time span for a single cluster (ms). Even if dots are
+ *  pixel-adjacent, a cluster must split when the time gap between its first
+ *  and last events exceeds this cap. Prevents temporally distant bursts from
+ *  being merged into one glyph just because data gaps placed them
+ *  pixel-adjacent. */
+const MAX_CLUSTER_TIME_MS_BY_RANGE: Record<RangeOption, number> = {
+  "1h": 2 * 60_000,
+  "3h": 5 * 60_000,
+  "6h": 10 * 60_000,
+  "12h": 30 * 60_000,
+  "24h": 60 * 60_000,
+  "48h": 120 * 60_000,
+  "7d": 240 * 60_000,
+};
+
+export function clusterPxForRange(range: RangeOption): number {
+  return CLUSTER_PX_BY_RANGE[range];
+}
+
+export function maxClusterTimeMsForRange(range: RangeOption): number {
+  return MAX_CLUSTER_TIME_MS_BY_RANGE[range];
+}
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -110,20 +144,42 @@ export function haloRadiusOffset(tier: RiskTier | undefined): number {
 // ── Clustering (per lane) ──────────────────────────────────
 
 /**
- * Merge dots whose cx falls within `threshold` of the previous dot's cx.
- * Operates in a single pass after sorting by cx ascending. Each output
- * cluster's cx is the arithmetic mean of its members' cx; likewise for cy.
+ * Merge dots that satisfy BOTH:
+ *   - pixel proximity: `d.cx - lastInGroup.cx < pxThreshold`, AND
+ *   - cluster temporal span: `d.timestamp - firstInGroup.timestamp <= timeMsThreshold`.
+ *
+ * If either gate fails, close the current group and start a new one. Operates
+ * in a single pass after sorting by cx ascending. Each output cluster's cx is
+ * the arithmetic mean of its members' cx; likewise for cy.
+ *
+ * Time gate uses `first` (earliest dot in the group), not `last`, so the cap
+ * bounds the cluster's TOTAL temporal span. Invalid timestamps return NaN
+ * from `Date.parse`; NaN comparisons are false, so the gate naturally splits
+ * — a safer default than silently merging.
  *
  * Callers must pass dots for a single lane only — different-lane dots are
  * not merged (different cy, different category, different legend row).
  */
-export function clusterDots(dots: SwarmDot[], threshold: number): SwarmCluster[] {
+export function clusterDots(
+  dots: SwarmDot[],
+  pxThreshold: number,
+  timeMsThreshold: number,
+): SwarmCluster[] {
   if (dots.length === 0) return [];
   const sorted = [...dots].sort((a, b) => a.cx - b.cx);
   const out: SwarmCluster[] = [];
   let group: SwarmDot[] = [];
   for (const d of sorted) {
-    if (group.length === 0 || d.cx - group[group.length - 1].cx < threshold) {
+    if (group.length === 0) {
+      group.push(d);
+      continue;
+    }
+    const last = group[group.length - 1];
+    const first = group[0];
+    const pixelOk = d.cx - last.cx < pxThreshold;
+    const timeOk =
+      Date.parse(d.entry.timestamp) - Date.parse(first.entry.timestamp) <= timeMsThreshold;
+    if (pixelOk && timeOk) {
       group.push(d);
     } else {
       out.push(toCluster(group));

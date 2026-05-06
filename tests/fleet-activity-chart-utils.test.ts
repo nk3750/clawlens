@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildDayTicks,
   buildHourTicks,
-  CLUSTER_PX,
   clusterDots,
+  clusterPxForRange,
   cullLabelsForWidth,
   haloRadiusOffset,
   jitterForKey,
@@ -11,10 +11,15 @@ import {
   laneHeight,
   laneYForCategory,
   makeTimeToX,
+  maxClusterTimeMsForRange,
   type SwarmDot,
   worstTier,
 } from "../dashboard/src/components/FleetActivityChart/utils";
+import { RANGE_OPTIONS } from "../dashboard/src/components/fleetheader/utils";
 import type { ActivityCategory, EntryResponse, RiskTier } from "../dashboard/src/lib/types";
+
+const DEFAULT_PX = clusterPxForRange("1h");
+const DEFAULT_TIME_MS = maxClusterTimeMsForRange("7d");
 
 function dot(partial: { cx?: number; cy?: number; entry?: Partial<EntryResponse> } = {}): SwarmDot {
   const entry: EntryResponse = {
@@ -51,9 +56,59 @@ describe("LANE_ORDER", () => {
   });
 });
 
-describe("CLUSTER_PX", () => {
-  it("is 14 (widened to track r=8 icon-bearing single dots)", () => {
-    expect(CLUSTER_PX).toBe(14);
+describe("clusterPxForRange", () => {
+  it("returns a value for every RangeOption (exhaustive coverage)", () => {
+    for (const r of RANGE_OPTIONS) {
+      expect(typeof clusterPxForRange(r)).toBe("number");
+      expect(Number.isFinite(clusterPxForRange(r))).toBe(true);
+    }
+  });
+
+  it("decreases (or stays) as range grows — wider ranges cluster tighter", () => {
+    let last = Number.POSITIVE_INFINITY;
+    for (const r of RANGE_OPTIONS) {
+      const v = clusterPxForRange(r);
+      expect(v).toBeLessThanOrEqual(last);
+      last = v;
+    }
+  });
+
+  it("locks the canonical lookup table values", () => {
+    expect(clusterPxForRange("1h")).toBe(14);
+    expect(clusterPxForRange("3h")).toBe(14);
+    expect(clusterPxForRange("6h")).toBe(12);
+    expect(clusterPxForRange("12h")).toBe(10);
+    expect(clusterPxForRange("24h")).toBe(8);
+    expect(clusterPxForRange("48h")).toBe(6);
+    expect(clusterPxForRange("7d")).toBe(5);
+  });
+});
+
+describe("maxClusterTimeMsForRange", () => {
+  it("returns a value for every RangeOption (exhaustive coverage)", () => {
+    for (const r of RANGE_OPTIONS) {
+      expect(typeof maxClusterTimeMsForRange(r)).toBe("number");
+      expect(Number.isFinite(maxClusterTimeMsForRange(r))).toBe(true);
+    }
+  });
+
+  it("locks the canonical time-span lookup table values (ms)", () => {
+    expect(maxClusterTimeMsForRange("1h")).toBe(2 * 60_000);
+    expect(maxClusterTimeMsForRange("3h")).toBe(5 * 60_000);
+    expect(maxClusterTimeMsForRange("6h")).toBe(10 * 60_000);
+    expect(maxClusterTimeMsForRange("12h")).toBe(30 * 60_000);
+    expect(maxClusterTimeMsForRange("24h")).toBe(60 * 60_000);
+    expect(maxClusterTimeMsForRange("48h")).toBe(120 * 60_000);
+    expect(maxClusterTimeMsForRange("7d")).toBe(240 * 60_000);
+  });
+
+  it("non-decreasing as range grows — longer ranges allow longer cluster spans", () => {
+    let last = 0;
+    for (const r of RANGE_OPTIONS) {
+      const v = maxClusterTimeMsForRange(r);
+      expect(v).toBeGreaterThanOrEqual(last);
+      last = v;
+    }
   });
 });
 
@@ -176,12 +231,12 @@ describe("haloRadiusOffset", () => {
 
 describe("clusterDots", () => {
   it("returns [] for empty input", () => {
-    expect(clusterDots([], CLUSTER_PX)).toEqual([]);
+    expect(clusterDots([], DEFAULT_PX, DEFAULT_TIME_MS)).toEqual([]);
   });
 
   it("wraps a single dot in a non-cluster result", () => {
     const d = dot({ cx: 50, cy: 20, entry: { toolCallId: "a" } });
-    const clusters = clusterDots([d], CLUSTER_PX);
+    const clusters = clusterDots([d], DEFAULT_PX, DEFAULT_TIME_MS);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].isCluster).toBe(false);
     expect(clusters[0].cx).toBe(50);
@@ -194,7 +249,7 @@ describe("clusterDots", () => {
       dot({ cx: 104, cy: 11, entry: { toolCallId: "b" } }),
       dot({ cx: 107, cy: 10, entry: { toolCallId: "c" } }),
     ];
-    const clusters = clusterDots(dots, CLUSTER_PX);
+    const clusters = clusterDots(dots, DEFAULT_PX, DEFAULT_TIME_MS);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].isCluster).toBe(true);
     expect(clusters[0].dots).toHaveLength(3);
@@ -208,7 +263,7 @@ describe("clusterDots", () => {
       dot({ cx: 100, entry: { toolCallId: "b" } }),
       dot({ cx: 200, entry: { toolCallId: "c" } }),
     ];
-    const clusters = clusterDots(dots, CLUSTER_PX);
+    const clusters = clusterDots(dots, DEFAULT_PX, DEFAULT_TIME_MS);
     expect(clusters).toHaveLength(3);
     for (const c of clusters) expect(c.isCluster).toBe(false);
   });
@@ -219,7 +274,7 @@ describe("clusterDots", () => {
       dot({ cx: 100, entry: { toolCallId: "a" } }),
       dot({ cx: 104, entry: { toolCallId: "b" } }),
     ];
-    const clusters = clusterDots(dots, CLUSTER_PX);
+    const clusters = clusterDots(dots, DEFAULT_PX, DEFAULT_TIME_MS);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].dots.map((d) => d.entry.toolCallId)).toEqual(["a", "b", "c"]);
   });
@@ -230,7 +285,7 @@ describe("clusterDots", () => {
       dot({ cx: 103, entry: { toolCallId: "b", riskTier: "critical" } }),
       dot({ cx: 106, entry: { toolCallId: "c", riskTier: "medium" } }),
     ];
-    const clusters = clusterDots(dots, CLUSTER_PX);
+    const clusters = clusterDots(dots, DEFAULT_PX, DEFAULT_TIME_MS);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].worstTier).toBe("critical");
   });
@@ -241,8 +296,80 @@ describe("clusterDots", () => {
       dot({ cx: 103, cy: 16, entry: { toolCallId: "b" } }),
       dot({ cx: 106, cy: 22, entry: { toolCallId: "c" } }),
     ];
-    const [c] = clusterDots(dots, CLUSTER_PX);
+    const [c] = clusterDots(dots, DEFAULT_PX, DEFAULT_TIME_MS);
     expect(c.cy).toBeCloseTo((10 + 16 + 22) / 3, 6);
+  });
+});
+
+describe("clusterDots — time-span gate", () => {
+  it("splits a pixel-adjacent pair when their time gap exceeds the cap", () => {
+    const dots = [
+      dot({ cx: 100, cy: 50, entry: { toolCallId: "a", timestamp: "2026-05-05T16:00:00.000Z" } }),
+      dot({ cx: 102, cy: 50, entry: { toolCallId: "b", timestamp: "2026-05-05T17:00:00.000Z" } }),
+    ];
+    // pxThreshold loose (10px so the px gate passes); 1h > 30min cap → split.
+    const out = clusterDots(dots, 10, 30 * 60_000);
+    expect(out).toHaveLength(2);
+    expect(out[0].dots[0].entry.toolCallId).toBe("a");
+    expect(out[1].dots[0].entry.toolCallId).toBe("b");
+  });
+
+  it("keeps a pixel-adjacent pair when their time gap is within the cap", () => {
+    const dots = [
+      dot({ cx: 100, cy: 50, entry: { toolCallId: "a", timestamp: "2026-05-05T16:00:00.000Z" } }),
+      dot({ cx: 102, cy: 50, entry: { toolCallId: "b", timestamp: "2026-05-05T16:10:00.000Z" } }),
+    ];
+    const out = clusterDots(dots, 10, 30 * 60_000);
+    expect(out).toHaveLength(1);
+    expect(out[0].dots).toHaveLength(2);
+    expect(out[0].isCluster).toBe(true);
+  });
+
+  it("uses first-in-group, not last, for the time span — caps total span", () => {
+    // Three dots evenly spaced at 20 min apart. With timeMs cap at 30 min,
+    // the third dot's gap from the FIRST is 40 min, must split before it
+    // even though its gap from the SECOND (last in group) is only 20 min.
+    const dots = [
+      dot({ cx: 100, cy: 50, entry: { toolCallId: "a", timestamp: "2026-05-05T16:00:00.000Z" } }),
+      dot({ cx: 105, cy: 50, entry: { toolCallId: "b", timestamp: "2026-05-05T16:20:00.000Z" } }),
+      dot({ cx: 110, cy: 50, entry: { toolCallId: "c", timestamp: "2026-05-05T16:40:00.000Z" } }),
+    ];
+    const out = clusterDots(dots, 50, 30 * 60_000);
+    expect(out).toHaveLength(2);
+    expect(out[0].dots).toHaveLength(2);
+    expect(out[1].dots).toHaveLength(1);
+    expect(out[0].dots.map((d) => d.entry.toolCallId)).toEqual(["a", "b"]);
+    expect(out[1].dots.map((d) => d.entry.toolCallId)).toEqual(["c"]);
+  });
+
+  it("splits a same-time pair when pixel gap exceeds the cap", () => {
+    const dots = [
+      dot({ cx: 100, cy: 50, entry: { toolCallId: "a", timestamp: "2026-05-05T16:00:00.000Z" } }),
+      dot({ cx: 130, cy: 50, entry: { toolCallId: "b", timestamp: "2026-05-05T16:00:00.000Z" } }),
+    ];
+    // px gap = 30, threshold = 10 → split despite identical timestamps.
+    const out = clusterDots(dots, 10, 30 * 60_000);
+    expect(out).toHaveLength(2);
+  });
+
+  it("invalid timestamps force a split (NaN gate is safe-default)", () => {
+    const dots = [
+      dot({ cx: 100, cy: 50, entry: { toolCallId: "a", timestamp: "2026-05-05T16:00:00.000Z" } }),
+      dot({ cx: 102, cy: 50, entry: { toolCallId: "b", timestamp: "not-a-date" } }),
+    ];
+    const out = clusterDots(dots, 10, 30 * 60_000);
+    expect(out).toHaveLength(2);
+  });
+
+  it("treats timeMsThreshold as inclusive (delta == cap merges)", () => {
+    // Two dots exactly 30 minutes apart; with cap = 30min, must merge (≤ check).
+    const dots = [
+      dot({ cx: 100, cy: 50, entry: { toolCallId: "a", timestamp: "2026-05-05T16:00:00.000Z" } }),
+      dot({ cx: 102, cy: 50, entry: { toolCallId: "b", timestamp: "2026-05-05T16:30:00.000Z" } }),
+    ];
+    const out = clusterDots(dots, 10, 30 * 60_000);
+    expect(out).toHaveLength(1);
+    expect(out[0].dots).toHaveLength(2);
   });
 });
 
