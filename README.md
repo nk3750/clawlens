@@ -23,6 +23,17 @@ ClawLens intercepts every tool call your agents make, scores risk in real time, 
 
 ---
 
+## What ClawLens does
+
+- **Observe.** Every tool call lands in an append-only, hash-chained audit log at `~/.openclaw/clawlens/audit.jsonl`. No after-the-fact tampering.
+- **Score.** Every tool call gets a risk score in real time. Ambiguous high-risk calls trigger a dynamic LLM evaluation that elevates or mitigates the score, with reasoning attached.
+- **Surface.** A local dashboard at `http://localhost:18789/plugins/clawlens/` shows agents, sessions, and high-risk activity in real time.
+- **Guardrail.** Block, require-approval, or allow-notify rules created from observed behavior. Approvals route through OpenClaw's existing channels (Telegram).
+
+Everything runs locally. No data leaves your machine.
+
+---
+
 ## Score every command, with reasoning
 
 <p align="center">
@@ -150,6 +161,19 @@ Yes. Every agent registered with your OpenClaw gateway is observed automatically
 Yes. `clawlens audit export --format json --since 7d` (or `csv`). The full hash-chained JSONL also lives at `~/.openclaw/clawlens/audit.jsonl` if you want to read it directly.
 
 </details>
+
+---
+
+## Contributing
+
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). All changes need tests, and `npm run check` must pass before merge.
+
+---
+
+## Reporting issues
+
+- **Bugs:** [open a GitHub issue](https://github.com/nk3750/clawLens/issues/new?template=bug_report.md)
+- **Security:** see [SECURITY.md](SECURITY.md) _(pending: SECURITY.md is planned per v1-release-readiness spec)_
 
 ---
 
