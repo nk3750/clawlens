@@ -227,7 +227,16 @@ const plugin: OpenClawPluginDefinition = {
 
       registerDashboardRoutes(api, {
         auditLogger: auditLogger as AuditLogger,
-        pluginDir: path.join(import.meta.dirname, ".."),
+        // Compiled-from-dist (tarball install) puts this file in <root>/dist/, so we
+        // need to walk up one. Source-loaded mode (the OpenClaw loader reads the
+        // .ts directly per installs.json) already lands at <root>; walking up
+        // overshoots into the parent directory and the SPA static block in
+        // routes.ts falls through to the v1 placeholder. Pick by checking the
+        // basename so both modes resolve the same package root.
+        pluginDir:
+          path.basename(import.meta.dirname) === "dist"
+            ? path.join(import.meta.dirname, "..")
+            : import.meta.dirname,
         config,
         modelAuth: runtime?.modelAuth,
         provider,
