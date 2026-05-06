@@ -19,46 +19,12 @@
   <img src="assets/demo-attention.png" alt="What needs attention, surfaced first" width="900">
 </p>
 
-ClawLens intercepts every tool call your agents make, scores risk in real time, and lets you stop dangerous patterns before they execute. The fleet view sorts your agents by current risk, surfaces pending approvals at the top, and shows what each agent has been up to today.
-
----
-
-## What ClawLens does
-
 - **Observe.** Every tool call lands in an append-only, hash-chained audit log at `~/.openclaw/clawlens/audit.jsonl`. No after-the-fact tampering.
 - **Score.** Every tool call gets a risk score in real time. Ambiguous high-risk calls trigger a dynamic LLM evaluation that elevates or mitigates the score, with reasoning attached.
 - **Surface.** A local dashboard at `http://localhost:18789/plugins/clawlens/` shows agents, sessions, and high-risk activity in real time.
 - **Guardrail.** Block, require-approval, or allow-notify rules created from observed behavior. Approvals route through OpenClaw's existing channels (Telegram).
 
 Everything runs locally. No data leaves your machine.
-
----
-
-## Score every command, with reasoning
-
-<p align="center">
-  <img src="assets/demo-agent-detail.png" alt="Every command scored, categorized, and explained" width="900">
-</p>
-
-Every tool call gets a risk score the moment it runs. A shell `rm -rf`. An MCP write to production. An agent editing its own config. Each one surfaces immediately with the score, the reasoning, and an AI assessment when the call is ambiguous enough to need a second opinion. Patterns like remote access, repeated attempts, and model manipulation get tagged so you spot them at a glance.
-
-Need a recap of what an agent has been doing? Plain-English session and agent summaries are one click away. No scrolling through 400 tool calls.
-
----
-
-## Set guardrails. Watch them fire.
-
-<p align="center">
-  <img src="assets/demo-add-guardrail.png" alt="Easy to set guardrails, customize per agent or fleet-wide" width="900">
-</p>
-
-Three actions: **Block**, **Require Approval**, or **Allow with Notification**. Match an exact command, a broader pattern, or anything in between. Scope to one agent or the whole fleet. Approvals route through your existing Telegram channel so you can decide from your phone.
-
-<p align="center">
-  <img src="assets/demo-guardrails-live.png" alt="The rule is live, the next attempt is already pending" width="900">
-</p>
-
-The guardrails page shows what's live, what's been triggered, and what's pending your approval. The moment your agent hits a rule, you see the attempt count tick and the pending request show up.
 
 ---
 
@@ -103,6 +69,34 @@ All settings live under `plugins.entries.clawlens.config` in `~/.openclaw/opencl
 LLM risk evaluation uses your gateway's existing Anthropic credentials by default. If your gateway doesn't have Anthropic configured, set `ANTHROPIC_API_KEY` in your environment.
 
 </details>
+
+---
+
+## Score every command, with reasoning
+
+<p align="center">
+  <img src="assets/demo-agent-detail.png" alt="Every command scored, categorized, and explained" width="900">
+</p>
+
+Every tool call gets a risk score the moment it runs. A shell `rm -rf`. An MCP write to production. An agent editing its own config. Each one surfaces immediately with the score, the reasoning, and an AI assessment when the call is ambiguous enough to need a second opinion. Patterns like remote access, repeated attempts, and model manipulation get tagged so you spot them at a glance.
+
+Need a recap of what an agent has been doing? Plain-English session and agent summaries are one click away. No scrolling through 400 tool calls.
+
+---
+
+## Set guardrails. Watch them fire.
+
+<p align="center">
+  <img src="assets/demo-add-guardrail.png" alt="Easy to set guardrails, customize per agent or fleet-wide" width="900">
+</p>
+
+Three actions: **Block**, **Require Approval**, or **Allow with Notification**. Match an exact command, a broader pattern, or anything in between. Scope to one agent or the whole fleet. Approvals route through your existing Telegram channel so you can decide from your phone.
+
+<p align="center">
+  <img src="assets/demo-guardrails-live.png" alt="The rule is live, the next attempt is already pending" width="900">
+</p>
+
+The guardrails page shows what's live, what's been triggered, and what's pending your approval. The moment your agent hits a rule, you see the attempt count tick and the pending request show up.
 
 ---
 
