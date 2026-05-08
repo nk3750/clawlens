@@ -1,36 +1,47 @@
 {
   "id": "clawlens",
   "name": "ClawLens",
-  "description": "Agent observatory and governance for OpenClaw — see everything your agents do, understand risk, enforce when ready",
-  "version": "0.2.0",
-  "activation": { "onStartup": true },
-  "enabledByDefault": true,
+  "description": "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
+  "version": "1.0.0",
   "configSchema": {
     "type": "object",
+    "additionalProperties": false,
     "properties": {
-      "policiesPath": {
-        "type": "string",
-        "description": "Path to YAML policy file"
-      },
-      "auditLogPath": {
-        "type": "string",
-        "description": "Path to JSONL audit log"
-      },
-      "rateStatePath": {
-        "type": "string",
-        "description": "Path to rate limiter state file"
-      },
-      "retention": {
-        "type": "string",
-        "description": "Audit log retention (e.g. 7d, 30d, 90d)"
-      },
+      "auditLogPath": { "type": "string", "description": "Path to JSONL audit log" },
+      "guardrailsPath": { "type": "string", "description": "Path to user-defined guardrails JSON" },
+      "attentionStatePath": { "type": "string", "description": "Path to attention-acks JSONL" },
+      "savedSearchesPath": { "type": "string", "description": "Path to saved-searches JSON" },
+      "retention": { "type": "string", "description": "Audit log retention (e.g. 7d, 30d, 90d)" },
       "digest": {
         "type": "object",
+        "additionalProperties": true,
         "properties": {
           "schedule": { "type": "string" },
           "channel": { "type": "string" }
         }
-      }
+      },
+      "risk": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "llmEvalThreshold": { "type": "number" },
+          "llmEnabled": { "type": "boolean" },
+          "llmProvider": { "type": "string" },
+          "llmModel": { "type": "string" },
+          "llmApiKeyEnv": { "type": "string" }
+        }
+      },
+      "alerts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "threshold": { "type": "number" },
+          "quietHoursStart": { "type": "string" },
+          "quietHoursEnd": { "type": "string" }
+        }
+      },
+      "dashboardUrl": { "type": "string", "description": "Optional override for dashboard URL used in alert links" }
     }
   }
 }

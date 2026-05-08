@@ -70,8 +70,9 @@ let _sessionEndHandler: (...args: any[]) => any;
 const plugin: OpenClawPluginDefinition = {
   id: "clawlens",
   name: "ClawLens",
-  description: "Agent governance — risk scoring, audit trails, and observability",
-  version: "0.3.0",
+  description:
+    "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
+  version: "1.0.0",
 
   register(api: OpenClawPluginApi) {
     const config = resolveConfig(api.pluginConfig, api.resolvePath);
