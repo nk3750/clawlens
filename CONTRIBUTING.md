@@ -1,15 +1,12 @@
 # Contributing to ClawLens
 
-> **Status:** Initial draft -- under review
-
 Thanks for your interest in contributing to ClawLens. This guide covers everything you need to get started.
 
 ## Getting Started
 
 ```bash
-<!-- TODO: Replace <org> with actual GitHub org once decided -->
-git clone https://github.com/<org>/clawLens.git
-cd clawLens
+git clone https://github.com/nk3750/clawlens.git
+cd clawlens
 npm install
 cd dashboard && npm install && cd ..
 npm run check   # runs tests + lint — if this passes, you're set up
@@ -58,4 +55,15 @@ Every change needs tests. Backend tests use Vitest and live in `tests/`. Run `np
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) code of conduct.
+This project follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Distribution policy (public mirror)
+
+The public `nk3750/clawlens` repository is a deterministic projection of a separate private development repository, rebuilt and force-pushed on every release via `git filter-repo`. Practical implications for outside contributors:
+
+- **History on `main` is rewritten on every release.** If you fork or branch off the public repo, expect to rebase or re-fork after each release. Repository content is consistent within a release cycle.
+- **Reference work by tag, not commit SHA.** Tagged releases (`v1.x.y`) and their associated GitHub Release tarballs are stable references. Direct links to commit SHAs on `main` may not survive across releases.
+- **PRs are accepted on the public repo.** They are merged via cherry-pick into the private dev repo, then re-emerge on the public mirror at the next release. Your authorship and commit message are preserved; only the SHA changes.
+- **Issues and security advisories** are tracked on the public repo. See [`SECURITY.md`](SECURITY.md) for the security report channel.
+
+The maintainers will move to a non-rewriting model if contribution volume justifies the workflow shift.

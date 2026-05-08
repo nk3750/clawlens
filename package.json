@@ -1,9 +1,31 @@
 {
   "name": "clawlens",
-  "version": "0.2.0",
-  "description": "Agent observatory and governance for OpenClaw",
+  "version": "1.0.0",
+  "description": "Agent observability and guardrails for OpenClaw",
   "type": "module",
   "main": "index.ts",
+  "license": "MIT",
+  "author": "ClawLens Contributors",
+  "homepage": "https://github.com/nk3750/clawlens#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nk3750/clawlens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nk3750/clawlens/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "agent-observability",
+    "audit",
+    "risk-scoring",
+    "guardrails",
+    "ai-safety"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
