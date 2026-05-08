@@ -14,6 +14,25 @@ import { createSessionStartHandler } from "./src/hooks/session-start.js";
 import { EvalCache } from "./src/risk/eval-cache.js";
 import { SavedSearchesStore } from "./src/risk/saved-searches-store.js";
 import { SessionContext } from "./src/risk/session-context.js";
+// Pure helper: produces the JSON snippet `clawlens init` prints for users who
+// install via the source-clone path (Channel 4) and want to wire ClawLens into
+// `~/.openclaw/openclaw.json` manually. Exported for unit testing — see
+// tests/clawlens-init-cli.test.ts.
+export function buildInitConfigSnippet(opts) {
+    return JSON.stringify({
+        plugins: {
+            load: { paths: [opts.pluginDir] },
+            entries: {
+                clawlens: {
+                    enabled: true,
+                    config: {
+                        auditLogPath: opts.auditLogPath,
+                    },
+                },
+            },
+        },
+    }, null, 2);
+}
 // ── Module-level state ──────────────────────────────────────────────────────
 // Components + handler created once. Hooks registered per unique api object
 // (gateway dispatches tool calls through different api contexts).
@@ -35,8 +54,8 @@ let _sessionEndHandler;
 const plugin = {
     id: "clawlens",
     name: "ClawLens",
-    description: "Agent governance — risk scoring, audit trails, and observability",
-    version: "0.3.0",
+    description: "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
+    version: "1.0.0",
     register(api) {
         const config = resolveConfig(api.pluginConfig, api.resolvePath);
         // Resolve runtime from OpenClaw plugin API (may differ per session)
@@ -149,19 +168,10 @@ const plugin = {
                         console.log(`Data directory already exists: ${dataDir}`);
                     }
                     console.log("\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:");
-                    console.log(JSON.stringify({
-                        plugins: {
-                            load: { paths: ["~/code/clawLens"] },
-                            entries: {
-                                clawlens: {
-                                    enabled: true,
-                                    config: {
-                                        auditLogPath: config.auditLogPath,
-                                    },
-                                },
-                            },
-                        },
-                    }, null, 2));
+                    console.log(buildInitConfigSnippet({
+                        pluginDir: path.join(import.meta.dirname, ".."),
+                        auditLogPath: config.auditLogPath,
+                    }));
                 });
                 cli
                     .command("clawlens audit export")

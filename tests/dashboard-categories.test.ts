@@ -772,9 +772,9 @@ describe("describeAction — new tools (issue #44)", () => {
     expect(
       describeAction({
         toolName: "nodes",
-        params: { action: "screen_record", node: "mac-mini" },
+        params: { action: "screen_record", node: "dev-host" },
       }),
-    ).toBe("Nodes screen: mac-mini");
+    ).toBe("Nodes screen: dev-host");
   });
 
   it("describes bare nodes with no action", () => {

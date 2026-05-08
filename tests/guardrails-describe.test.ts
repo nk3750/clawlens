@@ -185,12 +185,12 @@ describe("describeRule — full renderings (spec §4.5)", () => {
             agent: "social-manager",
             tools: { mode: "names", values: ["web_fetch", "fetch_url", "browser"] },
           },
-          target: { kind: "url-glob", pattern: "*://*.REDACTED.ts.net/**" },
+          target: { kind: "url-glob", pattern: "*://*.corp.example.com/**" },
           action: "allow_notify",
         }),
       ),
     ).toBe(
-      "Notify on browser/fetch_url/web_fetch tools URL matching '*://*.REDACTED.ts.net/**' for agent social-manager",
+      "Notify on browser/fetch_url/web_fetch tools URL matching '*://*.corp.example.com/**' for agent social-manager",
     );
   });
 });
