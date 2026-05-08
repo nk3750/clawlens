@@ -1,44 +1,35 @@
-<h1 align="center">
-  <img src="assets/clawlens-logo.jpeg" alt="ClawLens" width="120"><br>
-  ClawLens
-</h1>
+# ClawLens
 
-<p align="center">
-  <strong>Agent observability and guardrails for <a href="https://openclaw.ai/">OpenClaw</a>.</strong><br>
-  See what your agents do. Score every action. Stop the dangerous ones with one click.
-</p>
+<!-- TAGLINE — pending Soham draft. One line under the title; voice and positioning are his call. Drops in at commit 3.1. -->
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/openclaw-plugin-orange" alt="OpenClaw Plugin">
-  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="Version 0.2.0">
-  <img src="https://img.shields.io/badge/built%20with-TypeScript-3178C6?logo=typescript&logoColor=white" alt="Built with TypeScript">
-</p>
+[![CI](https://github.com/nk3750/clawlens/actions/workflows/ci.yml/badge.svg)](https://github.com/nk3750/clawlens/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/github/package-json/v/nk3750/clawlens)](package.json)
 
-<p align="center">
-  <img src="assets/demo-attention.png" alt="What needs attention, surfaced first" width="900">
-</p>
+![ClawLens Dashboard](docs/screenshots/homepage.png)
 
-- **Observe.** Every tool call lands in an append-only, hash-chained audit log at `~/.openclaw/clawlens/audit.jsonl`. No after-the-fact tampering.
-- **Score.** Every tool call gets a risk score in real time. Ambiguous high-risk calls trigger a dynamic LLM evaluation that elevates or mitigates the score, with reasoning attached.
-- **Surface.** A local dashboard at `http://localhost:18789/plugins/clawlens/` shows agents, sessions, and high-risk activity in real time.
-- **Guardrail.** Block, require-approval, or allow-notify rules created from observed behavior. Approvals route through OpenClaw's existing channels (Telegram).
+## What ClawLens does
 
-Everything runs locally. No data leaves your machine.
-
----
+<!--
+WHAT-IT-DOES PROSE — pending Soham draft. Voice, positioning, and the feature
+summary go here. The skeleton committed at commit 3 leaves this section as a
+placeholder; Soham's prose drops in at commit 3.1. The technical reality the
+prose describes (observability + scoring + dashboard + guardrails) is shipped
+by the code already in `src/`; this section is positioning, not contract.
+-->
 
 ## Install
 
-ClawLens is a plugin for [OpenClaw](https://openclaw.ai/). You need a working OpenClaw gateway running.
+ClawLens is a plugin for [OpenClaw](https://openclaw.ai/). You need a working OpenClaw gateway (`>= 2026.4.0`) already running.
 
+**Recommended:**
 ```bash
 openclaw plugins install openclaw-clawlens
 ```
 
-> _**Pending:** ClawHub publish for v1.0 release. Once published, this command resolves automatically._
+OpenClaw checks ClawHub first, falls back to npm. Both resolve to this plugin. The install resolver atomically updates your config (allowlist, denylist, plugin entries, install record) and the gateway daemon restarts itself when it sees the change. No manual edits to `~/.openclaw/openclaw.json` are needed.
 
-Restart your gateway and open the dashboard:
+Open the dashboard at:
 
 ```
 http://localhost:18789/plugins/clawlens/
@@ -46,130 +37,81 @@ http://localhost:18789/plugins/clawlens/
 
 Your agents show up the moment they make their first tool call.
 
----
+### Alternative install methods
+
+<details>
+<summary>Install from npm directly</summary>
+
+```bash
+openclaw plugins install @nk3750/openclaw-clawlens
+```
+</details>
+
+<details>
+<summary>Install from GitHub (no registry needed)</summary>
+
+```bash
+openclaw plugins install clawlens --marketplace nk3750/clawlens
+```
+</details>
+
+<details>
+<summary>Install from source</summary>
+
+```bash
+git clone https://github.com/nk3750/clawlens.git
+cd clawlens
+npm install   # runtime deps only — dist/ and dashboard/dist/ ship pre-built in the repo
+openclaw plugins install ./
+```
+
+If you intend to modify the source, see [CONTRIBUTING.md](CONTRIBUTING.md) for the rebuild cycle.
+</details>
+
+<details>
+<summary>Install via the community preview installer</summary>
+
+If you can't or don't want to use `openclaw plugins install`, there is a community-maintained installer at [grepsoham/clawLens-preview](https://github.com/grepsoham/clawLens-preview):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grepsoham/clawLens-preview/main/install.sh | bash
+```
+
+This downloads a release tarball, verifies its checksum, extracts to `~/.clawlens-<version>/`, and edits `~/.openclaw/openclaw.json` directly. It bypasses the OpenClaw plugin install resolver. The installer is maintained as a third-party fork — file install issues at the preview repo, not the main one.
+</details>
+
+**LLM risk evaluation** uses your gateway's existing Anthropic credentials by default — no separate API key needed. If your gateway doesn't have Anthropic configured, set `ANTHROPIC_API_KEY` in your environment, or override `risk.llmProvider` in the plugin config.
 
 ## Configuration
 
-Defaults work out of the box. ClawLens writes its audit log to `~/.openclaw/clawlens/audit.jsonl` and serves the dashboard on the loopback interface. No setup required.
-
-<details>
-<summary><strong>Override the defaults</strong></summary>
-
-All settings live under `plugins.entries.clawlens.config` in `~/.openclaw/openclaw.json`.
+All settings live under `plugins.entries.clawlens.config` in `~/.openclaw/openclaw.json`. Defaults work out of the box.
 
 | Setting | Default | What it controls |
 |---|---|---|
 | `auditLogPath` | `~/.openclaw/clawlens/audit.jsonl` | Where the audit log is written |
-| `risk.llmEnabled` | `true` | Whether the LLM evaluator runs for ambiguous calls |
-| `risk.llmEvalThreshold` | `50` | Score above which the LLM evaluator runs |
-| `risk.llmProvider` | auto-detected | Provider name (`anthropic`, etc.). Inferred from your OpenClaw auth config. |
-| `alerts.enabled` | `true` | Whether high-risk score alerts fire |
-| `alerts.threshold` | `80` | Risk score above which alerts fire |
+| `risk.llmEnabled` | `true` | LLM evaluation for ambiguous tool calls |
+| `risk.llmEvalThreshold` | `50` | Deterministic score above which the LLM evaluator runs |
+| `risk.llmProvider` | auto-detected from OpenClaw | Provider name (`anthropic`, etc.) |
+| `alerts.enabled` | `true` | Approval routing for `require_approval` guardrails |
+| `alerts.threshold` | `80` | Risk score above which proactive alerts log |
+| `retention` | `30d` | Audit log retention |
 
-LLM risk evaluation uses your gateway's existing Anthropic credentials by default. If your gateway doesn't have Anthropic configured, set `ANTHROPIC_API_KEY` in your environment.
+## What ClawLens does NOT cover (yet)
 
-</details>
-
----
-
-## Score every command, with reasoning
-
-<p align="center">
-  <img src="assets/demo-agent-detail.png" alt="Every command scored, categorized, and explained" width="900">
-</p>
-
-Every tool call gets a risk score the moment it runs. A shell `rm -rf`. An MCP write to production. An agent editing its own config. Each one surfaces immediately with the score, the reasoning, and an AI assessment when the call is ambiguous enough to need a second opinion. Patterns like remote access, repeated attempts, and model manipulation get tagged so you spot them at a glance.
-
-Need a recap of what an agent has been doing? Plain-English session and agent summaries are one click away. No scrolling through 400 tool calls.
-
----
-
-## Set guardrails. Watch them fire.
-
-<p align="center">
-  <img src="assets/demo-add-guardrail.png" alt="Easy to set guardrails, customize per agent or fleet-wide" width="900">
-</p>
-
-Three actions: **Block**, **Require Approval**, or **Allow with Notification**. Match an exact command, a broader pattern, or anything in between. Scope to one agent or the whole fleet. Approvals route through your existing Telegram channel so you can decide from your phone.
-
-<p align="center">
-  <img src="assets/demo-guardrails-live.png" alt="The rule is live, the next attempt is already pending" width="900">
-</p>
-
-The guardrails page shows what's live, what's been triggered, and what's pending your approval. The moment your agent hits a rule, you see the attempt count tick and the pending request show up.
-
----
-
-## How ClawLens fits
-
-ClawLens **complements** OpenClaw's built-in security. It does not replace tool profiles, exec approvals, or prompt-injection detection. Built-in answers "is this technically allowed?" ClawLens answers "does the operator want this to happen right now?"
-
-- **Audit log is tamper-evident.** Every entry hash-chains to the one before it. Edit, delete, or reorder a past entry and the chain breaks.
-- **Runs entirely locally.** Audit log on your disk, dashboard on the loopback interface. Nothing on your network reaches it.
-- **No SDK, no code instrumentation.** ClawLens hooks the OpenClaw runtime directly. Your agent code stays untouched, and there's no proxy to route through.
-- **Single-plugin install.** No Postgres, no Redis, no services stack. One command and you're running.
-- **Your data is yours.** No telemetry, no install pings, no analytics. Grep the codebase to confirm.
-
----
-
-## FAQ
-
-<details>
-<summary><strong>Does ClawLens collect telemetry?</strong></summary>
-
-No. None. No analytics, no install pings, no machine IDs. Your audit log stays on your disk.
-
-</details>
-
-<details>
-<summary><strong>Does it block tool calls by default?</strong></summary>
-
-No. By default ClawLens observes and scores. Blocking only happens when you've created a guardrail with `block` or `require_approval`. The point is to give you the data first, then let you decide what's worth stopping.
-
-</details>
-
-<details>
-<summary><strong>What does the LLM evaluation cost?</strong></summary>
-
-ClawLens uses your gateway's existing LLM credentials, so there's no separate billing relationship. Only ambiguous high-risk calls trigger an evaluation, and results are cached. In typical use, the evaluator runs on a small fraction of tool calls.
-
-</details>
-
-<details>
-<summary><strong>Why a plugin instead of a SaaS?</strong></summary>
-
-Local-first. Your audit log lives on your disk. There's no proxy to route through, no cloud account to set up, no agent SDK to integrate. Install, configure, done. Your data does not leave your machine.
-
-</details>
-
-<details>
-<summary><strong>Does it work with multiple agents at once?</strong></summary>
-
-Yes. Every agent registered with your OpenClaw gateway is observed automatically. The fleet view shows all of them with risk-mix bars, and you can drill into any one for the full timeline.
-
-</details>
-
-<details>
-<summary><strong>Can I export the audit log?</strong></summary>
-
-Yes. `clawlens audit export --format json --since 7d` (or `csv`). The full hash-chained JSONL also lives at `~/.openclaw/clawlens/audit.jsonl` if you want to read it directly.
-
-</details>
-
----
+<!--
+LIMITATIONS PROSE — pending Soham draft. Caveats, known gaps, platform support,
+partial-coverage disclaimers go here. Soham picks framing and tone. Final
+wording is his call. Drops in at commit 3.1.
+-->
 
 ## Contributing
 
-PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). All changes need tests, and `npm run check` must pass before merge.
-
----
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). All changes need tests; `npm run check` must pass before merge.
 
 ## Reporting issues
 
-- **Bugs:** [open a GitHub issue](https://github.com/nk3750/clawLens/issues/new?template=bug_report.md)
-- **Security:** see [SECURITY.md](SECURITY.md) _(pending: SECURITY.md is planned per v1-release-readiness spec)_
-
----
+- **Bugs:** [open a GitHub issue](https://github.com/nk3750/clawlens/issues/new?template=bug_report.md)
+- **Security:** see [SECURITY.md](SECURITY.md)
 
 ## License
 
