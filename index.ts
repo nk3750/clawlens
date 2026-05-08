@@ -24,6 +24,30 @@ import type {
   OpenClawPluginDefinition,
 } from "./src/types.js";
 
+// Pure helper: produces the JSON snippet `clawlens init` prints for users who
+// install via the source-clone path (Channel 4) and want to wire ClawLens into
+// `~/.openclaw/openclaw.json` manually. Exported for unit testing — see
+// tests/clawlens-init-cli.test.ts.
+export function buildInitConfigSnippet(opts: { pluginDir: string; auditLogPath: string }): string {
+  return JSON.stringify(
+    {
+      plugins: {
+        load: { paths: [opts.pluginDir] },
+        entries: {
+          clawlens: {
+            enabled: true,
+            config: {
+              auditLogPath: opts.auditLogPath,
+            },
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
 // ── Module-level state ──────────────────────────────────────────────────────
 // Components + handler created once. Hooks registered per unique api object
 // (gateway dispatches tool calls through different api contexts).
@@ -186,23 +210,10 @@ const plugin: OpenClawPluginDefinition = {
 
             console.log("\nTo enable ClawLens, add to ~/.openclaw/openclaw.json:");
             console.log(
-              JSON.stringify(
-                {
-                  plugins: {
-                    load: { paths: ["~/code/clawLens"] },
-                    entries: {
-                      clawlens: {
-                        enabled: true,
-                        config: {
-                          auditLogPath: config.auditLogPath,
-                        },
-                      },
-                    },
-                  },
-                },
-                null,
-                2,
-              ),
+              buildInitConfigSnippet({
+                pluginDir: path.join(import.meta.dirname, ".."),
+                auditLogPath: config.auditLogPath,
+              }),
             );
           });
 
