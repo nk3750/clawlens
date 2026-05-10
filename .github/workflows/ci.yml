@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Manual re-run from the Actions tab without needing an empty commit.
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same PR (preserve main and tag runs).
+# Saves runner minutes when contributors push multiple times in quick succession.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Principle of least privilege. CI only needs to read repository contents.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (test + lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run check (tests + lint)
+        run: npm run check
+
+  dashboard:
+    name: Dashboard (build + typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+      # Dashboard build runs `tsc -b && vite build` per dashboard/package.json,
+      # so this step covers both the type check and the production build.
+      - name: Build dashboard (includes typecheck)
+        working-directory: dashboard
+        run: npm run build
+
+  typecheck:
+    name: Typecheck + dist freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -p tsconfig.json --noEmit
+      # Verify dist/ is committed in sync with src/. The gateway loads
+      # compiled JS from dist/, so a stale dist/ ships old behavior.
+      # If this fails: run `npx tsc -p tsconfig.json` locally and commit.
+      #
+      # Note: we diff only compiled .js and .d.ts files. Source maps
+      # (.js.map) can carry build-machine path differences between the
+      # author's macOS commit and the Linux CI runner, which would
+      # false-positive the gate. Maps follow source, so source-drift is
+      # already captured by the .js / .d.ts checks.
+      - name: Verify dist/ is fresh
+        run: |
+          npx tsc -p tsconfig.json
+          if ! git diff --quiet -- 'dist/**/*.js' 'dist/**/*.d.ts'; then
+            echo "::error::dist/ is stale. Run 'npx tsc -p tsconfig.json' and commit the result."
+            git diff --stat -- 'dist/**/*.js' 'dist/**/*.d.ts'
+            exit 1
+          fi

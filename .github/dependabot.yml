@@ -1,0 +1,82 @@
+version: 2
+updates:
+  # Backend npm dependencies (root)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Reduced from 5 to 3 to keep the queue manageable for a 2-person team.
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    # Group strategy:
+    # - production-minor: auto-mergeable safe updates for runtime deps
+    # - dev-minor: auto-mergeable safe updates for dev tooling
+    # - production-major: separate group so security-relevant major bumps
+    #   (e.g. @anthropic-ai/sdk new major) surface as a single PR for
+    #   triage. Don't filter majors out, since security fixes can ship as
+    #   majors and we don't want to miss them.
+    # - dev-major: dev-tool majors (Biome, Vitest, TS) typically need
+    #   manual lockfile work; one PR per ecosystem keeps signal high.
+    groups:
+      production-minor:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+          - "minor"
+      production-major:
+        dependency-type: "production"
+        update-types:
+          - "major"
+      dev-minor:
+        dependency-type: "development"
+        update-types:
+          - "patch"
+          - "minor"
+      dev-major:
+        dependency-type: "development"
+        update-types:
+          - "major"
+
+  # Dashboard npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/dashboard"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "dashboard"
+    groups:
+      production-minor:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+          - "minor"
+      production-major:
+        dependency-type: "production"
+        update-types:
+          - "major"
+      dev-minor:
+        dependency-type: "development"
+        update-types:
+          - "patch"
+          - "minor"
+      dev-major:
+        dependency-type: "development"
+        update-types:
+          - "major"
+
+  # GitHub Actions versions in .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

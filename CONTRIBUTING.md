@@ -53,11 +53,16 @@ Biome handles all formatting and linting. No manual formatting needed.
 
 Every change needs tests. Backend tests use Vitest and live in `tests/`. Run `npm run check` as final verification before submitting.
 
+## CI
+
+Every PR runs three jobs via [GitHub Actions](.github/workflows/ci.yml): backend (Vitest tests + Biome lint), dashboard (build with bundled typecheck), and a typecheck + dist-freshness gate. The PR cannot merge until all three are green.
+
 ## Code of Conduct
 
 This project follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-## Distribution policy (public mirror)
+<details>
+<summary><strong>Distribution policy (public mirror, advanced reading)</strong></summary>
 
 The public `nk3750/clawlens` repository is a deterministic projection of a separate private development repository, rebuilt and force-pushed on every release via `git filter-repo`. Practical implications for outside contributors:
 
@@ -67,3 +72,5 @@ The public `nk3750/clawlens` repository is a deterministic projection of a separ
 - **Issues and security advisories** are tracked on the public repo. See [`SECURITY.md`](SECURITY.md) for the security report channel.
 
 The maintainers will move to a non-rewriting model if contribution volume justifies the workflow shift.
+
+</details>
