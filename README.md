@@ -78,19 +78,7 @@ openclaw plugins install ./
 If you intend to modify the source, see [CONTRIBUTING.md](CONTRIBUTING.md) for the rebuild cycle.
 </details>
 
-<details>
-<summary>Install via the community preview installer</summary>
-
-If you can't or don't want to use `openclaw plugins install`, there is a community-maintained installer at [grepsoham/clawLens-preview](https://github.com/grepsoham/clawLens-preview):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/grepsoham/clawLens-preview/main/install.sh | bash
-```
-
-This downloads a release tarball, verifies its checksum, extracts to `~/.clawlens-<version>/`, and edits `~/.openclaw/openclaw.json` directly. It bypasses the OpenClaw plugin install resolver. The installer is maintained as a third-party fork. File install issues at the preview repo, not the main one.
-</details>
-
-**LLM risk evaluation** uses your gateway's existing Anthropic credentials by default. No separate API key needed. If your gateway doesn't have Anthropic configured, set `ANTHROPIC_API_KEY` in your environment, or override `risk.llmProvider` in the plugin config.
+**LLM risk evaluation** piggybacks on whatever LLM your OpenClaw is already configured with — same provider, same model, same credentials. ClawLens routes risk-eval requests through OpenClaw's embedded agent runtime, so there's no separate API key or extra setup. If you want risk eval to use a different LLM than your agents, override `risk.llmProvider` / `risk.llmModel` / `risk.llmApiKeyEnv` in the plugin config.
 
 ---
 
