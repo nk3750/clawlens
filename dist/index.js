@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { exportToCSV, exportToJSON } from "./src/audit/exporter.js";
-import { AuditLogger } from "./src/audit/logger.js";
+import { getAuditLogger } from "./src/audit/logger.js";
 import { resolveConfig } from "./src/config.js";
 import { AttentionStore } from "./src/dashboard/attention-state.js";
 import { registerDashboardRoutes } from "./src/dashboard/routes.js";
@@ -69,7 +69,7 @@ const plugin = {
         const typedRuntime = runtime;
         // ── First call: create all components and handler instances ──
         if (!_handlerDeps) {
-            const auditLogger = new AuditLogger(config.auditLogPath);
+            const auditLogger = getAuditLogger(config.auditLogPath);
             const sessionContext = new SessionContext();
             const evalCache = new EvalCache();
             const guardrailStore = new GuardrailStore(config.guardrailsPath);

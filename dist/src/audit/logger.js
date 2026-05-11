@@ -5,17 +5,46 @@ import * as path from "node:path";
 import { dedupeAuditEntries } from "./reader.js";
 /** Window for detecting near-simultaneous double-writes of the same entry kind. */
 const DOUBLE_WRITE_WINDOW_MS = 100;
+const GLOBAL_AUDIT_LOGGER_CACHE = Symbol.for("clawlens.AuditLogger.instances");
+/**
+ * Return a process-singleton AuditLogger for the given file path.
+ *
+ * A globalThis-keyed cache (not a module-scoped Map) is required because
+ * OpenClaw's sandboxed-agent path may fall back to the embedded runner, which
+ * re-imports the plugin module fresh. Each module load gets its own module
+ * scope, so a module-local Map gives one cache per load — back to the original
+ * race. Symbol.for + globalThis is true process-singleton.
+ */
+export function getAuditLogger(filePath) {
+    const g = globalThis;
+    let cache = g[GLOBAL_AUDIT_LOGGER_CACHE];
+    if (!cache) {
+        cache = new Map();
+        g[GLOBAL_AUDIT_LOGGER_CACHE] = cache;
+    }
+    let existing = cache.get(filePath);
+    if (!existing) {
+        existing = new AuditLogger(filePath);
+        cache.set(filePath, existing);
+    }
+    return existing;
+}
 export class AuditLogger extends EventEmitter {
     filePath;
     lastHash = "0";
     writeStream = null;
     /** Map of `toolCallId:kind` → last write epoch-ms. Used to flag suspected double-writes. */
     recentWrites = new Map();
+    _initialized = false;
     constructor(filePath) {
         super();
         this.filePath = filePath;
     }
     async init() {
+        if (this._initialized) {
+            return;
+        }
+        this._initialized = true;
         const dir = path.dirname(this.filePath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
