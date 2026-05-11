@@ -1,9 +1,9 @@
 {
-  "name": "clawlens",
+  "name": "@nk3750/openclaw-clawlens",
   "version": "1.0.0",
   "description": "Agent observability and guardrails for OpenClaw",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "license": "MIT",
   "author": "ClawLens Contributors",
   "homepage": "https://github.com/nk3750/clawlens#readme",
@@ -26,12 +26,35 @@
   "engines": {
     "node": ">=22"
   },
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.4.0"
+    },
+    "build": {
+      "openclawVersion": "2026.5.7",
+      "pluginSdkVersion": "2026.5.7"
+    },
+    "install": {
+      "minHostVersion": ">=2026.4.0"
+    }
+  },
+  "files": [
+    "dist/",
+    "dashboard/dist/",
+    "openclaw.plugin.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check src/ index.ts tests/",
     "lint:fix": "biome check --write src/ index.ts tests/",
-    "check": "vitest run && biome check src/ index.ts tests/"
+    "check": "vitest run && biome check src/ index.ts tests/",
+    "prepublishOnly": "npx tsc -p tsconfig.json && cd dashboard && npm run build"
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
