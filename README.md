@@ -34,10 +34,10 @@ ClawLens is a plugin for [OpenClaw](https://openclaw.ai/). You need a working Op
 
 **Recommended:**
 ```bash
-openclaw plugins install openclaw-clawlens
+openclaw plugins install @nk3750/openclaw-clawlens
 ```
 
-OpenClaw checks ClawHub first, falls back to npm. Both resolve to this plugin. The install resolver atomically updates your config (allowlist, denylist, plugin entries, install record) and the gateway daemon restarts itself when it sees the change. No manual edits to `~/.openclaw/openclaw.json` are needed.
+OpenClaw's installer resolves the scoped name on npm, pulls the latest published version, and atomically updates your config (allowlist, denylist, plugin entries, install record). The gateway daemon restarts itself when it sees the change — no manual edits to `~/.openclaw/openclaw.json` are needed.
 
 Open the dashboard at:
 
@@ -50,19 +50,13 @@ Your agents show up the moment they make their first tool call.
 ### Alternative install methods
 
 <details>
-<summary>Install from npm directly</summary>
-
-```bash
-openclaw plugins install @nk3750/openclaw-clawlens
-```
-</details>
-
-<details>
 <summary>Install from GitHub (no registry needed)</summary>
 
 ```bash
 openclaw plugins install clawlens --marketplace nk3750/clawlens
 ```
+
+Clones the public repo directly. Useful when you can't reach npm or ClawHub, or when pinning to a specific git ref.
 </details>
 
 <details>
