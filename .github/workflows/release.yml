@@ -70,6 +70,12 @@ jobs:
   publish-clawhub:
     name: Publish to ClawHub
     needs: build
+    # Only the public mirror has CLAWHUB_TOKEN configured. Tag pushes to the
+    # private dev repo trigger this workflow too (the workflow file is
+    # mirrored), but without secrets the publish would fail at auth. Skip
+    # cleanly instead. Note: case-sensitive — private is nk3750/clawLens
+    # (capital L), public is nk3750/clawlens (all lowercase, per D-1).
+    if: github.repository == 'nk3750/clawlens'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -89,6 +95,9 @@ jobs:
   publish-npm:
     name: Publish to npm
     needs: build
+    # Only the public mirror has NPM_TOKEN configured. See publish-clawhub
+    # above for the rationale.
+    if: github.repository == 'nk3750/clawlens'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -115,6 +124,9 @@ jobs:
   release-tarball:
     name: Create GitHub Release
     needs: build
+    # Skip on the private dev repo. We don't want internal-only "Releases"
+    # cluttering the private repo's Releases tab.
+    if: github.repository == 'nk3750/clawlens'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
