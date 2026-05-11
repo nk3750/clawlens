@@ -1,7 +1,9 @@
 name: Release
 
-# Tag-triggered GitHub Release. Tags push from maintainers only, so no
-# fork-PR exfiltration risk on the write-scoped GITHUB_TOKEN.
+# Tag-triggered release pipeline. Builds + verifies the tarball, then publishes
+# to ClawHub, npm, and a GitHub Release in parallel. Tag pushes are restricted
+# to maintainers (per public-repo branch protection at D-10), so no fork-PR
+# exfiltration risk on the write-scoped GITHUB_TOKEN.
 on:
   push:
     tags: ["v*"]
@@ -10,11 +12,19 @@ on:
 permissions:
   contents: write
 
+# Different tags shouldn't queue — but if rc.N and v1.0.0 both fire close
+# together by mistake, let both finish rather than cancelling.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
-    name: Create GitHub Release
+  build:
+    name: Build + verify tarball
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -25,13 +35,97 @@ jobs:
           cache: "npm"
       - name: Install backend dependencies
         run: npm ci
+      - name: Install + build dashboard
+        working-directory: dashboard
+        run: npm ci && npm run build
+      - name: Compile backend
+        run: npx tsc -p tsconfig.json
       - name: Run check (tests + lint)
         run: npm run check
+      - id: meta
+        name: Extract version from tag
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Pack tarball
+        run: npm pack
+      # Defensive verification: the publish-time error of shipping an empty
+      # dist/ or missing manifest produces a silent install failure on the
+      # consumer side. Better to fail loudly here.
+      - name: Verify tarball includes built artifacts
+        run: |
+          mkdir -p /tmp/tarball-verify
+          tar -xzf nk3750-openclaw-clawlens-*.tgz -C /tmp/tarball-verify
+          test -f /tmp/tarball-verify/package/dist/index.js \
+            || { echo "::error::tarball missing dist/index.js — backend not built"; exit 1; }
+          test -f /tmp/tarball-verify/package/dashboard/dist/index.html \
+            || { echo "::error::tarball missing dashboard/dist/index.html — SPA not built"; exit 1; }
+          test -f /tmp/tarball-verify/package/openclaw.plugin.json \
+            || { echo "::error::tarball missing openclaw.plugin.json — manifest required for OpenClaw plugin loading"; exit 1; }
+          rm -rf /tmp/tarball-verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: "*.tgz"
+          retention-days: 7
+
+  publish-clawhub:
+    name: Publish to ClawHub
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install ClawHub CLI
+        run: npm i -g clawhub
+      - name: Publish to ClawHub
+        run: clawhub package publish "${{ github.repository }}@${{ github.ref_name }}" --json
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+      - name: Install backend dependencies
+        run: npm ci
       - name: Build dashboard
         working-directory: dashboard
         run: npm ci && npm run build
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Compile backend
+        run: npx tsc -p tsconfig.json
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release-tarball:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
         with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: "nk3750-openclaw-clawlens-*.tgz"
           generate_release_notes: true
           body_path: CHANGELOG.md
