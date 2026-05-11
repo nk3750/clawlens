@@ -51,12 +51,45 @@ export type AuditDecisionData = {
 /** Window for detecting near-simultaneous double-writes of the same entry kind. */
 const DOUBLE_WRITE_WINDOW_MS = 100;
 
+const GLOBAL_AUDIT_LOGGER_CACHE = Symbol.for("clawlens.AuditLogger.instances");
+
+type AuditLoggerCache = Map<string, AuditLogger>;
+
+interface GlobalWithCache {
+  [GLOBAL_AUDIT_LOGGER_CACHE]?: AuditLoggerCache;
+}
+
+/**
+ * Return a process-singleton AuditLogger for the given file path.
+ *
+ * A globalThis-keyed cache (not a module-scoped Map) is required because
+ * OpenClaw's sandboxed-agent path may fall back to the embedded runner, which
+ * re-imports the plugin module fresh. Each module load gets its own module
+ * scope, so a module-local Map gives one cache per load — back to the original
+ * race. Symbol.for + globalThis is true process-singleton.
+ */
+export function getAuditLogger(filePath: string): AuditLogger {
+  const g = globalThis as GlobalWithCache;
+  let cache = g[GLOBAL_AUDIT_LOGGER_CACHE];
+  if (!cache) {
+    cache = new Map();
+    g[GLOBAL_AUDIT_LOGGER_CACHE] = cache;
+  }
+  let existing = cache.get(filePath);
+  if (!existing) {
+    existing = new AuditLogger(filePath);
+    cache.set(filePath, existing);
+  }
+  return existing;
+}
+
 export class AuditLogger extends EventEmitter {
   private filePath: string;
   private lastHash: string = "0";
   private writeStream: fs.WriteStream | null = null;
   /** Map of `toolCallId:kind` → last write epoch-ms. Used to flag suspected double-writes. */
   private recentWrites = new Map<string, number>();
+  private _initialized = false;
 
   constructor(filePath: string) {
     super();
@@ -64,6 +97,11 @@ export class AuditLogger extends EventEmitter {
   }
 
   async init(): Promise<void> {
+    if (this._initialized) {
+      return;
+    }
+    this._initialized = true;
+
     const dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

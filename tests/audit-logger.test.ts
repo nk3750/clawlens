@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuditLogger } from "../src/audit/logger";
+import { type AuditEntry, AuditLogger, getAuditLogger } from "../src/audit/logger";
 
 describe("AuditLogger", () => {
   let tmpDir: string;
@@ -380,5 +380,97 @@ describe("AuditLogger", () => {
     expect(entries[0].riskTier).toBeUndefined();
     expect(entries[0].riskTags).toBeUndefined();
     expect(AuditLogger.verifyChain(entries).valid).toBe(true);
+  });
+});
+
+describe("AuditLogger — race regression lock", () => {
+  it("preserves chain integrity when two callers race writes to the same file", async () => {
+    const tmpPath = path.join(os.tmpdir(), `audit-race-${Date.now()}.jsonl`);
+    try {
+      // Without the singleton fix, two AuditLoggers constructed against the
+      // same file each cache their own `lastHash` — concurrent appends produce
+      // chain breaks. The fix routes both through getAuditLogger, returning
+      // the SAME instance from globalThis cache.
+      const a = getAuditLogger(tmpPath);
+      const b = getAuditLogger(tmpPath);
+      expect(a).toBe(b);
+
+      await a.init();
+      await b.init(); // must be idempotent
+
+      for (let i = 0; i < 50; i++) {
+        a.logDecision({
+          timestamp: new Date().toISOString(),
+          toolName: "exec",
+          toolCallId: `race-a-${i}`,
+          params: { command: `echo a-${i}` },
+          decision: "allow",
+        });
+        b.logDecision({
+          timestamp: new Date().toISOString(),
+          toolName: "exec",
+          toolCallId: `race-b-${i}`,
+          params: { command: `echo b-${i}` },
+          decision: "allow",
+        });
+      }
+
+      await a.flush();
+
+      const lines = fs.readFileSync(tmpPath, "utf-8").trim().split("\n");
+      let expectedPrev = "0";
+      for (const line of lines) {
+        const entry = JSON.parse(line) as AuditEntry;
+        expect(entry.prevHash).toBe(expectedPrev);
+        expectedPrev = entry.hash;
+      }
+      expect(lines.length).toBe(100);
+    } finally {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      const cache = (globalThis as Record<symbol, unknown>)[
+        Symbol.for("clawlens.AuditLogger.instances")
+      ] as Map<string, AuditLogger> | undefined;
+      cache?.delete(tmpPath);
+    }
+  });
+
+  it("init() is idempotent — second call is a no-op", async () => {
+    const tmpPath = path.join(os.tmpdir(), `audit-idem-${Date.now()}.jsonl`);
+    try {
+      const logger = getAuditLogger(tmpPath);
+      await logger.init();
+      logger.logDecision({
+        timestamp: new Date().toISOString(),
+        toolName: "exec",
+        toolCallId: "idem-1",
+        params: {},
+        decision: "allow",
+      });
+      // Second init must be a no-op. If it re-opens the write stream the
+      // first entry — still buffered in the now-orphaned stream — can race
+      // against entries from the new stream, and re-reading the (still empty
+      // on disk) file resets lastHash to "0" and breaks the chain for the
+      // next append.
+      await logger.init();
+      logger.logDecision({
+        timestamp: new Date().toISOString(),
+        toolName: "exec",
+        toolCallId: "idem-2",
+        params: {},
+        decision: "allow",
+      });
+      await logger.flush();
+      const lines = fs.readFileSync(tmpPath, "utf-8").trim().split("\n");
+      expect(lines.length).toBe(2);
+      const [first, second] = lines.map((l) => JSON.parse(l) as AuditEntry);
+      expect(second.prevHash).toBe(first.hash);
+      expect(AuditLogger.verifyChain([first, second]).valid).toBe(true);
+    } finally {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      const cache = (globalThis as Record<symbol, unknown>)[
+        Symbol.for("clawlens.AuditLogger.instances")
+      ] as Map<string, AuditLogger> | undefined;
+      cache?.delete(tmpPath);
+    }
   });
 });

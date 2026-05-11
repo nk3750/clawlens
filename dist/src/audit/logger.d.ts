@@ -41,12 +41,23 @@ export type AuditDecisionData = {
     agentId?: string;
     sessionKey?: string;
 };
+/**
+ * Return a process-singleton AuditLogger for the given file path.
+ *
+ * A globalThis-keyed cache (not a module-scoped Map) is required because
+ * OpenClaw's sandboxed-agent path may fall back to the embedded runner, which
+ * re-imports the plugin module fresh. Each module load gets its own module
+ * scope, so a module-local Map gives one cache per load — back to the original
+ * race. Symbol.for + globalThis is true process-singleton.
+ */
+export declare function getAuditLogger(filePath: string): AuditLogger;
 export declare class AuditLogger extends EventEmitter {
     private filePath;
     private lastHash;
     private writeStream;
     /** Map of `toolCallId:kind` → last write epoch-ms. Used to flag suspected double-writes. */
     private recentWrites;
+    private _initialized;
     constructor(filePath: string);
     init(): Promise<void>;
     private computeHash;

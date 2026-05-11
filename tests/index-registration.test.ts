@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock all heavy dependencies so we can test registration logic in isolation
-vi.mock("../src/audit/logger", () => ({
-  AuditLogger: vi.fn().mockImplementation(() => ({
+vi.mock("../src/audit/logger", () => {
+  const buildMockLogger = () => ({
     init: vi.fn(),
     readEntries: vi.fn().mockReturnValue([]),
     flush: vi.fn(),
     logDecision: vi.fn(),
     appendEvaluation: vi.fn(),
-  })),
-}));
+  });
+  return {
+    AuditLogger: vi.fn().mockImplementation(buildMockLogger),
+    getAuditLogger: vi.fn().mockImplementation(buildMockLogger),
+  };
+});
 
 vi.mock("../src/risk/eval-cache", () => ({
   EvalCache: vi.fn().mockImplementation(() => ({
