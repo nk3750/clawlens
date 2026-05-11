@@ -45,6 +45,17 @@ jobs:
       - id: meta
         name: Extract version from tag
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Sync package.json version to tag
+        # CRITICAL: without this, npm publish ships whatever's in the committed
+        # package.json (which historically said "1.0.0"). v1.0.0-rc.1 caught the
+        # bug — the rc tag intended to publish 1.0.0-rc.1 but actually published
+        # 1.0.0 (the literal package.json value), promoting it to npm's `latest`
+        # before any matrix validation. Bump the in-runner package.json to the
+        # tag-derived version BEFORE npm pack / publish so all three publish
+        # channels (npm, ClawHub, GH Release tarball) carry the correct version.
+        # `--allow-same-version` lets stable tags (v1.0.0) work without erroring
+        # when the committed package.json already matches.
+        run: npm version --no-git-tag-version --allow-same-version "${{ steps.meta.outputs.version }}"
       - name: Pack tarball
         run: npm pack
       # Defensive verification: the publish-time error of shipping an empty
@@ -94,9 +105,16 @@ jobs:
         # before any subcommand. v1.0.0-rc.1 caught this — the publish step
         # exited with "Error: Not logged in. Run: clawhub login" despite
         # CLAWHUB_TOKEN being set.
+        #
+        # `--version` override: clawhub publish reads package.json from the
+        # GitHub source at the given ref. Since we don't commit the version
+        # bump (release-engineering best practice — keeps tags clean), we
+        # override here so ClawHub records the tag-derived version, not the
+        # stale committed one. v1.0.0-rc.2 caught this too — published 1.0.0
+        # instead of 1.0.0-rc.2 without this flag.
         run: |
           clawhub login --token "$CLAWHUB_TOKEN" --no-browser
-          clawhub package publish "${{ github.repository }}@${{ github.ref_name }}" --json
+          clawhub package publish "${{ github.repository }}@${{ github.ref_name }}" --version "${{ needs.build.outputs.version }}" --json
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
 
@@ -124,8 +142,24 @@ jobs:
         run: npm ci && npm run build
       - name: Compile backend
         run: npx tsc -p tsconfig.json
+      - name: Sync package.json version to tag
+        # Same rationale as the build job: ensure npm publish ships the
+        # tag-derived version, not the stale committed package.json value.
+        # Without this, v1.0.0-rc.1 published as 1.0.0 (the literal value)
+        # and promoted to `latest` before validation. See build job for
+        # full context.
+        run: npm version --no-git-tag-version --allow-same-version "${{ needs.build.outputs.version }}"
       - name: Publish
-        run: npm publish --access public
+        # `--tag` flag: prerelease versions (containing a hyphen per semver,
+        # e.g. 1.0.0-rc.1) get the `next` dist-tag so they don't promote to
+        # `latest`. Stable versions get `latest`. This prevents the
+        # premature-promotion bug that v1.0.0-rc.1 exposed.
+        run: |
+          if [[ "${{ needs.build.outputs.version }}" == *-* ]]; then
+            npm publish --access public --tag next
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -149,3 +183,7 @@ jobs:
           files: "nk3750-openclaw-clawlens-*.tgz"
           generate_release_notes: true
           body_path: CHANGELOG.md
+          # Auto-flag rc tags as pre-releases (semver: any tag with a hyphen
+          # is a pre-release). v1.0.0-rc.1 was mis-flagged as stable until we
+          # caught it via API PATCH; this prevents future drift.
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
