@@ -3,6 +3,7 @@
   "name": "ClawLens",
   "description": "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
   "version": "1.0.0",
+  "activation": { "onStartup": true },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
