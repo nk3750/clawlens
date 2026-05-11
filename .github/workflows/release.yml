@@ -88,7 +88,15 @@ jobs:
       - name: Install ClawHub CLI
         run: npm i -g clawhub
       - name: Publish to ClawHub
-        run: clawhub package publish "${{ github.repository }}@${{ github.ref_name }}" --json
+        # The clawhub CLI does NOT auto-consume CLAWHUB_TOKEN from the env;
+        # it requires either an interactive `clawhub login` or a programmatic
+        # `clawhub login --token <T> --no-browser` to seed its config file
+        # before any subcommand. v1.0.0-rc.1 caught this — the publish step
+        # exited with "Error: Not logged in. Run: clawhub login" despite
+        # CLAWHUB_TOKEN being set.
+        run: |
+          clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+          clawhub package publish "${{ github.repository }}@${{ github.ref_name }}" --json
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
 
