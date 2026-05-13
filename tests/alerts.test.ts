@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { formatAlert, sendAlert, shouldAlert } from "../src/alerts/telegram";
+import { formatAlert, sendAlert, shouldAlert } from "../src/alerts/alert-format";
 import type { AlertConfig, RiskScore } from "../src/risk/types";
 
 describe("shouldAlert", () => {

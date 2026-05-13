@@ -3,7 +3,7 @@ import {
   formatGuardrailNotifyAlert,
   sendAlert,
   shouldAlert,
-} from "../alerts/telegram.js";
+} from "../alerts/alert-format.js";
 import type { AuditLogger } from "../audit/logger.js";
 import type { ClawLensConfig } from "../config.js";
 import { formatTargetSummary } from "../dashboard/categories.js";

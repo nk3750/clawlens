@@ -21,7 +21,7 @@ vi.mock("../src/risk/llm-evaluator", () => ({
   evaluateWithLlm: vi.fn(),
 }));
 
-vi.mock("../src/alerts/telegram", () => ({
+vi.mock("../src/alerts/alert-format", () => ({
   shouldAlert: vi.fn().mockReturnValue(false),
   formatAlert: vi.fn().mockReturnValue("alert"),
   sendAlert: vi.fn(),

@@ -8,14 +8,14 @@ vi.mock("../src/risk/scorer", () => ({
 vi.mock("../src/risk/llm-evaluator", () => ({
   evaluateWithLlm: vi.fn(),
 }));
-vi.mock("../src/alerts/telegram", () => ({
+vi.mock("../src/alerts/alert-format", () => ({
   shouldAlert: vi.fn().mockReturnValue(false),
   formatAlert: vi.fn().mockReturnValue("alert"),
   formatGuardrailNotifyAlert: vi.fn().mockReturnValue("[guardrail allow_notify] x"),
   sendAlert: vi.fn(),
 }));
 
-import { sendAlert } from "../src/alerts/telegram";
+import { sendAlert } from "../src/alerts/alert-format";
 import { DEFAULT_CONFIG } from "../src/config";
 import { GuardrailStore } from "../src/guardrails/store";
 import type { Guardrail } from "../src/guardrails/types";
