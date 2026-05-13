@@ -55,17 +55,18 @@ const plugin = {
     id: "clawlens",
     name: "ClawLens",
     description: "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
-    version: "1.0.0",
+    version: "1.0.1",
     register(api) {
         const config = resolveConfig(api.pluginConfig, api.resolvePath);
         // Resolve runtime from OpenClaw plugin API (may differ per session)
         const runtime = api.runtime;
-        // Resolve provider from OpenClaw auth config (e.g., "anthropic")
+        // Resolve provider from OpenClaw auth config (e.g., "anthropic"). v1.0.1
+        // removed the `risk.llmProvider` override; provider comes only from
+        // OpenClaw's auth profiles when LLM evaluation is explicitly opted in.
         const authProfiles = api.config.auth?.profiles;
-        const detectedProvider = authProfiles
+        const provider = authProfiles
             ? Object.values(authProfiles).find((p) => p.provider)?.provider
             : undefined;
-        const provider = detectedProvider || config.risk.llmProvider;
         const typedRuntime = runtime;
         // ── First call: create all components and handler instances ──
         if (!_handlerDeps) {

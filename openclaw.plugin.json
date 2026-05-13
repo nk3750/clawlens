@@ -2,7 +2,7 @@
   "id": "clawlens",
   "name": "ClawLens",
   "description": "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "activation": { "onStartup": true },
   "configSchema": {
     "type": "object",
@@ -25,19 +25,44 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "llmEvalThreshold": { "type": "number" },
-          "llmEnabled": { "type": "boolean" },
-          "llmProvider": { "type": "string" },
-          "llmModel": { "type": "string" },
-          "llmApiKeyEnv": { "type": "string" }
+          "llmEvalThreshold": {
+            "type": "number",
+            "description": "Score threshold above which opt-in LLM evaluation runs when risk.llmEnabled is true. Does not gate guardrail matching or Attention Inbox freshness."
+          },
+          "llmEnabled": {
+            "type": "boolean",
+            "description": "Default false. When true, ClawLens sends sanitized tool-call metadata to the user's configured OpenClaw LLM provider for risk evaluation."
+          },
+          "llmProvider": {
+            "type": "string",
+            "description": "Deprecated no-op in v1.0.1. ClawLens ignores this value and uses OpenClaw's configured model/auth runtime when risk.llmEnabled is true. Remove this setting from your config before v1.1.0."
+          },
+          "llmModel": {
+            "type": "string",
+            "description": "Deprecated no-op in v1.0.1. ClawLens ignores this value and uses OpenClaw's configured model/auth runtime when risk.llmEnabled is true. Remove this setting from your config before v1.1.0."
+          },
+          "llmApiKeyEnv": {
+            "type": "string",
+            "description": "Deprecated no-op in v1.0.1. ClawLens does not read LLM API keys from environment variables. Remove this setting from your config before v1.1.0."
+          }
         }
       },
       "alerts": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean" },
-          "threshold": { "type": "number" },
+          "enabled": {
+            "type": "boolean",
+            "description": "Disabled by default. When true, ClawLens emits redacted local/gateway alerts for high-risk actions."
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Score threshold for generic high-risk alerts (only used when alerts.enabled=true). Does not control guardrails or LLM evaluation."
+          },
+          "includeParamValues": {
+            "type": "boolean",
+            "description": "Default false. When true, alert messages may include sanitized command, path, URL, or channel details. Credential patterns are always redacted upstream."
+          },
           "quietHoursStart": { "type": "string" },
           "quietHoursEnd": { "type": "string" }
         }

@@ -1,5 +1,10 @@
 import type { AuditEntry } from "../audit/logger.js";
 import type { EmbeddedAgentRuntime, ModelAuth } from "../types.js";
+/**
+ * Verbatim copy used when llmEnabled=false. Locked by tests so future copy
+ * drifts are caught — see spec §8 L716-720.
+ */
+export declare const SUMMARY_LLM_DISABLED_MESSAGE = "Enable LLM evaluation in plugins.entries.clawlens.config.risk.llmEnabled to generate summaries.";
 export interface SessionSummary {
     sessionKey: string;
     summary: string;
@@ -17,32 +22,30 @@ export type SessionSummaryResult = {
     message: string;
 };
 /**
- * Content-shaped summary cap. Prefer cutting at the last sentence terminator
- * (`.`, `!`, `?`) so the popover lands on a complete thought. Fall back to a
- * word-boundary char-cap with `…` only when there's no usable terminator AND
- * the raw response runs past `max` (panic-stop, ~400 chars). The 40-char guard
- * on the terminator cut prevents a leading "Yes." from chopping the rest of
- * the response.
- *
- * Exported for direct unit-testing — internal helper otherwise.
+ * Content-shaped summary cap. See full doc on the exported function.
  */
 export declare function capSummaryLength(raw: string, max?: number): string;
-/**
- * Get or generate a session summary.
- *
- * Returns `{ ok: true, summary }` for any session with entries — either the
- * LLM-generated summary or the template fallback. Returns
- * `{ ok: false, reason: "not_found", ... }` when the session key has no
- * entries. Never throws; the HTTP layer branches on `result.ok`.
- */
-export declare function getSessionSummary(sessionKey: string, entries: AuditEntry[], config: {
+export interface SessionSummaryConfig {
+    /**
+     * Opt-in gate. When false (default), the path returns the LLM-disabled
+     * message without contacting modelAuth or any provider endpoint.
+     */
+    llmEnabled: boolean;
     llmModel: string;
-    llmApiKeyEnv: string;
     modelAuth?: ModelAuth;
     provider?: string;
     agent?: EmbeddedAgentRuntime;
     openClawConfig?: Record<string, unknown>;
-}): Promise<SessionSummaryResult>;
+}
+/**
+ * Get or generate a session summary.
+ *
+ * Returns `{ ok: true, summary }` for any session with entries — either the
+ * LLM-generated summary, the template fallback, or the LLM-disabled message.
+ * Returns `{ ok: false, reason: "not_found", ... }` when the session key has
+ * no entries. Never throws; the HTTP layer branches on `result.ok`.
+ */
+export declare function getSessionSummary(sessionKey: string, entries: AuditEntry[], config: SessionSummaryConfig): Promise<SessionSummaryResult>;
 /** Exposed for testing — clears the summary cache. */
 export declare function clearSummaryCache(): void;
 /** Exposed for testing — get cache size. */

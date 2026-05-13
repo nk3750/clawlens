@@ -5,6 +5,7 @@ import {
   clearSummaryCache,
   getSessionSummary,
   getSummaryCacheSize,
+  SUMMARY_LLM_DISABLED_MESSAGE,
 } from "../src/dashboard/session-summary";
 
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
@@ -34,8 +35,8 @@ describe("getSessionSummary", () => {
       entry({ sessionKey: "s1", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
     ];
     const result = await getSessionSummary("nonexistent", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -44,7 +45,7 @@ describe("getSessionSummary", () => {
     }
   });
 
-  it("generates template summary for <3 entries", async () => {
+  it("generates template summary for <3 entries when LLM enabled", async () => {
     const entries = [
       entry({
         sessionKey: "s1",
@@ -63,8 +64,8 @@ describe("getSessionSummary", () => {
     ];
 
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -87,8 +88,8 @@ describe("getSessionSummary", () => {
     ];
 
     const config = {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     };
 
     const first = await getSessionSummary("s1", entries, config);
@@ -117,10 +118,9 @@ describe("getSessionSummary", () => {
     ];
 
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
-    // Template now says "Ran N actions" — matches stat strip format
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary.summary).toMatch(/Ran 2 action/);
@@ -128,8 +128,8 @@ describe("getSessionSummary", () => {
     }
   });
 
-  it("falls back to template when no API key and no modelAuth", async () => {
-    // 3+ entries would try LLM, but no key → falls back to template
+  it("falls back to template when LLM enabled but no modelAuth and no agent", async () => {
+    // 3+ entries would try LLM, but no modelAuth/agent → falls back to template
     const entries = Array.from({ length: 5 }, (_, i) =>
       entry({
         sessionKey: "s1",
@@ -140,27 +140,17 @@ describe("getSessionSummary", () => {
       }),
     );
 
-    // Ensure no API key is set
-    const original = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary.summary).toMatch(/Ran \d+ action/);
     }
-
-    // Restore
-    if (original !== undefined) {
-      process.env.ANTHROPIC_API_KEY = original;
-    }
   });
 
-  it("attempts modelAuth before env var for summary generation", async () => {
-    // modelAuth rejects, no env var → should still fall back to template
+  it("attempts modelAuth before falling back to template (no env-var fallback)", async () => {
     const entries = Array.from({ length: 5 }, (_, i) =>
       entry({
         sessionKey: "s1",
@@ -171,8 +161,9 @@ describe("getSessionSummary", () => {
       }),
     );
 
+    // Even with an env key set, summary generation must not use it.
     const original = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "should-not-be-used";
 
     const modelAuth = {
       resolveApiKeyForProvider: vi.fn().mockRejectedValue(new Error("Not resolved")),
@@ -180,18 +171,16 @@ describe("getSessionSummary", () => {
     };
 
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       modelAuth,
       provider: "anthropic",
     });
 
-    // modelAuth was attempted
     expect(modelAuth.resolveApiKeyForProvider).toHaveBeenCalledWith({
       provider: "anthropic",
       cfg: undefined,
     });
-    // Falls back to template
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary.summary).toMatch(/Ran \d+ action/);
@@ -199,6 +188,8 @@ describe("getSessionSummary", () => {
 
     if (original !== undefined) {
       process.env.ANTHROPIC_API_KEY = original;
+    } else {
+      delete process.env.ANTHROPIC_API_KEY;
     }
   });
 
@@ -214,8 +205,8 @@ describe("getSessionSummary", () => {
     ];
 
     await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(getSummaryCacheSize()).toBe(1);
 
@@ -224,22 +215,94 @@ describe("getSessionSummary", () => {
   });
 });
 
+describe("getSessionSummary — risk.llmEnabled=false gate (v1.0.1)", () => {
+  beforeEach(() => {
+    clearSummaryCache();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns the disabled-message summary when llmEnabled is false (3+ entries)", async () => {
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    const result = await getSessionSummary("s1", entries, {
+      llmEnabled: false,
+      llmModel: "claude-haiku-4-5-20251001",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summary).toBe(SUMMARY_LLM_DISABLED_MESSAGE);
+    expect(result.summary.isLlmGenerated).toBe(false);
+  });
+
+  it("never calls modelAuth or fetch when llmEnabled=false", async () => {
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    const modelAuth = {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: "real-key",
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await getSessionSummary("s1", entries, {
+        llmEnabled: false,
+        llmModel: "claude-haiku-4-5-20251001",
+        modelAuth,
+        provider: "anthropic",
+      });
+
+      expect(modelAuth.resolveApiKeyForProvider).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("references the exact config key in the disabled message", () => {
+    // Lock the spec wording §8 L716-720 verbatim so future copy drifts are
+    // caught by the test suite.
+    expect(SUMMARY_LLM_DISABLED_MESSAGE).toContain("risk.llmEnabled");
+    expect(SUMMARY_LLM_DISABLED_MESSAGE).toContain("plugins.entries.clawlens.config");
+  });
+});
+
 // #25: capSummaryLength is content-shaped (sentence-terminator preferred) with
-// a 400-char panic stop. Direct unit tests on the helper lock the new shape;
-// the LLM-integration tests below pin the soft prompt + token-headroom changes
-// that motivated the rewrite.
+// a 400-char panic stop.
 describe("capSummaryLength", () => {
   it("returns full raw when input ends in a sentence terminator (≥40 chars)", () => {
-    // Last terminator is at the very end → slice up to and including it gives
-    // the full string. Most common LLM-output shape post-fix.
     const input = "Agent monitors remote host with heartbeat probes.";
     expect(input.length).toBeGreaterThanOrEqual(40);
     expect(capSummaryLength(input)).toBe(input);
   });
 
   it("returns full raw for multi-sentence input under the panic cap", () => {
-    // Last terminator dominates → full string returned. Hybrid display in the
-    // popover scrolls if needed; no truncation here.
     const input = "Sentence one ends here. Then a second clean sentence follows.";
     expect(input.length).toBeGreaterThanOrEqual(40);
     expect(input.length).toBeLessThan(400);
@@ -247,9 +310,6 @@ describe("capSummaryLength", () => {
   });
 
   it("caps at the last terminator that yields ≥40 chars when raw runs past the panic budget", () => {
-    // Long tail with no further terminators forces a content-shaped cap at the
-    // last `.` in the leading prose. Ellipsis is NOT appended — the sentence
-    // terminator already signals completion.
     const head = "First. This is the second sentence here.";
     expect(head.length).toBeGreaterThanOrEqual(40);
     const input = `${head} ${"x".repeat(500)}`;
@@ -258,17 +318,12 @@ describe("capSummaryLength", () => {
   });
 
   it("returns full raw for short input ending in '.' (no leading-fragment truncation, no '…')", () => {
-    // The 40-char fragment guard exists to avoid truncating 'Yes. Done — agent
-    // monitors X' to just 'Yes.'. For inputs already <40 chars, both branches
-    // return raw unchanged.
     const input = "Yes. Done.";
     expect(input.length).toBeLessThan(40);
     expect(capSummaryLength(input)).toBe(input);
   });
 
   it("does NOT truncate to a leading <40-char fragment when the only terminator is too early", () => {
-    // 'Yes.' produces a 4-char slice → guard rejects it. Falls through to
-    // passthrough since raw (under 400) is below the panic cap.
     const input =
       "Yes. The agent is currently monitoring remote hosts and emitting heartbeat traffic";
     expect(input.length).toBeLessThan(400);
@@ -277,9 +332,6 @@ describe("capSummaryLength", () => {
   });
 
   it("falls back to word-boundary char-cap with '…' when no terminator AND raw exceeds 400", () => {
-    // True LLM misbehavior — long stream of words with no terminators. Last
-    // resort: the legacy word-boundary slice plus the '…' marker so the user
-    // sees the truncation explicitly.
     const word = "lorem ";
     const input = word.repeat(80).trimEnd(); // 479 chars, spaces, no terminators
     expect(input.length).toBeGreaterThan(400);
@@ -291,9 +343,8 @@ describe("capSummaryLength", () => {
 });
 
 // LLM-integration tests: stub fetch so we can assert the system prompt + user
-// prompt content + max_tokens that the summary path sends upstream. These pin
-// the soft-target wording + 100-token headroom from #25 so a regression back
-// to "MAXIMUM 140 characters" / 48 tokens fails CI.
+// prompt content + max_tokens that the summary path sends upstream when
+// llmEnabled=true + modelAuth resolves a key.
 describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   function manyEntries(): AuditEntry[] {
     return Array.from({ length: 5 }, (_, i) =>
@@ -307,16 +358,23 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
     );
   }
 
-  let originalKey: string | undefined;
   let mockFetch: ReturnType<typeof vi.fn>;
   let lastUserMessage = "";
   let lastSystemPrompt = "";
   let lastMaxTokens: number | undefined;
 
+  function modelAuthOk(key: string) {
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: key,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
   beforeEach(() => {
     clearSummaryCache();
-    originalKey = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "test-key";
 
     lastUserMessage = "";
     lastSystemPrompt = "";
@@ -326,11 +384,6 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   });
 
   afterEach(() => {
-    if (originalKey === undefined) {
-      delete process.env.ANTHROPIC_API_KEY;
-    } else {
-      process.env.ANTHROPIC_API_KEY = originalKey;
-    }
     vi.unstubAllGlobals();
   });
 
@@ -355,9 +408,10 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
     setLlmResponse(clean);
 
     const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       provider: "anthropic",
+      modelAuth: modelAuthOk("test-key"),
     });
 
     expect(result.ok).toBe(true);
@@ -367,33 +421,29 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   });
 
   it("uses a soft length target in the system prompt — no MAXIMUM 140 hard-cap language", async () => {
-    // Locks the #25 fix: "MAXIMUM 140 characters" is what caused the popover to
-    // land mid-thought. The new framing prefers a complete sentence over a hard
-    // count.
     setLlmResponse("ok");
 
     await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       provider: "anthropic",
+      modelAuth: modelAuthOk("test-key"),
     });
 
     expect(lastSystemPrompt).toContain("complete thought");
     expect(lastSystemPrompt).toContain("200 characters");
     expect(lastSystemPrompt).not.toMatch(/MAXIMUM\s+140/);
-    // User-side persona framing is preserved.
     expect(lastUserMessage).toContain("one present-tense sentence");
   });
 
   it("requests max_tokens=100 on the direct-API call (room for a long-but-complete sentence)", async () => {
-    // Bumped from 48 → 100 in #25 so the LLM has headroom to land on a sentence
-    // terminator instead of truncating mid-word against the upstream cap.
     setLlmResponse("ok");
 
     await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       provider: "anthropic",
+      modelAuth: modelAuthOk("test-key"),
     });
 
     expect(lastMaxTokens).toBe(100);

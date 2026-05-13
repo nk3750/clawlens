@@ -13,15 +13,24 @@ export interface ClawLensConfig {
   };
   risk: {
     llmEvalThreshold: number;
+    /**
+     * Opt-in LLM risk evaluation. Default false in v1.0.1 (local-safe
+     * baseline). When true, ClawLens sends sanitized tool-call metadata to the
+     * user's configured OpenClaw LLM provider via OpenClaw's existing
+     * model/auth runtime. ClawLens does not read LLM API keys from env vars.
+     */
     llmEnabled: boolean;
-    llmModel: string;
-    llmApiKeyEnv: string;
-    /** Optional override — auto-detected from OpenClaw auth config if not set */
-    llmProvider: string;
   };
   alerts: {
     enabled: boolean;
     threshold: number;
+    /**
+     * When false (default), alert messages omit command/url/path values and
+     * carry a "redacted by default" details line. Set to true to opt into
+     * including parameter detail in alert payloads; redaction of credential
+     * patterns still applies upstream.
+     */
+    includeParamValues: boolean;
     quietHoursStart?: string;
     quietHoursEnd?: string;
   };
@@ -41,14 +50,12 @@ export const DEFAULT_CONFIG: ClawLensConfig = {
   },
   risk: {
     llmEvalThreshold: 50,
-    llmEnabled: true,
-    llmModel: "",
-    llmApiKeyEnv: "ANTHROPIC_API_KEY",
-    llmProvider: "anthropic",
+    llmEnabled: false,
   },
   alerts: {
-    enabled: true,
+    enabled: false,
     threshold: 80,
+    includeParamValues: false,
   },
 };
 
@@ -58,10 +65,23 @@ export function resolveConfig(
 ): ClawLensConfig {
   const resolve = resolvePath || ((p: string) => p.replace(/^~/, os.homedir()));
 
-  if (!pluginConfig) return { ...DEFAULT_CONFIG };
+  if (!pluginConfig) {
+    return {
+      ...DEFAULT_CONFIG,
+      risk: { ...DEFAULT_CONFIG.risk },
+      alerts: { ...DEFAULT_CONFIG.alerts },
+      digest: { ...DEFAULT_CONFIG.digest },
+    };
+  }
 
   const riskCfg = pluginConfig.risk as Record<string, unknown> | undefined;
   const alertsCfg = pluginConfig.alerts as Record<string, unknown> | undefined;
+
+  // Legacy risk.llmApiKeyEnv / risk.llmProvider / risk.llmModel are tolerated
+  // here (not destructured into the runtime config) so existing user configs
+  // continue to load. Spec §5 L483-489. They MUST NOT affect runtime behavior.
+  // These fields are removed in v1.1.0; the manifest carries deprecated no-op
+  // descriptions in the meantime.
 
   return {
     auditLogPath: resolve((pluginConfig.auditLogPath as string) || DEFAULT_CONFIG.auditLogPath),
@@ -90,16 +110,6 @@ export function resolveConfig(
         typeof riskCfg?.llmEnabled === "boolean"
           ? riskCfg.llmEnabled
           : DEFAULT_CONFIG.risk.llmEnabled,
-      llmModel:
-        typeof riskCfg?.llmModel === "string" ? riskCfg.llmModel : DEFAULT_CONFIG.risk.llmModel,
-      llmApiKeyEnv:
-        typeof riskCfg?.llmApiKeyEnv === "string"
-          ? riskCfg.llmApiKeyEnv
-          : DEFAULT_CONFIG.risk.llmApiKeyEnv,
-      llmProvider:
-        typeof riskCfg?.llmProvider === "string"
-          ? riskCfg.llmProvider
-          : DEFAULT_CONFIG.risk.llmProvider,
     },
     alerts: {
       enabled:
@@ -108,6 +118,10 @@ export function resolveConfig(
         typeof alertsCfg?.threshold === "number"
           ? alertsCfg.threshold
           : DEFAULT_CONFIG.alerts.threshold,
+      includeParamValues:
+        typeof alertsCfg?.includeParamValues === "boolean"
+          ? alertsCfg.includeParamValues
+          : DEFAULT_CONFIG.alerts.includeParamValues,
       quietHoursStart: alertsCfg?.quietHoursStart as string | undefined,
       quietHoursEnd: alertsCfg?.quietHoursEnd as string | undefined,
     },

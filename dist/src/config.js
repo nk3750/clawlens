@@ -12,22 +12,31 @@ export const DEFAULT_CONFIG = {
     },
     risk: {
         llmEvalThreshold: 50,
-        llmEnabled: true,
-        llmModel: "",
-        llmApiKeyEnv: "ANTHROPIC_API_KEY",
-        llmProvider: "anthropic",
+        llmEnabled: false,
     },
     alerts: {
-        enabled: true,
+        enabled: false,
         threshold: 80,
+        includeParamValues: false,
     },
 };
 export function resolveConfig(pluginConfig, resolvePath) {
     const resolve = resolvePath || ((p) => p.replace(/^~/, os.homedir()));
-    if (!pluginConfig)
-        return { ...DEFAULT_CONFIG };
+    if (!pluginConfig) {
+        return {
+            ...DEFAULT_CONFIG,
+            risk: { ...DEFAULT_CONFIG.risk },
+            alerts: { ...DEFAULT_CONFIG.alerts },
+            digest: { ...DEFAULT_CONFIG.digest },
+        };
+    }
     const riskCfg = pluginConfig.risk;
     const alertsCfg = pluginConfig.alerts;
+    // Legacy risk.llmApiKeyEnv / risk.llmProvider / risk.llmModel are tolerated
+    // here (not destructured into the runtime config) so existing user configs
+    // continue to load. Spec §5 L483-489. They MUST NOT affect runtime behavior.
+    // These fields are removed in v1.1.0; the manifest carries deprecated no-op
+    // descriptions in the meantime.
     return {
         auditLogPath: resolve(pluginConfig.auditLogPath || DEFAULT_CONFIG.auditLogPath),
         guardrailsPath: resolve(pluginConfig.guardrailsPath || DEFAULT_CONFIG.guardrailsPath),
@@ -46,19 +55,15 @@ export function resolveConfig(pluginConfig, resolvePath) {
             llmEnabled: typeof riskCfg?.llmEnabled === "boolean"
                 ? riskCfg.llmEnabled
                 : DEFAULT_CONFIG.risk.llmEnabled,
-            llmModel: typeof riskCfg?.llmModel === "string" ? riskCfg.llmModel : DEFAULT_CONFIG.risk.llmModel,
-            llmApiKeyEnv: typeof riskCfg?.llmApiKeyEnv === "string"
-                ? riskCfg.llmApiKeyEnv
-                : DEFAULT_CONFIG.risk.llmApiKeyEnv,
-            llmProvider: typeof riskCfg?.llmProvider === "string"
-                ? riskCfg.llmProvider
-                : DEFAULT_CONFIG.risk.llmProvider,
         },
         alerts: {
             enabled: typeof alertsCfg?.enabled === "boolean" ? alertsCfg.enabled : DEFAULT_CONFIG.alerts.enabled,
             threshold: typeof alertsCfg?.threshold === "number"
                 ? alertsCfg.threshold
                 : DEFAULT_CONFIG.alerts.threshold,
+            includeParamValues: typeof alertsCfg?.includeParamValues === "boolean"
+                ? alertsCfg.includeParamValues
+                : DEFAULT_CONFIG.alerts.includeParamValues,
             quietHoursStart: alertsCfg?.quietHoursStart,
             quietHoursEnd: alertsCfg?.quietHoursEnd,
         },

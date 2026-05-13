@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1 -- 2026-05-12
+
+- Security: disabled LLM risk evaluation by default and removed the ambient LLM API-key environment fallback. Users can opt in with `risk.llmEnabled=true`, which uses OpenClaw's configured model/auth runtime.
+- Security: changed default operation to a local-safe baseline: local dashboard, local hash-chained audit log, deterministic risk scoring, and user-created guardrails.
+- Security: disabled generic high-risk alerts by default and clarified that external approval/notification channels may receive action details only when users configure those flows.
+- Security: added a shared `src/privacy/redaction.ts` policy that scrubs common credential patterns from tool params before audit persistence, session context, LLM evaluation, alerts, and approval prompt text.
+- Migration: `risk.llmProvider`, `risk.llmModel`, and `risk.llmApiKeyEnv` are deprecated no-ops in v1.0.1. They are accepted temporarily for config compatibility but no longer affect LLM evaluation behavior.
+- Docs: replaced broad local-only wording with an explicit privacy and data-flow section, including a Windows ACL caveat for audit-log permissions.
+- Hardening: create the ClawLens audit directory/file with owner-only permissions (0o700 / 0o600) where supported.
+- Refactor: renamed `src/alerts/telegram.ts` → `src/alerts/alert-format.ts` so static reviewers no longer infer ClawLens-owned Telegram delivery. ClawLens does not own approval-channel routing; OpenClaw does.
+
 ## 1.0.0 -- 2026-05-08
 
 First public OSS release.

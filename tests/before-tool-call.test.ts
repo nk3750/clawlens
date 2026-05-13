@@ -6,6 +6,7 @@ import {
   createBeforeToolCallHandler,
   extractApprovalDetail,
 } from "../src/hooks/before-tool-call";
+import { REDACTION_MARKERS } from "../src/privacy/redaction";
 import { EvalCache } from "../src/risk/eval-cache";
 import { SessionContext } from "../src/risk/session-context";
 import type { LlmRiskEvaluation, RiskScore } from "../src/risk/types";
@@ -128,6 +129,11 @@ function makeConfig(overrides?: Partial<ClawLensConfig>): ClawLensConfig {
       ...DEFAULT_CONFIG.risk,
       llmEnabled: true,
       llmEvalThreshold: 50,
+    },
+    alerts: {
+      ...DEFAULT_CONFIG.alerts,
+      enabled: true,
+      threshold: 80,
     },
     ...overrides,
   };
@@ -657,5 +663,125 @@ describe("extractApprovalDetail", () => {
 
   it("unknown tool returns ''", () => {
     expect(extractApprovalDetail("unknown_tool", { foo: "bar" })).toBe("");
+  });
+});
+
+// v1.0.1 §2A: tool-call params are sanitized BEFORE they cross the trust
+// boundary into audit logs, the session context (where they'd be replayed
+// into LLM prompts as recent-action context), LLM eval payloads, and any
+// outbound alert/notification text. Local guardrail matching and the
+// deterministic scorer still see raw params — the hook must redact
+// downstream-only.
+describe("before_tool_call — param sanitization at the trust boundary", () => {
+  const SK_TOKEN = "sk-test-abcdefghijklmnopqrstuvwxyz123456";
+  const GHP_TOKEN = "ghp_abcdef0123456789abcdef0123456789abcd";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockComputeRiskScore.mockReturnValue(highRisk());
+  });
+
+  // ── alert mock spy: bring the alert-format mock into the test scope ────
+  async function getFormatAlertMock() {
+    const mod = await import("../src/alerts/alert-format");
+    return vi.mocked(mod.formatAlert);
+  }
+  async function getSendAlertMock() {
+    const mod = await import("../src/alerts/alert-format");
+    return vi.mocked(mod.sendAlert);
+  }
+
+  it("writes sanitized params to the audit log decision row", async () => {
+    const auditLogger = mockAuditLogger();
+    const deps = makeDeps({
+      auditLogger: auditLogger as unknown as BeforeToolCallDeps["auditLogger"],
+    });
+    const handler = createBeforeToolCallHandler(deps);
+
+    await handler(
+      makeEvent({
+        toolName: "exec",
+        params: { command: `curl -H "Authorization: Bearer ${SK_TOKEN}" https://api.example.com` },
+      }),
+      ctx,
+    );
+
+    const call = auditLogger.logDecision.mock.calls[0][0];
+    const params = call.params as Record<string, unknown>;
+    expect(params.command).not.toContain(SK_TOKEN);
+    expect(params.command).toContain("curl");
+    expect(params.command).toContain("api.example.com");
+  });
+
+  it("passes sanitized params to evaluateWithLlm", async () => {
+    mockEvaluateWithLlm.mockResolvedValue(realEval());
+
+    const deps = makeDeps();
+    const handler = createBeforeToolCallHandler(deps);
+
+    await handler(
+      makeEvent({
+        params: { command: `GITHUB_TOKEN=${GHP_TOKEN} npm publish` },
+      }),
+      ctx,
+    );
+
+    expect(mockEvaluateWithLlm).toHaveBeenCalledOnce();
+    const callArgs = mockEvaluateWithLlm.mock.calls[0];
+    const evalParams = callArgs[1] as Record<string, unknown>;
+    expect(evalParams.command).not.toContain(GHP_TOKEN);
+  });
+
+  it("stores sanitized params in the session context (recent-action context for future evals)", async () => {
+    const sessionContext = new SessionContext();
+    mockEvaluateWithLlm.mockResolvedValue(realEval());
+
+    const deps = makeDeps({ sessionContext });
+    const handler = createBeforeToolCallHandler(deps);
+
+    await handler(
+      makeEvent({
+        params: { apiKey: SK_TOKEN, foo: "bar" },
+      }),
+      ctx,
+    );
+
+    const recent = sessionContext.getRecent("test-session", 5);
+    expect(recent).toHaveLength(1);
+    const recordedParams = recent[0].params as Record<string, unknown>;
+    expect(recordedParams.apiKey).toBe(REDACTION_MARKERS.token);
+    expect(recordedParams.apiKey).not.toBe(SK_TOKEN);
+    expect(recordedParams.foo).toBe("bar");
+  });
+
+  it("passes sanitized params to formatAlert when alert fires", async () => {
+    mockComputeRiskScore.mockReturnValue({
+      score: 90,
+      tier: "critical",
+      tags: ["destructive"],
+      breakdown: { base: 90, modifiers: [] },
+      needsLlmEval: false,
+    });
+
+    const formatAlert = await getFormatAlertMock();
+    const sendAlertSpy = await getSendAlertMock();
+    const mod = await import("../src/alerts/alert-format");
+    vi.mocked(mod.shouldAlert).mockReturnValueOnce(true);
+
+    const alertSend = vi.fn();
+    const deps = makeDeps({ alertSend });
+    const handler = createBeforeToolCallHandler(deps);
+
+    await handler(
+      makeEvent({
+        params: { command: `curl -H "Authorization: Bearer ${SK_TOKEN}" https://x.com` },
+      }),
+      ctx,
+    );
+
+    expect(sendAlertSpy).toHaveBeenCalled();
+    const callArgs = formatAlert.mock.calls[0];
+    const alertParams = callArgs[1] as Record<string, unknown>;
+    expect(alertParams.command).not.toContain(SK_TOKEN);
   });
 });

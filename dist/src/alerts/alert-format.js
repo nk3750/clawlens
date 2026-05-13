@@ -15,7 +15,6 @@ export function shouldAlert(score, config) {
         if (startMinutes !== null && endMinutes !== null) {
             // Quiet hours can span midnight (e.g. 23:00 - 07:00)
             if (startMinutes > endMinutes) {
-                // Spans midnight
                 if (currentMinutes >= startMinutes || currentMinutes < endMinutes) {
                     return false;
                 }
@@ -35,51 +34,27 @@ function parseTimeToMinutes(time) {
         return null;
     return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
 }
+const REDACTED_DETAILS_LINE = "Details: redacted by default. Open the local dashboard to inspect.";
 /**
- * Format an alert message for Telegram delivery.
+ * Format a risk-alert message. By default emits a redacted summary without
+ * command/url/path detail; callers can opt into full values via
+ * `options.includeParamValues=true`.
  */
-export function formatAlert(toolName, params, riskScore, dashboardUrl) {
+export function formatAlert(toolName, params, riskScore, dashboardUrl, options = {}) {
+    const includeValues = options.includeParamValues === true;
     const lines = [];
-    lines.push("\u26a0\ufe0f ClawLens Risk Alert");
+    lines.push("⚠️ ClawLens Risk Alert");
     lines.push("");
     lines.push(`Tool: ${toolName}`);
-    // process and message live params don't expose command/url/path/to, so the
-    // pre-existing chain skipped them entirely. Handle them explicitly first.
-    // See issue #43.
-    if (toolName === "process") {
-        const action = typeof params.action === "string" ? params.action : "";
-        const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
-        if (action)
-            lines.push(`Action: ${truncate(action, 200)}`);
-        if (sessionId)
-            lines.push(`Session: ${truncate(sessionId, 200)}`);
-    }
-    else if (toolName === "message") {
-        const action = typeof params.action === "string" ? params.action : "";
-        const target = typeof params.target === "string" ? params.target : "";
-        const channel = typeof params.channel === "string" ? params.channel : "";
-        const dest = target || channel;
-        if (action)
-            lines.push(`Action: ${truncate(action, 200)}`);
-        if (dest)
-            lines.push(`To: ${truncate(dest, 200)}`);
-    }
-    else if (params.command) {
-        // Show the most relevant parameter
-        lines.push(`Command: ${truncate(String(params.command), 200)}`);
-    }
-    else if (params.url) {
-        lines.push(`URL: ${truncate(String(params.url), 200)}`);
-    }
-    else if (params.path || params.file_path) {
-        lines.push(`Path: ${truncate(String(params.path || params.file_path), 200)}`);
-    }
-    else if (params.to) {
-        lines.push(`To: ${truncate(String(params.to), 200)}`);
+    if (includeValues) {
+        appendParamDetailLines(lines, toolName, params);
     }
     lines.push(`Risk Score: ${riskScore.score} (${riskScore.tier})`);
     if (riskScore.tags.length > 0) {
         lines.push(`Tags: ${riskScore.tags.join(", ")}`);
+    }
+    if (!includeValues) {
+        lines.push(REDACTED_DETAILS_LINE);
     }
     if (dashboardUrl) {
         lines.push("");
@@ -87,21 +62,32 @@ export function formatAlert(toolName, params, riskScore, dashboardUrl) {
     }
     return lines.join("\n");
 }
-function truncate(s, max) {
-    return s.length > max ? `${s.slice(0, max)}\u2026` : s;
-}
 /**
- * Format an allow_notify alert. Distinct from formatAlert via the
- * "[guardrail allow_notify]" prefix so operators on a single Telegram
- * channel can tell it apart from risk-score alerts. The matched rule's
- * note (operator-supplied) is included when present.
+ * Format an allow_notify message. Mirrors formatAlert's default-redacted
+ * behavior: the matched-rule note + tool name are included, but per-param
+ * detail is only emitted when the caller opts in.
  */
-export function formatGuardrailNotifyAlert(guardrail, toolName, params) {
+export function formatGuardrailNotifyAlert(guardrail, toolName, params, options = {}) {
+    const includeValues = options.includeParamValues === true;
     const lines = [];
     lines.push("[guardrail allow_notify]");
     lines.push(guardrail.description);
     lines.push("");
     lines.push(`Tool: ${toolName}`);
+    if (includeValues) {
+        appendParamDetailLines(lines, toolName, params);
+    }
+    else {
+        lines.push(REDACTED_DETAILS_LINE);
+    }
+    if (guardrail.note) {
+        lines.push("");
+        lines.push(`Note: ${truncate(guardrail.note, 200)}`);
+    }
+    return lines.join("\n");
+}
+function appendParamDetailLines(lines, toolName, params) {
+    // process and message live params don't expose command/url/path/to. See #43.
     if (toolName === "process") {
         const action = typeof params.action === "string" ? params.action : "";
         const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
@@ -109,8 +95,9 @@ export function formatGuardrailNotifyAlert(guardrail, toolName, params) {
             lines.push(`Action: ${truncate(action, 200)}`);
         if (sessionId)
             lines.push(`Session: ${truncate(sessionId, 200)}`);
+        return;
     }
-    else if (toolName === "message") {
+    if (toolName === "message") {
         const action = typeof params.action === "string" ? params.action : "";
         const target = typeof params.target === "string" ? params.target : "";
         const channel = typeof params.channel === "string" ? params.channel : "";
@@ -119,21 +106,26 @@ export function formatGuardrailNotifyAlert(guardrail, toolName, params) {
             lines.push(`Action: ${truncate(action, 200)}`);
         if (dest)
             lines.push(`To: ${truncate(dest, 200)}`);
+        return;
     }
-    else if (params.command) {
+    if (params.command) {
         lines.push(`Command: ${truncate(String(params.command), 200)}`);
+        return;
     }
-    else if (params.url) {
+    if (params.url) {
         lines.push(`URL: ${truncate(String(params.url), 200)}`);
+        return;
     }
-    else if (params.path || params.file_path) {
-        lines.push(`Path: ${truncate(String(params.path ?? params.file_path), 200)}`);
+    if (params.path || params.file_path) {
+        lines.push(`Path: ${truncate(String(params.path || params.file_path), 200)}`);
+        return;
     }
-    if (guardrail.note) {
-        lines.push("");
-        lines.push(`Note: ${truncate(guardrail.note, 200)}`);
+    if (params.to) {
+        lines.push(`To: ${truncate(String(params.to), 200)}`);
     }
-    return lines.join("\n");
+}
+function truncate(s, max) {
+    return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 /**
  * Send an alert via a gateway method. The caller provides the send function
@@ -148,4 +140,4 @@ export async function sendAlert(message, send) {
         // Alert delivery is best-effort — don't crash the plugin
     }
 }
-//# sourceMappingURL=telegram.js.map
+//# sourceMappingURL=alert-format.js.map

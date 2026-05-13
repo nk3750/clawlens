@@ -20,11 +20,11 @@
 </p>
 
 - **Observe.** Every tool call lands in an append-only, hash-chained audit log at `~/.openclaw/clawlens/audit.jsonl`. No after-the-fact tampering.
-- **Score.** Every tool call gets a risk score in real time. Ambiguous high-risk calls trigger a dynamic LLM evaluation that elevates or mitigates the score, with reasoning attached.
+- **Score.** Every tool call gets a deterministic risk score in real time, with local tags for patterns such as destructive commands, external network access, and sensitive paths.
 - **Surface.** A local dashboard at `http://localhost:18789/plugins/clawlens/` shows agents, sessions, and high-risk activity in real time.
-- **Guardrail.** Block, require-approval, or allow-notify rules created from observed behavior. Approvals route through OpenClaw's existing channels (Telegram).
+- **Guardrail.** Block, require-approval, or allow-notify rules created from observed behavior. Require-approval guardrails use OpenClaw's configured approval flow.
 
-Everything runs locally. No data leaves your machine.
+ClawLens stores its audit log on your machine and serves its dashboard on localhost by default.
 
 ---
 
@@ -38,6 +38,8 @@ openclaw plugins install @nk3750/openclaw-clawlens
 ```
 
 OpenClaw's installer resolves the scoped name on npm, pulls the latest published version, and atomically updates your config (allowlist, denylist, plugin entries, install record). The gateway daemon restarts itself when it sees the change — no manual edits to `~/.openclaw/openclaw.json` are needed.
+
+The standard install should not require `--dangerously-force-unsafe-install`. If OpenClaw blocks installation, do not force it; open an issue with the full installer warning.
 
 Open the dashboard at:
 
@@ -72,7 +74,45 @@ openclaw plugins install ./
 If you intend to modify the source, see [CONTRIBUTING.md](CONTRIBUTING.md) for the rebuild cycle.
 </details>
 
-**LLM risk evaluation** piggybacks on whatever LLM your OpenClaw is already configured with — same provider, same model, same credentials. ClawLens routes risk-eval requests through OpenClaw's embedded agent runtime, so there's no separate API key or extra setup. If you want risk eval to use a different LLM than your agents, override `risk.llmProvider` / `risk.llmModel` / `risk.llmApiKeyEnv` in the plugin config.
+ClawLens v1.0.1 uses local deterministic risk scoring by default. LLM risk evaluation is optional and disabled unless you set `risk.llmEnabled=true`. When enabled, ClawLens sends the current tool name, tool params, recent-action context, and preliminary risk score to your configured OpenClaw LLM provider through OpenClaw's existing model/auth runtime. ClawLens does not read LLM API keys from environment variables.
+
+Before audit entries, alerts, summaries, or opt-in LLM evaluation use tool parameters, ClawLens redacts common credential patterns such as authorization headers, API keys, bearer tokens, cookies, private keys, password fields, and token-like URL query parameters. Redaction is best-effort and does not replace treating the local audit directory as sensitive.
+
+### What is sent to the optional LLM evaluator?
+
+When `risk.llmEnabled=true`, ClawLens sends a redacted JSON payload containing:
+
+- current tool name
+- redacted current tool parameters
+- up to 5 recent actions with tool name, redacted parameters, and risk score
+- preliminary deterministic risk score, tier, and tags
+
+ClawLens does not send LLM API keys in the prompt. Provider credentials are handled by OpenClaw's model/auth runtime.
+
+---
+
+## Privacy and data flow
+
+By default, ClawLens runs as a local OpenClaw plugin:
+
+- The dashboard is served on the local OpenClaw gateway.
+- Tool-call audit entries are written to `~/.openclaw/clawlens/audit.jsonl`.
+- The audit log is hash-chained for tamper evidence, but it is not encrypted.
+- On POSIX systems, ClawLens creates the audit directory/file with owner-only permissions where supported. On Windows, audit-log access follows the parent directory's ACLs.
+- Deterministic risk scoring runs locally.
+- ClawLens does not operate a cloud service or vendor telemetry endpoint.
+
+Tool names and parameters can be sensitive. Treat the audit directory like other local development logs and credentials. Restrict access to your OS user and delete or rotate the audit log according to your retention needs.
+
+User-created `require_approval` guardrails use OpenClaw's approval flow. If your OpenClaw approval channel is Telegram, Slack, or another external channel, approval prompt text may leave your machine and may include enough action detail for you to make the decision.
+
+User-created `allow_notify` guardrails create local audit rows and local Attention Inbox items. If you explicitly enable ClawLens alerts, redacted high-risk or allow-notify messages may also be emitted through the OpenClaw logger/gateway alert hook.
+
+> To remove the local audit history:
+>
+> ```bash
+> rm -f ~/.openclaw/clawlens/audit.jsonl
+> ```
 
 ---
 
@@ -88,11 +128,15 @@ All settings live under `plugins.entries.clawlens.config` in `~/.openclaw/opencl
 | Setting | Default | What it controls |
 |---|---|---|
 | `auditLogPath` | `~/.openclaw/clawlens/audit.jsonl` | Where the audit log is written |
-| `risk.llmEnabled` | `true` | Whether the LLM evaluator runs for ambiguous calls |
-| `risk.llmEvalThreshold` | `50` | Score above which the LLM evaluator runs |
-| `risk.llmProvider` | auto-detected | Provider name (`anthropic`, etc.). Inferred from your OpenClaw auth config. |
-| `alerts.enabled` | `true` | Whether high-risk score alerts fire |
+| `risk.llmEnabled` | `false` | Whether opt-in LLM risk evaluation runs for ambiguous calls. When enabled, tool-call metadata is sent to your configured OpenClaw LLM provider. |
+| `risk.llmEvalThreshold` | `50` | Score above which opt-in LLM evaluation runs when enabled. |
+| `alerts.enabled` | `false` | Whether high-risk score alerts fire. If routed to external channels, alert text may leave your machine. |
 | `alerts.threshold` | `80` | Risk score above which alerts fire |
+| `alerts.includeParamValues` | `false` | When true, alert messages may include sanitized command/path/URL details. Credential patterns are always redacted. |
+
+`risk.llmEvalThreshold` only controls when opt-in LLM evaluation runs. It does not control guardrail matching or Attention Inbox freshness. Guardrails fire when a user-created rule matches. `alerts.threshold` only controls generic high-risk alerts when `alerts.enabled=true`.
+
+`risk.llmProvider`, `risk.llmModel`, and `risk.llmApiKeyEnv` are deprecated no-ops in v1.0.1. They are accepted temporarily so existing configs continue to load, but ClawLens ignores them. Remove them from your config before v1.1.0.
 
 </details>
 
@@ -116,7 +160,7 @@ Need a recap of what an agent has been doing? Plain-English session and agent su
   <img src="docs/assets/clawlens-guardrail-add.png" alt="Easy to set guardrails, customize per agent or fleet-wide" width="900">
 </p>
 
-Three actions: **Block**, **Require Approval**, or **Allow with Notification**. Match an exact command, a broader pattern, or anything in between. Scope to one agent or the whole fleet. Approvals route through your existing Telegram channel so you can decide from your phone.
+Three actions: **Block**, **Require Approval**, or **Allow with Notification**. Match an exact command, a broader pattern, or anything in between. Scope to one agent or the whole fleet. Require-approval guardrails use OpenClaw's configured approval flow. If your OpenClaw approvals are routed to Telegram or another external channel, the approval prompt may be delivered there.
 
 <p align="center">
   <img src="docs/assets/clawlens-guardrails.png" alt="The rule is live, the next attempt is already pending" width="900">
@@ -131,7 +175,7 @@ The guardrails page shows what's live, what's been triggered, and what's pending
 ClawLens **complements** OpenClaw's built-in security. It does not replace tool profiles, exec approvals, or prompt-injection detection. Built-in answers "is this technically allowed?" ClawLens answers "does the operator want this to happen right now?"
 
 - **Audit log is tamper-evident.** Every entry hash-chains to the one before it. Edit, delete, or reorder a past entry and the chain breaks.
-- **Runs entirely locally.** Audit log on your disk, dashboard on the loopback interface. Nothing on your network reaches it.
+- **Local-safe baseline.** Audit log on your disk, dashboard on the loopback interface. LLM evaluation, alerts, and external approval channels are all opt-in.
 - **No SDK, no code instrumentation.** ClawLens hooks the OpenClaw runtime directly. Your agent code stays untouched, and there's no proxy to route through.
 - **Single-plugin install.** No Postgres, no Redis, no services stack. One command and you're running.
 - **Your data is yours.** No telemetry, no install pings, no analytics. Grep the codebase to confirm.
@@ -165,14 +209,14 @@ No. By default ClawLens observes and scores. Blocking only happens when you've c
 <details>
 <summary><strong>What does the LLM evaluation cost?</strong></summary>
 
-ClawLens uses your gateway's existing LLM credentials, so there's no separate billing relationship. Only ambiguous high-risk calls trigger an evaluation, and results are cached. In typical use, the evaluator runs on a small fraction of tool calls.
+Nothing by default — LLM evaluation is off unless you set `risk.llmEnabled=true`. When enabled, ClawLens uses your OpenClaw model/auth runtime credentials, so there's no separate billing relationship. Only ambiguous high-risk calls trigger an evaluation, and results are cached. In typical use, the evaluator runs on a small fraction of tool calls.
 
 </details>
 
 <details>
 <summary><strong>Why a plugin instead of a SaaS?</strong></summary>
 
-Local-first. Your audit log lives on your disk. There's no proxy to route through, no cloud account to set up, no agent SDK to integrate. Install, configure, done. Your data does not leave your machine.
+Local-first. Your audit log lives on your disk. There's no proxy to route through, no cloud account to set up, no agent SDK to integrate. With the v1.0.1 local-safe defaults, every external data flow — LLM evaluation, alerts, OpenClaw-owned approval channels — is opt-in.
 
 </details>
 

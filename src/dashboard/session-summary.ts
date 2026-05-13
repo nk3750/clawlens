@@ -12,6 +12,13 @@ import {
 import type { EmbeddedAgentRuntime, ModelAuth } from "../types.js";
 import { describeAction } from "./categories.js";
 
+/**
+ * Verbatim copy used when llmEnabled=false. Locked by tests so future copy
+ * drifts are caught — see spec §8 L716-720.
+ */
+export const SUMMARY_LLM_DISABLED_MESSAGE =
+  "Enable LLM evaluation in plugins.entries.clawlens.config.risk.llmEnabled to generate summaries.";
+
 /** Build index of eval entries keyed by the toolCallId they reference. */
 function buildEvalIndex(entries: AuditEntry[]): Map<string, AuditEntry> {
   const index = new Map<string, AuditEntry>();
@@ -82,7 +89,6 @@ function templateSummary(
   const decisions = entries.filter((e) => e.decision !== undefined);
   const count = decisions.length;
 
-  // Avg risk using LLM-adjusted scores
   let riskSum = 0;
   let riskCount = 0;
   for (const e of entries) {
@@ -103,7 +109,23 @@ function templateSummary(
 }
 
 /**
+ * Synthesize a "LLM disabled" summary that nudges the user toward the
+ * opt-in config key. Spec §8 L716-720.
+ */
+function llmDisabledSummary(sessionKey: string): SessionSummary {
+  return {
+    sessionKey,
+    summary: SUMMARY_LLM_DISABLED_MESSAGE,
+    generatedAt: new Date().toISOString(),
+    isLlmGenerated: false,
+  };
+}
+
+/**
  * Build the LLM prompt for session summarization.
+ * Note: action descriptions are derived from audit entries which already
+ * carry sanitized params (the hook redacts before persistence). LLM payload
+ * therefore never sees raw credential values.
  */
 function buildSummaryPrompt(
   sessionKey: string,
@@ -145,7 +167,6 @@ function buildSummaryPrompt(
     })
     .join("\n");
 
-  // Highlight risky actions separately so the LLM notices them
   const riskyActions = decisions
     .filter((e) => {
       const score = getEffectiveScore(e, evalIdx);
@@ -173,19 +194,9 @@ ${toolLines}${riskySection}`;
 }
 
 /**
- * Content-shaped summary cap. Prefer cutting at the last sentence terminator
- * (`.`, `!`, `?`) so the popover lands on a complete thought. Fall back to a
- * word-boundary char-cap with `…` only when there's no usable terminator AND
- * the raw response runs past `max` (panic-stop, ~400 chars). The 40-char guard
- * on the terminator cut prevents a leading "Yes." from chopping the rest of
- * the response.
- *
- * Exported for direct unit-testing — internal helper otherwise.
+ * Content-shaped summary cap. See full doc on the exported function.
  */
 export function capSummaryLength(raw: string, max = 400): string {
-  // Search BACKWARD from end: the last terminator gives the longest valid
-  // sentence-cap. If it fails the 40-char guard, all earlier terminators
-  // produce shorter slices that also fail — so we can stop.
   for (let i = raw.length - 1; i >= 0; i--) {
     const ch = raw[i];
     if (ch === "." || ch === "!" || ch === "?") {
@@ -200,29 +211,34 @@ export function capSummaryLength(raw: string, max = 400): string {
   return `${cut.slice(0, boundary).trimEnd()}…`;
 }
 
+export interface SessionSummaryConfig {
+  /**
+   * Opt-in gate. When false (default), the path returns the LLM-disabled
+   * message without contacting modelAuth or any provider endpoint.
+   */
+  llmEnabled: boolean;
+  llmModel: string;
+  modelAuth?: ModelAuth;
+  provider?: string;
+  agent?: EmbeddedAgentRuntime;
+  openClawConfig?: Record<string, unknown>;
+}
+
 /**
  * Get or generate a session summary.
  *
  * Returns `{ ok: true, summary }` for any session with entries — either the
- * LLM-generated summary or the template fallback. Returns
- * `{ ok: false, reason: "not_found", ... }` when the session key has no
- * entries. Never throws; the HTTP layer branches on `result.ok`.
+ * LLM-generated summary, the template fallback, or the LLM-disabled message.
+ * Returns `{ ok: false, reason: "not_found", ... }` when the session key has
+ * no entries. Never throws; the HTTP layer branches on `result.ok`.
  */
 export async function getSessionSummary(
   sessionKey: string,
   entries: AuditEntry[],
-  config: {
-    llmModel: string;
-    llmApiKeyEnv: string;
-    modelAuth?: ModelAuth;
-    provider?: string;
-    agent?: EmbeddedAgentRuntime;
-    openClawConfig?: Record<string, unknown>;
-  },
+  config: SessionSummaryConfig,
 ): Promise<SessionSummaryResult> {
   let sessionEntries = entries.filter((e) => e.sessionKey === sessionKey);
 
-  // Handle split session keys (e.g., "agent:bot:cron:job#2")
   if (sessionEntries.length === 0) {
     const hashIdx = sessionKey.lastIndexOf("#");
     if (hashIdx !== -1) {
@@ -231,7 +247,6 @@ export async function getSessionSummary(
       const baseEntries = entries
         .filter((e) => e.sessionKey === baseKey)
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-      // Split by 30-min gaps and pick the right run
       const GAP_MS = 30 * 60 * 1000;
       const runs: AuditEntry[][] = [];
       let current: AuditEntry[] = [];
@@ -260,17 +275,26 @@ export async function getSessionSummary(
     };
   }
 
-  // Check cache
   const cached = summaryCache.get(sessionKey);
   if (cached) {
     if (cached.expiresAt === null || Date.now() < cached.expiresAt) {
       return { ok: true, summary: cached.summary };
     }
-    // Expired — remove and regenerate
     summaryCache.delete(sessionKey);
   }
 
-  // Build eval index from ALL entries — eval entries may not share the session key
+  // Hard gate: opt-in LLM evaluation only. Never contact modelAuth/provider
+  // when llmEnabled=false — spec §1 L182-191, §8 L716-720.
+  if (!config.llmEnabled) {
+    const summary = llmDisabledSummary(sessionKey);
+    const active = isSessionActive(sessionEntries);
+    summaryCache.set(sessionKey, {
+      summary,
+      expiresAt: active ? Date.now() + ACTIVE_SESSION_TTL_MS : null,
+    });
+    return { ok: true, summary };
+  }
+
   const evalIdx = buildEvalIndex(entries);
   const decisions = sessionEntries.filter((e) => e.decision !== undefined);
   const active = isSessionActive(sessionEntries);
@@ -280,12 +304,10 @@ export async function getSessionSummary(
   if (decisions.length < 3) {
     summary = templateSummary(sessionKey, sessionEntries, evalIdx);
   } else {
-    // Try LLM generation
     const llmSummary = await generateLlmSummary(sessionKey, sessionEntries, config, evalIdx);
     summary = llmSummary ?? templateSummary(sessionKey, sessionEntries, evalIdx);
   }
 
-  // Cache: permanent for ended sessions, TTL for active
   summaryCache.set(sessionKey, {
     summary,
     expiresAt: active ? Date.now() + ACTIVE_SESSION_TTL_MS : null,
@@ -297,21 +319,13 @@ export async function getSessionSummary(
 async function generateLlmSummary(
   sessionKey: string,
   entries: AuditEntry[],
-  config: {
-    llmModel: string;
-    llmApiKeyEnv: string;
-    modelAuth?: ModelAuth;
-    provider?: string;
-    agent?: EmbeddedAgentRuntime;
-    openClawConfig?: Record<string, unknown>;
-  },
+  config: SessionSummaryConfig,
   evalIdx: Map<string, AuditEntry>,
 ): Promise<SessionSummary | null> {
   const prompt = buildSummaryPrompt(sessionKey, entries, evalIdx);
   const provider = config.provider || "anthropic";
   const model = config.llmModel || DEFAULT_EVAL_MODELS[provider];
 
-  // Need a known provider and a model to proceed (for direct API paths)
   const needsDirectApi = model && PROVIDER_ENDPOINTS[provider];
 
   const systemPrompt = [
@@ -360,16 +374,15 @@ async function generateLlmSummary(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       llmHealthTracker.recordAttempt(false, errMsg);
-      // Fall through to direct API paths
+      // Fall through to modelAuth path
     }
   }
 
   if (!needsDirectApi) return null;
 
-  // Resolve API key: modelAuth first, then env var
+  // modelAuth-resolved key only. v1.0.1 removed the explicit env-var
+  // fallback that powered the earlier Path 3 here. Spec §1 L165-179.
   let apiKey: string | undefined;
-
-  // Path 2: modelAuth-resolved key (fixed: object param, reads .apiKey)
   if (config.modelAuth && config.provider) {
     try {
       const auth = await config.modelAuth.resolveApiKeyForProvider({
@@ -377,22 +390,18 @@ async function generateLlmSummary(
         cfg: config.openClawConfig,
       });
       apiKey = auth?.apiKey;
-    } catch {
-      // Fall through to env var
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      llmHealthTracker.recordAttempt(false, errMsg);
+      return null;
     }
   }
 
-  // Path 3: explicit env var
   if (!apiKey) {
-    apiKey = process.env[config.llmApiKeyEnv];
+    llmHealthTracker.recordAttempt(false, "modelAuth: no api key");
+    return null;
   }
 
-  if (!apiKey) return null;
-
-  // Summary path: cap upstream tokens at ~100 — enough headroom for the soft
-  // ≤200-char target to land on a sentence terminator instead of running into
-  // the upstream cap mid-word. Eval path's default of 512 is preserved by the
-  // optional-arg signature.
   const text = await callLlmApi(provider, apiKey, model!, systemPrompt, prompt, undefined, 100);
   if (!text) return null;
 
@@ -406,19 +415,18 @@ async function generateLlmSummary(
 
 /**
  * Strip markdown artifacts that LLMs may include despite instructions.
- * Returns clean plain text suitable for inline display.
  */
 function stripMarkdown(raw: string): string {
   return raw
-    .replace(/^#+\s+.*/gm, "") // remove headers
-    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold → plain
-    .replace(/\*([^*]+)\*/g, "$1") // italic → plain
-    .replace(/^[-*]\s+/gm, "") // remove bullet points
-    .replace(/^---+$/gm, "") // remove horizontal rules
-    .replace(/`([^`]+)`/g, "$1") // inline code → plain
-    .replace(/\n{2,}/g, " ") // collapse double newlines
-    .replace(/\n/g, " ") // remaining newlines → spaces
-    .replace(/\s{2,}/g, " ") // collapse whitespace
+    .replace(/^#+\s+.*/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/^---+$/gm, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\n{2,}/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\s{2,}/g, " ")
     .trim();
 }
 

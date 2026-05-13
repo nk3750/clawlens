@@ -215,13 +215,21 @@ export function resolveModel(provider, configModel) {
 /**
  * Evaluate a tool call with an LLM for deeper risk analysis.
  *
- * Evaluation paths (tried in order):
+ * Evaluation paths (tried in order, v1.0.1 local-safe shape):
  *   1. Embedded agent — uses OpenClaw's `runEmbeddedPiAgent`, handles auth internally
  *   2. Direct API via modelAuth — resolves key from OpenClaw's auth system
- *   3. Direct API via explicit env var — optional override, backward compat
- *   4. Stub fallback — returns tier-1 score unchanged
+ *   3. Stub fallback — returns tier-1 score unchanged (deterministic only)
+ *
+ * The pre-v1.0.1 third path that read an ambient environment variable to
+ * source an LLM key has been removed. ClawLens no longer obtains LLM keys
+ * from environment variables — see spec §1 L152-194. modelAuth failure routes
+ * straight to the deterministic stub and records a degraded llmHealthTracker
+ * attempt so the dashboard can surface the disabled/degraded state.
  *
  * This is awaited during `before_tool_call` so the audit entry gets the result.
+ * Callers are expected to pass already-redacted params (see
+ * `src/privacy/redaction.ts`). Deterministic risk scoring uses raw params
+ * locally; only the LLM payload uses sanitized params.
  */
 export async function evaluateWithLlm(toolName, params, recentActions, tier1Score, runtime, logger, directApiConfig, openClawConfig) {
     const message = buildEvalMessage(toolName, params, recentActions, tier1Score);
@@ -272,7 +280,7 @@ export async function evaluateWithLlm(toolName, params, recentActions, tier1Scor
             logger?.warn(`ClawLens: Embedded agent eval failed: ${errMsg}, falling through to direct API`);
         }
     }
-    // Path 2: Direct API via modelAuth-resolved key (fixed: object param, reads .apiKey)
+    // Path 2: Direct API via modelAuth-resolved key.
     if (runtime?.modelAuth && provider && model && PROVIDER_ENDPOINTS[provider]) {
         try {
             const auth = await runtime.modelAuth.resolveApiKeyForProvider({
@@ -281,7 +289,11 @@ export async function evaluateWithLlm(toolName, params, recentActions, tier1Scor
             });
             const apiKey = auth?.apiKey;
             if (!apiKey) {
-                logger?.warn("ClawLens: modelAuth resolved no API key, falling through to env var");
+                // No env-var fallback: ClawLens v1.0.1 routes straight to the stub
+                // and records a degraded health attempt so the dashboard surfaces the
+                // missing-key state instead of silently implying LLM eval is active.
+                llmHealthTracker.recordAttempt(false, "modelAuth: no api key");
+                logger?.warn("ClawLens: modelAuth resolved no API key — using deterministic scoring only");
             }
             else {
                 const text = await callLlmApi(provider, apiKey, model, EVAL_SYSTEM_PROMPT, message, logger);
@@ -297,30 +309,12 @@ export async function evaluateWithLlm(toolName, params, recentActions, tier1Scor
             }
         }
         catch (err) {
-            logger?.warn(`ClawLens: modelAuth key resolution failed: ${err instanceof Error ? err.message : String(err)}, falling through to env var`);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            llmHealthTracker.recordAttempt(false, errMsg);
+            logger?.warn(`ClawLens: modelAuth key resolution failed: ${errMsg} — using deterministic scoring only`);
         }
     }
-    // Path 3: Direct API via explicit env var (backward compat / optional override)
-    const envVar = directApiConfig?.apiKeyEnv || "ANTHROPIC_API_KEY";
-    const envApiKey = process.env[envVar];
-    const envProvider = provider || "anthropic";
-    const envModel = model || DEFAULT_EVAL_MODELS[envProvider];
-    if (envApiKey && envModel && PROVIDER_ENDPOINTS[envProvider]) {
-        const text = await callLlmApi(envProvider, envApiKey, envModel, EVAL_SYSTEM_PROMPT, message, logger);
-        if (text) {
-            const result = parseEvalResponse(text);
-            if (result)
-                return result;
-            logger?.warn("ClawLens: env var API call returned unparseable response, falling through");
-        }
-        else {
-            logger?.warn("ClawLens: env var API call returned no result, falling through");
-        }
-    }
-    else if (!envApiKey) {
-        logger?.warn(`ClawLens: ${envVar} not set, no more eval paths`);
-    }
-    // Path 4: Stub fallback — returns tier-1 score unchanged
+    // Path 3: Stub fallback — returns tier-1 score unchanged.
     logger?.warn("ClawLens: All eval paths exhausted, returning stub");
     return fallbackStub(tier1Score);
 }

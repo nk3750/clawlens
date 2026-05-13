@@ -1,6 +1,6 @@
 {
   "name": "@nk3750/openclaw-clawlens",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agent observability and guardrails for OpenClaw",
   "type": "module",
   "main": "dist/index.js",

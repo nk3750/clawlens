@@ -703,13 +703,10 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
       if (summaryMatch) {
         const sessionKey = decodeURIComponent(summaryMatch[1]);
         const entries = deps.auditLogger.readEntries();
-        const riskConfig = deps.config?.risk ?? {
-          llmModel: "claude-haiku-4-5-20251001",
-          llmApiKeyEnv: "ANTHROPIC_API_KEY",
-        };
+        const riskConfig = deps.config?.risk;
         const result = await getSessionSummary(sessionKey, entries, {
-          llmModel: riskConfig.llmModel,
-          llmApiKeyEnv: riskConfig.llmApiKeyEnv,
+          llmEnabled: riskConfig?.llmEnabled === true,
+          llmModel: "claude-haiku-4-5-20251001",
           modelAuth: deps.modelAuth,
           provider: deps.provider,
           agent: deps.agent,
