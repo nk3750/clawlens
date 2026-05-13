@@ -704,9 +704,14 @@ export function registerDashboardRoutes(api: OpenClawPluginApi, deps: DashboardD
         const sessionKey = decodeURIComponent(summaryMatch[1]);
         const entries = deps.auditLogger.readEntries();
         const riskConfig = deps.config?.risk;
+        // Do NOT hardcode llmModel here — that would short-circuit the
+        // `model || DEFAULT_EVAL_MODELS[provider]` fallback in
+        // generateLlmSummary and send a Claude-shaped model name to an
+        // OpenAI-shaped endpoint when the user's OpenClaw provider is openai.
+        // The provider comes from OpenClaw's auth profiles; the model is
+        // derived from that provider's default in v1.0.1 (spec §1 L180).
         const result = await getSessionSummary(sessionKey, entries, {
           llmEnabled: riskConfig?.llmEnabled === true,
-          llmModel: "claude-haiku-4-5-20251001",
           modelAuth: deps.modelAuth,
           provider: deps.provider,
           agent: deps.agent,

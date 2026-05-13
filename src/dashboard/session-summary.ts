@@ -217,7 +217,13 @@ export interface SessionSummaryConfig {
    * message without contacting modelAuth or any provider endpoint.
    */
   llmEnabled: boolean;
-  llmModel: string;
+  /**
+   * Optional explicit model override. Leave empty/undefined to let the
+   * summarizer derive the model from `DEFAULT_EVAL_MODELS[provider]`. Routes
+   * should NOT hardcode this — that breaks non-Anthropic OpenClaw setups
+   * (e.g. provider=openai would receive a Claude model name).
+   */
+  llmModel?: string;
   modelAuth?: ModelAuth;
   provider?: string;
   agent?: EmbeddedAgentRuntime;

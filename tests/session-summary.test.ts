@@ -449,3 +449,98 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
     expect(lastMaxTokens).toBe(100);
   });
 });
+
+// Spec §1 L180: opt-in LLM evaluation must use OpenClaw's current configured
+// provider/model through OpenClaw's runtime. Hardcoding a model name in the
+// route layer breaks non-Anthropic setups (e.g. provider=openai gets sent a
+// Claude model name and the upstream API rejects the request). The model
+// should be derived from `DEFAULT_EVAL_MODELS[provider]` when no explicit
+// override is configured.
+describe("getSessionSummary — provider-aware model defaults", () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+  let lastUrl = "";
+  let lastModel: string | undefined;
+
+  function modelAuthOk(key: string) {
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: key,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
+  function manyEntries(): AuditEntry[] {
+    return Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    clearSummaryCache();
+    lastUrl = "";
+    lastModel = undefined;
+    mockFetch = vi.fn(async (url: string, opts: { body: string }) => {
+      lastUrl = url;
+      const body = JSON.parse(opts.body);
+      lastModel = body.model;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+      } as Response;
+    });
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses gpt-4o-mini when provider=openai and no model override is supplied", async () => {
+    // Reproduces the route-layer regression: hardcoding the Anthropic model
+    // here would send "claude-haiku-..." to the OpenAI endpoint and fail.
+    await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      llmModel: "",
+      provider: "openai",
+      modelAuth: modelAuthOk("openai-key"),
+    });
+
+    expect(lastUrl).toBe("https://api.openai.com/v1/chat/completions");
+    expect(lastModel).toBe("gpt-4o-mini");
+  });
+
+  it("uses claude-haiku-4-5-20251001 when provider=anthropic and no model override is supplied", async () => {
+    // Build a fresh fetch mock for anthropic's response shape.
+    mockFetch.mockImplementation(async (url: string, opts: { body: string }) => {
+      lastUrl = url;
+      const body = JSON.parse(opts.body);
+      lastModel = body.model;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ content: [{ type: "text", text: "ok" }] }),
+      } as Response;
+    });
+
+    await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      llmModel: "",
+      provider: "anthropic",
+      modelAuth: modelAuthOk("anth-key"),
+    });
+
+    expect(lastUrl).toBe("https://api.anthropic.com/v1/messages");
+    expect(lastModel).toBe("claude-haiku-4-5-20251001");
+  });
+});
