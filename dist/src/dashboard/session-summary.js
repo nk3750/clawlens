@@ -9,6 +9,14 @@ import { describeAction } from "./categories.js";
  * drifts are caught — see spec §8 L716-720.
  */
 export const SUMMARY_LLM_DISABLED_MESSAGE = "Enable LLM evaluation in plugins.entries.clawlens.config.risk.llmEnabled to generate summaries.";
+/**
+ * Returned when LLM evaluation is opted in (risk.llmEnabled=true) but the
+ * per-call modelAuth.resolveApiKeyForProvider produced no apiKey. The
+ * operator's fix is "wire a provider key into OpenClaw"; locking the copy
+ * here means UI surfaces (popover + session header) render exactly this
+ * sentence rather than the LLM-disabled or template fallback. Spec §8 L723.
+ */
+export const SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE = "LLM evaluation is enabled, but OpenClaw could not resolve a provider key. ClawLens is using deterministic scoring only.";
 /** Build index of eval entries keyed by the toolCallId they reference. */
 function buildEvalIndex(entries) {
     const index = new Map();
@@ -66,6 +74,7 @@ function templateSummary(sessionKey, entries, evalIdx) {
         summary: `Ran ${count} action${count !== 1 ? "s" : ""}. Avg risk: ${avgRisk}.`,
         generatedAt: new Date().toISOString(),
         isLlmGenerated: false,
+        summaryKind: "template",
     };
 }
 /**
@@ -78,6 +87,22 @@ function llmDisabledSummary(sessionKey) {
         summary: SUMMARY_LLM_DISABLED_MESSAGE,
         generatedAt: new Date().toISOString(),
         isLlmGenerated: false,
+        summaryKind: "disabled",
+    };
+}
+/**
+ * Synthesize a "degraded — no provider key" summary. Used when llmEnabled is
+ * true but the per-call modelAuth resolve produced no apiKey, so the LLM
+ * path never ran. Surfaces the spec §8 L723 sentence instead of falling
+ * through to a template that would hide the real reason.
+ */
+function llmDegradedNoKeySummary(sessionKey) {
+    return {
+        sessionKey,
+        summary: SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE,
+        generatedAt: new Date().toISOString(),
+        isLlmGenerated: false,
+        summaryKind: "degraded_no_key",
     };
 }
 /**
@@ -230,8 +255,20 @@ export async function getSessionSummary(sessionKey, entries, config) {
         summary = templateSummary(sessionKey, sessionEntries, evalIdx);
     }
     else {
-        const llmSummary = await generateLlmSummary(sessionKey, sessionEntries, config, evalIdx);
-        summary = llmSummary ?? templateSummary(sessionKey, sessionEntries, evalIdx);
+        const llmResult = await generateLlmSummary(sessionKey, sessionEntries, config, evalIdx);
+        if (llmResult.ok) {
+            summary = llmResult.summary;
+        }
+        else if (llmResult.reason === "no_key") {
+            // Per-call signal beats fleet-wide tracker state — see comment in
+            // generateLlmSummary's no_key return. Surfacing the degraded sentence
+            // here means the operator gets an actionable reason rather than a
+            // template "Ran N actions" that hides the missing-key state.
+            summary = llmDegradedNoKeySummary(sessionKey);
+        }
+        else {
+            summary = templateSummary(sessionKey, sessionEntries, evalIdx);
+        }
     }
     summaryCache.set(sessionKey, {
         summary,
@@ -276,10 +313,14 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
                 if (text) {
                     llmHealthTracker.recordAttempt(true);
                     return {
-                        sessionKey,
-                        summary: capSummaryLength(stripMarkdown(text)),
-                        generatedAt: new Date().toISOString(),
-                        isLlmGenerated: true,
+                        ok: true,
+                        summary: {
+                            sessionKey,
+                            summary: capSummaryLength(stripMarkdown(text)),
+                            generatedAt: new Date().toISOString(),
+                            isLlmGenerated: true,
+                            summaryKind: "llm",
+                        },
                     };
                 }
                 llmHealthTracker.recordAttempt(false, "embedded-agent: no text");
@@ -295,7 +336,7 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
         }
     }
     if (!needsDirectApi)
-        return null;
+        return { ok: false, reason: "other" };
     // modelAuth-resolved key only. v1.0.1 removed the explicit env-var
     // fallback that powered the earlier Path 3 here. Spec §1 L165-179.
     let apiKey;
@@ -310,21 +351,29 @@ async function generateLlmSummary(sessionKey, entries, config, evalIdx) {
         catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
             llmHealthTracker.recordAttempt(false, errMsg);
-            return null;
+            return { ok: false, reason: "other" };
         }
     }
     if (!apiKey) {
+        // Per-call no-key signal: this is the architectural fix for #76. The
+        // caller must NOT silently fall through to a template "Ran N actions"
+        // summary; instead it surfaces the spec §8 L723 degraded sentence so
+        // the operator sees the actionable reason the LLM didn't run.
         llmHealthTracker.recordAttempt(false, "modelAuth: no api key");
-        return null;
+        return { ok: false, reason: "no_key" };
     }
     const text = await callLlmApi(provider, apiKey, model, systemPrompt, prompt, undefined, 100);
     if (!text)
-        return null;
+        return { ok: false, reason: "other" };
     return {
-        sessionKey,
-        summary: capSummaryLength(stripMarkdown(text)),
-        generatedAt: new Date().toISOString(),
-        isLlmGenerated: true,
+        ok: true,
+        summary: {
+            sessionKey,
+            summary: capSummaryLength(stripMarkdown(text)),
+            generatedAt: new Date().toISOString(),
+            isLlmGenerated: true,
+            summaryKind: "llm",
+        },
     };
 }
 /**

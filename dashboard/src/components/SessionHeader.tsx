@@ -11,7 +11,16 @@ interface Props {
 export default function SessionHeader({ session }: Props) {
   const avgTier = riskTierFromScore(session.avgRisk);
   const peakTier = riskTierFromScore(session.peakRisk);
-  const { summary, isLlmGenerated, loading: summaryLoading, generate } = useSessionSummary(session.sessionKey);
+  const {
+    summary,
+    summaryKind,
+    isLlmGenerated,
+    loading: summaryLoading,
+    generate,
+  } = useSessionSummary(session.sessionKey);
+  // Backend-decided source of truth for the degraded state — same /api/
+  // session/:key/summary response that the card popover reads (issue #76).
+  const isDegradedNoKey = summaryKind === "degraded_no_key";
 
   return (
     <div className="mb-8">
@@ -73,19 +82,45 @@ export default function SessionHeader({ session }: Props) {
 
       {/* AI summary — on-demand */}
       {summary ? (
-        <div className="flex items-baseline gap-2 mb-4">
-          <p className="text-sm italic" style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}>
-            &ldquo;{summary}&rdquo;
-          </p>
-          {isLlmGenerated && (
-            <span
-              className="label-mono shrink-0"
-              style={{ fontSize: "10px", color: "var(--cl-text-muted)" }}
-            >
-              AI
+        isDegradedNoKey ? (
+          // Issue #76 degraded state. Same warn color the AgentCardCompact
+          // chip uses so both surfaces read as one "no provider key" signal.
+          // ⚠ glyph in front replaces the routine "AI" badge — this text was
+          // NOT LLM-generated and must not be advertised as such.
+          <div
+            data-cl-session-summary-degraded
+            className="flex items-baseline gap-2 mb-4"
+            style={{ color: "var(--cl-risk-medium)" }}
+            role="status"
+          >
+            <span aria-hidden="true" style={{ fontSize: "12px" }}>
+              ⚠
             </span>
-          )}
-        </div>
+            <p
+              className="text-sm"
+              style={{ color: "var(--cl-risk-medium)", lineHeight: 1.6 }}
+            >
+              {summary}
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-baseline gap-2 mb-4">
+            <p
+              className="text-sm italic"
+              style={{ color: "var(--cl-text-secondary)", lineHeight: 1.6 }}
+            >
+              &ldquo;{summary}&rdquo;
+            </p>
+            {isLlmGenerated && (
+              <span
+                className="label-mono shrink-0"
+                style={{ fontSize: "10px", color: "var(--cl-text-muted)" }}
+              >
+                AI
+              </span>
+            )}
+          </div>
+        )
       ) : (
         <button
           onClick={generate}

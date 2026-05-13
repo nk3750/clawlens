@@ -51,6 +51,13 @@ export interface EnhancedStatsResponse extends StatsResponse {
   /** Max timestamp across all audit entries (decision or result). undefined when log is empty. */
   lastEntryTimestamp?: string;
   llmHealth: LlmHealthSnapshot;
+  /**
+   * Issue #76: fleet-stats version of the per-summary degraded_no_key
+   * signal. Non-null only when risk.llmEnabled is true AND the rolling
+   * tracker's last recorded failure was a no_key reason. The dashboard
+   * uses this to badge agent cards with "⚠ no key" next to summarize.
+   */
+  llmDegraded: "no_key" | null;
 }
 
 export interface FleetRiskIndexResponse {
@@ -1416,7 +1423,11 @@ export function checkHealth(entries: AuditEntry[]): HealthResponse {
 // ── New v2 functions ────────────────────────────────────
 
 /** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */
-export function computeEnhancedStats(entries: AuditEntry[], date?: string): EnhancedStatsResponse {
+export function computeEnhancedStats(
+  entries: AuditEntry[],
+  date?: string,
+  llmEnabled?: boolean,
+): EnhancedStatsResponse {
   const isPastDay = date !== undefined;
   const windowEntries = isPastDay ? getDayEntries(entries, date) : getTodayEntries(entries);
   const windowDecisions = windowEntries.filter(isDecisionEntry);
@@ -1556,6 +1567,14 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
     }
   }
 
+  const llmHealth = llmHealthTracker.snapshot();
+  // Fleet-stats degraded badge. Same llmHealthTracker the per-call summary
+  // path writes into, so the indicator stays consistent with the popover
+  // copy. Gated on llmEnabled because a no_key failure recorded while the
+  // gate was off is not actionable until the operator opts in.
+  const llmDegraded: "no_key" | null =
+    llmEnabled === true && llmHealth.lastFailureReason === "no_key" ? "no_key" : null;
+
   return {
     total,
     allowed,
@@ -1573,7 +1592,8 @@ export function computeEnhancedStats(entries: AuditEntry[], date?: string): Enha
     yesterdayTotal,
     weekAverage,
     lastEntryTimestamp,
-    llmHealth: llmHealthTracker.snapshot(),
+    llmHealth,
+    llmDegraded,
   };
 }
 

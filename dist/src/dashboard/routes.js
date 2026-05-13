@@ -366,7 +366,10 @@ export function registerDashboardRoutes(api, deps) {
             if (subPath === "api/stats") {
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, computeEnhancedStats(entries, date));
+                // Route layer is where the runtime config lives; computeEnhancedStats
+                // stays config-agnostic by accepting the resolved boolean. Issue #76.
+                const llmEnabled = deps.config?.risk?.llmEnabled === true;
+                sendJson(res, computeEnhancedStats(entries, date, llmEnabled));
                 return true;
             }
             if (subPath === "api/fleet-risk-index") {

@@ -5,6 +5,7 @@ import {
   clearSummaryCache,
   getSessionSummary,
   getSummaryCacheSize,
+  SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE,
   SUMMARY_LLM_DISABLED_MESSAGE,
 } from "../src/dashboard/session-summary";
 
@@ -128,8 +129,13 @@ describe("getSessionSummary", () => {
     }
   });
 
-  it("falls back to template when LLM enabled but no modelAuth and no agent", async () => {
-    // 3+ entries would try LLM, but no modelAuth/agent → falls back to template
+  it("surfaces degraded_no_key when LLM enabled but no modelAuth and no agent (issue #76)", async () => {
+    // Pre-#76 this path silently returned a template "Ran N actions" summary,
+    // even though the underlying signal was the same as "modelAuth resolved
+    // nothing" — both lead through `if (!apiKey)` and both record
+    // "modelAuth: no api key" on the health tracker. The architectural fix
+    // for #76 is that this path now surfaces the spec §8 L723 degraded
+    // sentence so the operator gets an actionable reason.
     const entries = Array.from({ length: 5 }, (_, i) =>
       entry({
         sessionKey: "s1",
@@ -146,7 +152,9 @@ describe("getSessionSummary", () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.summary.summary).toMatch(/Ran \d+ action/);
+      expect(result.summary.summaryKind).toBe("degraded_no_key");
+      expect(result.summary.summary).toBe(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE);
+      expect(result.summary.isLlmGenerated).toBe(false);
     }
   });
 
@@ -542,5 +550,158 @@ describe("getSessionSummary — provider-aware model defaults", () => {
 
     expect(lastUrl).toBe("https://api.anthropic.com/v1/messages");
     expect(lastModel).toBe("claude-haiku-4-5-20251001");
+  });
+});
+
+// Issue #76: summaryKind 4-state matrix lock. The four operator-facing states
+// must not be conflated — each carries a different message body and a
+// different UI affordance. "disabled" (LLM gate is off) and "degraded_no_key"
+// (LLM gate is on but modelAuth resolved nothing) in particular use different
+// sentences for different intent. The "no_key" signal MUST come from this
+// per-call generateLlmSummary path, not the global llmHealthTracker snapshot,
+// because the global tracker is fleet-wide and 15-min rolling — the wrong
+// granularity for a per-summary decision.
+describe("getSessionSummary — summaryKind 4-state matrix (issue #76)", () => {
+  function manyEntries(): AuditEntry[] {
+    return Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+  }
+
+  function modelAuthOk(key: string) {
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: key,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
+  function modelAuthNoKey() {
+    // modelAuth resolves cleanly but with no apiKey — the exact production
+    // path that motivates this fix. resolveApiKeyForProvider never throws;
+    // generateLlmSummary inspects `auth?.apiKey` and falls through with
+    // `apiKey === undefined`.
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: undefined,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    clearSummaryCache();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("[state=disabled] llmEnabled=false → summaryKind='disabled' + the enable-LLM message (>=3 entries)", async () => {
+    const result = await getSessionSummary("s1", manyEntries(), { llmEnabled: false });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("disabled");
+    expect(result.summary.summary).toBe(SUMMARY_LLM_DISABLED_MESSAGE);
+    expect(result.summary.isLlmGenerated).toBe(false);
+  });
+
+  it("[state=degraded_no_key] llmEnabled=true + modelAuth resolved no key → summaryKind='degraded_no_key' + spec §8 L723 sentence", async () => {
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthNoKey(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("degraded_no_key");
+    expect(result.summary.summary).toBe(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE);
+    expect(result.summary.isLlmGenerated).toBe(false);
+    // Spec §8 L723 content lock.
+    expect(result.summary.summary).toContain("OpenClaw could not resolve a provider key");
+    expect(result.summary.summary).toContain("deterministic scoring only");
+  });
+
+  it("[state=degraded_no_key] does NOT fall through to a template 'Ran N actions' summary — the per-call signal wins", async () => {
+    // Regression guard for the architectural fix. Before #76, a no-key
+    // failure inside generateLlmSummary returned null and the caller fell
+    // through to templateSummary, masking the real reason the LLM didn't
+    // run. The discriminated union must surface "no_key" so the operator
+    // sees the actionable degraded sentence.
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthNoKey(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summary).not.toMatch(/Ran \d+ action/);
+    expect(result.summary.summary).not.toMatch(/Avg risk:/);
+  });
+
+  it("[state=llm] llmEnabled=true + modelAuth resolves a key + >=3 entries → summaryKind='llm' + isLlmGenerated=true", async () => {
+    const mockFetch = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({
+            content: [{ type: "text", text: "Agent runs scheduled health checks." }],
+          }),
+        }) as Response,
+    );
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthOk("real-key"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("llm");
+    expect(result.summary.isLlmGenerated).toBe(true);
+    expect(result.summary.summary).toBe("Agent runs scheduled health checks.");
+  });
+
+  it("[state=template] llmEnabled=true + key resolves + <3 decisions → summaryKind='template' + isLlmGenerated=false", async () => {
+    const twoEntries = manyEntries().slice(0, 2);
+    const result = await getSessionSummary("s1", twoEntries, {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthOk("real-key"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("template");
+    expect(result.summary.isLlmGenerated).toBe(false);
+    expect(result.summary.summary).toMatch(/Ran \d+ action/);
+  });
+});
+
+// Spec §8 L723 content lock — the degraded sentence is what the operator
+// reads when their LLM is gated on but no provider key is wired. Keep this
+// string stable; UI surfaces (popover + SessionHeader) test against the same
+// constant.
+describe("SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE", () => {
+  it("calls out OpenClaw provider-key resolution + deterministic-only fallback", () => {
+    expect(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE).toContain("LLM evaluation is enabled");
+    expect(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE).toContain(
+      "OpenClaw could not resolve a provider key",
+    );
+    expect(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE).toContain("deterministic scoring only");
   });
 });

@@ -33,6 +33,13 @@ export interface EnhancedStatsResponse extends StatsResponse {
     /** Max timestamp across all audit entries (decision or result). undefined when log is empty. */
     lastEntryTimestamp?: string;
     llmHealth: LlmHealthSnapshot;
+    /**
+     * Issue #76: fleet-stats version of the per-summary degraded_no_key
+     * signal. Non-null only when risk.llmEnabled is true AND the rolling
+     * tracker's last recorded failure was a no_key reason. The dashboard
+     * uses this to badge agent cards with "⚠ no key" next to summarize.
+     */
+    llmDegraded: "no_key" | null;
 }
 export interface FleetRiskIndexResponse {
     /** 0-100. Max riskScore of any event in the last 15 minutes. 0 if none. */
@@ -373,7 +380,7 @@ export declare function resolveSplitKeyForEntry(allEntries: AuditEntry[], entry:
 /** Verify the hash chain integrity of all entries. */
 export declare function checkHealth(entries: AuditEntry[]): HealthResponse;
 /** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */
-export declare function computeEnhancedStats(entries: AuditEntry[], date?: string): EnhancedStatsResponse;
+export declare function computeEnhancedStats(entries: AuditEntry[], date?: string, llmEnabled?: boolean): EnhancedStatsResponse;
 /**
  * Get aggregated agent list from audit entries. Accepts an optional `date`
  * for past-day view, and (for today-mode) an `attentionAgents` Set + per-agent

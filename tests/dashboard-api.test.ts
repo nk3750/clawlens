@@ -1,5 +1,6 @@
 import * as crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { llmHealthTracker } from "../src/audit/llm-health";
 import type { AuditEntry } from "../src/audit/logger";
 import {
   checkHealth,
@@ -642,6 +643,55 @@ describe("computeEnhancedStats", () => {
     ];
     const stats = computeEnhancedStats(entries);
     expect(stats.riskPosture).toBe("critical");
+  });
+});
+
+// Issue #76: llmDegraded surfaces "config asks for LLM but no provider key
+// was resolved" as a fleet-stats badge. Source of truth: the same
+// llmHealthTracker.lastFailureReason that the per-call summary endpoint
+// uses, gated on config.risk.llmEnabled.
+describe("computeEnhancedStats — llmDegraded (issue #76)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 29, 14, 0, 0));
+    llmHealthTracker.reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    llmHealthTracker.reset();
+  });
+
+  it("returns llmDegraded: null when llmEnabled is omitted (back-compat for callers without config)", () => {
+    llmHealthTracker.recordAttempt(false, "modelAuth: no api key");
+    const stats = computeEnhancedStats([]);
+    expect(stats.llmDegraded).toBeNull();
+  });
+
+  it("returns llmDegraded: null when llmEnabled=false even if the tracker shows a recent no_key failure", () => {
+    llmHealthTracker.recordAttempt(false, "modelAuth: no api key");
+    const stats = computeEnhancedStats([], undefined, false);
+    expect(stats.llmDegraded).toBeNull();
+  });
+
+  it("returns llmDegraded: 'no_key' when llmEnabled=true and the tracker's last failure was no_key", () => {
+    llmHealthTracker.recordAttempt(false, "modelAuth: no api key");
+    const stats = computeEnhancedStats([], undefined, true);
+    expect(stats.llmDegraded).toBe("no_key");
+  });
+
+  it("returns llmDegraded: null when llmEnabled=true but no failures are recorded yet", () => {
+    // First successful run never seeded the tracker with a failure.
+    const stats = computeEnhancedStats([], undefined, true);
+    expect(stats.llmDegraded).toBeNull();
+  });
+
+  it("returns llmDegraded: null when llmEnabled=true but the last failure was a different reason", () => {
+    // rate_limit, billing, provider 5xx, etc. — these don't trigger the
+    // "no key" indicator because adding a key doesn't fix them.
+    llmHealthTracker.recordAttempt(false, "429 rate limit");
+    const stats = computeEnhancedStats([], undefined, true);
+    expect(stats.llmDegraded).toBeNull();
   });
 });
 

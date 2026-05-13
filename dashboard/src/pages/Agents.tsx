@@ -119,6 +119,11 @@ export default function Agents() {
     attentionPath,
     { filter: shouldRefetchAttention },
   );
+  // Issue #76: fleet-wide degraded signal — derived once at the page level
+  // from the stats response so every card sees the same boolean instead of
+  // re-deriving it per-card. Only "no_key" triggers the chip today; future
+  // reasons would extend this.
+  const llmNoKey = stats?.llmDegraded === "no_key";
 
   const pendingCount = attention?.pending.length ?? 0;
   const pendingAgentNames = useMemo(
@@ -274,6 +279,7 @@ export default function Agents() {
                 agent={agent}
                 needsAttention={attentionAgentIds.has(agent.id)}
                 avatarLetterCount={avatarLetterCounts.get(agent.id) ?? 1}
+                llmNoKey={llmNoKey}
               />
             ))}
           </div>
@@ -332,11 +338,12 @@ export default function Agents() {
               >
                 {idleAgents.map((agent) => (
                   <AgentRow
-                key={agent.id}
-                agent={agent}
-                needsAttention={attentionAgentIds.has(agent.id)}
-                avatarLetterCount={avatarLetterCounts.get(agent.id) ?? 1}
-              />
+                    key={agent.id}
+                    agent={agent}
+                    needsAttention={attentionAgentIds.has(agent.id)}
+                    avatarLetterCount={avatarLetterCounts.get(agent.id) ?? 1}
+                    llmNoKey={llmNoKey}
+                  />
                 ))}
               </div>
             )}
