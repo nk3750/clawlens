@@ -37,19 +37,26 @@ export declare function resolveModel(provider?: string, configModel?: string): s
 /**
  * Evaluate a tool call with an LLM for deeper risk analysis.
  *
- * Evaluation paths (tried in order):
+ * Evaluation paths (tried in order, v1.0.1 local-safe shape):
  *   1. Embedded agent — uses OpenClaw's `runEmbeddedPiAgent`, handles auth internally
  *   2. Direct API via modelAuth — resolves key from OpenClaw's auth system
- *   3. Direct API via explicit env var — optional override, backward compat
- *   4. Stub fallback — returns tier-1 score unchanged
+ *   3. Stub fallback — returns tier-1 score unchanged (deterministic only)
+ *
+ * The pre-v1.0.1 third path that read an ambient environment variable to
+ * source an LLM key has been removed. ClawLens no longer obtains LLM keys
+ * from environment variables — see spec §1 L152-194. modelAuth failure routes
+ * straight to the deterministic stub and records a degraded llmHealthTracker
+ * attempt so the dashboard can surface the disabled/degraded state.
  *
  * This is awaited during `before_tool_call` so the audit entry gets the result.
+ * Callers are expected to pass already-redacted params (see
+ * `src/privacy/redaction.ts`). Deterministic risk scoring uses raw params
+ * locally; only the LLM payload uses sanitized params.
  */
 export declare function evaluateWithLlm(toolName: string, params: Record<string, unknown>, recentActions: SessionAction[], tier1Score: RiskScore, runtime?: {
     agent?: EmbeddedAgentRuntime;
     modelAuth?: ModelAuth;
 }, logger?: PluginLogger, directApiConfig?: {
-    apiKeyEnv?: string;
     model?: string;
     provider?: string;
 }, openClawConfig?: Record<string, unknown>): Promise<LlmRiskEvaluation>;

@@ -1,6 +1,7 @@
-import { formatAlert, formatGuardrailNotifyAlert, sendAlert, shouldAlert, } from "../alerts/telegram.js";
+import { formatAlert, formatGuardrailNotifyAlert, sendAlert, shouldAlert, } from "../alerts/alert-format.js";
 import { formatTargetSummary } from "../dashboard/categories.js";
 import { extractIdentityKey } from "../guardrails/identity.js";
+import { redactParams } from "../privacy/redaction.js";
 import { evaluateWithLlm } from "../risk/llm-evaluator.js";
 import { computeRiskScore } from "../risk/scorer.js";
 export function createBeforeToolCallHandler(deps) {
@@ -12,22 +13,21 @@ export function createBeforeToolCallHandler(deps) {
         const sessionKey = ctx?.sessionKey || "default";
         const agentId = ctx?.agentId || "unknown";
         try {
-            // Compute risk score eagerly. Pure + fast (no LLM); cheap enough to
-            // run on every call so the guardrail-match audit row carries the
-            // action's actual score, not just a bare decision. Closes the
-            // dashboard's risk-mix bar gap where guardrail-blocked rows counted
-            // in todayToolCalls (denominator) but never bucketed into
-            // todayRiskMix (numerator). LLM eval still only fires post-guardrail
-            // for the allow branch — no point evaluating something that won't run.
+            // Compute risk score eagerly on RAW params. Pure + fast (no LLM); the
+            // local scorer needs full context (e.g. detecting `Authorization: Bearer`
+            // in an exec command) and stays in-process. Sanitized params are derived
+            // once below and used everywhere that crosses a trust boundary
+            // (audit, session context, LLM payload, alerts, approval text) — see
+            // spec §2A.
             const risk = computeRiskScore(toolName, params, config.risk.llmEvalThreshold);
+            const sanitizedParams = redactParams(params);
             // ── Guardrail check (before risk scoring) ──────────
+            // Guardrail matching also reads raw params: a user-created rule may
+            // match on `Authorization: Bearer` patterns or token-like values, and
+            // matching on the sanitized form would defeat the rule.
             if (guardrailStore) {
                 const matched = guardrailStore.match(agentId, toolName, params);
                 if (matched) {
-                    // identityKey is recorded on the audit row for forensic trace —
-                    // the matcher itself no longer keys off it (target globs do that
-                    // job). targetSummary lets the dashboard render the matched rule's
-                    // shape without peeking the live store at view time.
                     const identityKey = extractIdentityKey(toolName, params);
                     const targetSummary = formatTargetSummary(matched.target);
                     auditLogger.logGuardrailMatch({
@@ -94,7 +94,7 @@ export function createBeforeToolCallHandler(deps) {
                         return {
                             requireApproval: {
                                 title: "ClawLens Guardrail",
-                                description: formatGuardrailApproval(matched, toolName, params),
+                                description: formatGuardrailApproval(matched, toolName, sanitizedParams),
                                 severity: "warning",
                                 timeoutMs: approvalTimeoutMs,
                                 timeoutBehavior: "deny",
@@ -107,27 +107,30 @@ export function createBeforeToolCallHandler(deps) {
                         // Audit + alert, then fall through to the normal allow path
                         // (risk + LLM eval + decision audit row). Operators get a
                         // distinct firing on the dashboard via the audit row's
-                        // action="allow_notify" tag plus a Telegram ping.
+                        // action="allow_notify" tag plus the alert log line.
                         if (alertSend) {
-                            const msg = formatGuardrailNotifyAlert(matched, toolName, params);
+                            const msg = formatGuardrailNotifyAlert(matched, toolName, sanitizedParams, {
+                                includeParamValues: config.alerts.includeParamValues,
+                            });
                             sendAlert(msg, alertSend);
                         }
                     }
                 }
             }
-            // Record in session context
+            // Record in session context with sanitized params so recent-action
+            // context replayed into future LLM prompts never carries raw secrets.
             sessionContext.record(sessionKey, {
                 toolName,
-                params,
+                params: sanitizedParams,
                 riskScore: risk.score,
                 timestamp: new Date().toISOString(),
             });
-            // Log decision with risk data
+            // Persist sanitized params to the audit log.
             auditLogger.logDecision({
                 timestamp: new Date().toISOString(),
                 toolName,
                 toolCallId,
-                params,
+                params: sanitizedParams,
                 decision: "allow",
                 riskScore: risk.score,
                 riskTier: risk.tier,
@@ -135,16 +138,22 @@ export function createBeforeToolCallHandler(deps) {
                 agentId: ctx?.agentId,
                 sessionKey: sessionKey !== "default" ? sessionKey : undefined,
             });
-            // Fire alert if score exceeds threshold (async, non-blocking)
+            // Fire alert if score exceeds threshold (async, non-blocking).
+            // Alert formatter defaults to a redacted summary; opt-in full-value
+            // detail goes through alerts.includeParamValues and only ever sees the
+            // sanitized params.
             if (alertSend && shouldAlert(risk.score, config.alerts)) {
                 const dashboardUrl = config.dashboardUrl || "";
-                const msg = formatAlert(toolName, params, risk, dashboardUrl);
+                const msg = formatAlert(toolName, sanitizedParams, risk, dashboardUrl, {
+                    includeParamValues: config.alerts.includeParamValues,
+                });
                 sendAlert(msg, alertSend);
             }
             // Queue async LLM evaluation if needed (fire-and-forget, does NOT block)
             if (risk.needsLlmEval && config.risk.llmEnabled && toolCallId) {
-                // Check eval cache first — skip LLM if this pattern was already evaluated
-                const cached = evalCache?.get(toolName, params);
+                // Check eval cache using sanitized params so cache keys are stable
+                // across raw vs redacted hashing.
+                const cached = evalCache?.get(toolName, sanitizedParams);
                 if (cached) {
                     auditLogger.appendEvaluation({
                         refToolCallId: toolCallId,
@@ -164,13 +173,11 @@ export function createBeforeToolCallHandler(deps) {
                     });
                 }
                 else {
+                    // recentActions already carries sanitized params (we stored them
+                    // sanitized above). LLM payload therefore never sees raw secrets.
                     const recentActions = sessionContext.getRecent(sessionKey, 5);
                     try {
-                        const evaluation = await evaluateWithLlm(toolName, params, recentActions, risk, runtime, logger, {
-                            apiKeyEnv: config.risk.llmApiKeyEnv,
-                            model: config.risk.llmModel,
-                            provider,
-                        }, openClawConfig);
+                        const evaluation = await evaluateWithLlm(toolName, sanitizedParams, recentActions, risk, runtime, logger, { provider }, openClawConfig);
                         // For stub evaluations, write a minimal entry so the dashboard
                         // can show "AI assessment unavailable" rather than nothing
                         if (evaluation.reasoning?.includes("Stub evaluation")) {
@@ -202,8 +209,8 @@ export function createBeforeToolCallHandler(deps) {
                                 agentId: ctx?.agentId,
                                 sessionKey: sessionKey !== "default" ? sessionKey : undefined,
                             });
-                            // Cache high-confidence low-risk evaluations for future use
-                            evalCache?.maybeCache(toolName, params, evaluation, config.risk.llmEvalThreshold);
+                            // Cache high-confidence low-risk evaluations for future use.
+                            evalCache?.maybeCache(toolName, sanitizedParams, evaluation, config.risk.llmEvalThreshold);
                             // Alert on LLM-adjusted score if it was raised above threshold
                             if (alertSend &&
                                 evaluation.adjustedScore > risk.score &&
@@ -214,7 +221,7 @@ export function createBeforeToolCallHandler(deps) {
                                     tier: getTierFromScore(evaluation.adjustedScore),
                                     tags: evaluation.tags,
                                 };
-                                const msg = formatAlert(toolName, params, adjustedRisk, config.dashboardUrl || "");
+                                const msg = formatAlert(toolName, sanitizedParams, adjustedRisk, config.dashboardUrl || "", { includeParamValues: config.alerts.includeParamValues });
                                 sendAlert(msg, alertSend);
                             }
                         }
@@ -256,7 +263,9 @@ export function createBeforeToolCallHandler(deps) {
                 timestamp: new Date().toISOString(),
                 toolName,
                 toolCallId,
-                params,
+                // Sanitize params on the error path too — failure here must not
+                // leak credentials into the audit log.
+                params: redactParams(params),
                 decision: "allow",
                 severity: "critical",
             });

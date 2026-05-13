@@ -844,3 +844,80 @@ describe("AgentCardCompact — summary popover wiring (#14 follow-up: card→pop
     expect(card.style.backgroundColor).toMatch(/--cl-bg-05/);
   });
 });
+
+describe("AgentCardCompact — llmNoKey indicator (issue #76)", () => {
+  // Spec-locked indicator: when the parent has detected `stats.llmDegraded ===
+  // "no_key"`, the card renders a "⚠ no key" chip in the footer immediately
+  // to the left of the summarize button. Sits in the same muted small-text
+  // style as the relTime stamp but with a warn color so the operator's eye
+  // catches it without overwhelming the rest of the card.
+
+  function withSession(): AgentInfo {
+    return makeAgent({ lastSessionKey: "alpha:s1" });
+  }
+
+  it("renders the [data-cl-llm-no-key] chip when llmNoKey=true", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={withSession()} llmNoKey={true} />
+      </MemoryRouter>,
+    );
+    const chip = container.querySelector<HTMLElement>("[data-cl-llm-no-key]");
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent ?? "").toMatch(/no key/i);
+  });
+
+  it("does NOT render the chip when llmNoKey=false", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={withSession()} llmNoKey={false} />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector("[data-cl-llm-no-key]")).toBeNull();
+  });
+
+  it("does NOT render the chip when llmNoKey is omitted (default no-indicator)", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={withSession()} />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector("[data-cl-llm-no-key]")).toBeNull();
+  });
+
+  it("positions the chip in the same flex row as the summarize button (footer placement)", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={withSession()} llmNoKey={true} />
+      </MemoryRouter>,
+    );
+    const chip = container.querySelector<HTMLElement>("[data-cl-llm-no-key]");
+    const summarize = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("summarize"),
+    );
+    expect(chip).not.toBeNull();
+    expect(summarize).not.toBeUndefined();
+    // The chip and summarize button must share the closest .flex.items-center
+    // ancestor — the footer row that already holds count·time. Locks the chip
+    // out of an accidental promotion to a separate row (which would change
+    // card height and break the grid auto-fill rhythm).
+    const chipFooter = chip!.closest(".flex.items-center");
+    const buttonFooter = summarize!.closest(".flex.items-center");
+    expect(chipFooter).not.toBeNull();
+    expect(chipFooter).toBe(buttonFooter);
+  });
+
+  it("uses --cl-risk-medium (amber/warn) for the chip color rather than the indigo --cl-accent", () => {
+    // The chip is informational, not the card's primary CTA. Locking against
+    // accent color avoids the chip reading as a clickable affordance.
+    const { container } = render(
+      <MemoryRouter>
+        <AgentCardCompact agent={withSession()} llmNoKey={true} />
+      </MemoryRouter>,
+    );
+    const chip = container.querySelector<HTMLElement>("[data-cl-llm-no-key]");
+    expect(chip).not.toBeNull();
+    expect(chip!.style.color).toContain("var(--cl-risk-medium)");
+    expect(chip!.style.color).not.toContain("--cl-accent");
+  });
+});

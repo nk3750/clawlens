@@ -383,6 +383,81 @@ describe("AuditLogger", () => {
   });
 });
 
+describe("AuditLogger — POSIX permissions (v1.0.1)", () => {
+  // POSIX-only: chmod is a best-effort no-op on Windows. Skip rather than
+  // silently degrade the assertion.
+  const isPosix = process.platform !== "win32";
+
+  it("creates the audit directory with 0o700 mode", { skip: !isPosix }, async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-perms-"));
+    const dir = path.join(root, "nested-clawlens-dir");
+    const logPath = path.join(dir, "audit.jsonl");
+    try {
+      const logger = new AuditLogger(logPath);
+      await logger.init();
+      const mode = fs.statSync(dir).mode & 0o777;
+      expect(mode).toBe(0o700);
+      await logger.flush();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates the audit file with 0o600 mode", { skip: !isPosix }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-perms-"));
+    const logPath = path.join(dir, "audit.jsonl");
+    try {
+      const logger = new AuditLogger(logPath);
+      await logger.init();
+      // Write at least one entry so the file is actually created on disk.
+      logger.logDecision({
+        timestamp: "2026-05-12T00:00:00Z",
+        toolName: "exec",
+        params: {},
+        decision: "allow",
+      });
+      await logger.flush();
+      const mode = fs.statSync(logPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("chmods an existing directory to 0o700 on init", { skip: !isPosix }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-perms-"));
+    const logPath = path.join(dir, "audit.jsonl");
+    try {
+      // Pre-create with overly permissive mode; init() should tighten it.
+      fs.chmodSync(dir, 0o755);
+      const logger = new AuditLogger(logPath);
+      await logger.init();
+      const mode = fs.statSync(dir).mode & 0o777;
+      expect(mode).toBe(0o700);
+      await logger.flush();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("chmods an existing audit file to 0o600 on init", { skip: !isPosix }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clawlens-perms-"));
+    const logPath = path.join(dir, "audit.jsonl");
+    try {
+      // Pre-create file with overly permissive mode; init() should tighten it.
+      fs.writeFileSync(logPath, "", { mode: 0o644 });
+      fs.chmodSync(logPath, 0o644);
+      const logger = new AuditLogger(logPath);
+      await logger.init();
+      const mode = fs.statSync(logPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+      await logger.flush();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AuditLogger — race regression lock", () => {
   it("preserves chain integrity when two callers race writes to the same file", async () => {
     const tmpPath = path.join(os.tmpdir(), `audit-race-${Date.now()}.jsonl`);

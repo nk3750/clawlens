@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { llmHealthTracker } from "../src/audit/llm-health";
 import {
   buildEvalMessage,
   callLlmApi,
@@ -391,10 +392,11 @@ describe("callLlmApi", () => {
   });
 });
 
-describe("evaluateWithLlm", () => {
+describe("evaluateWithLlm — v1.0.1 local-safe behavior", () => {
   beforeEach(() => {
     mockFetch.mockReset();
     vi.stubGlobal("fetch", mockFetch);
+    llmHealthTracker.reset();
   });
 
   afterEach(() => {
@@ -421,7 +423,8 @@ describe("evaluateWithLlm", () => {
     expect(result.adjustedScore).toBe(42);
     expect(result.reasoning).toBe("Routine health check");
     expect(agent.runEmbeddedPiAgent).toHaveBeenCalledOnce();
-    expect(mockFetch).not.toHaveBeenCalled(); // should NOT fall through to direct API
+    // No direct provider call follows when the embedded agent already succeeded.
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("Path 1: embedded agent passes config and system prompt", async () => {
@@ -508,7 +511,7 @@ describe("evaluateWithLlm", () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Agent runtime unavailable"));
   });
 
-  // ── Path 2: modelAuth (fixed object param) ───────────
+  // ── Path 2: modelAuth (the only direct-API path in v1.0.1) ───
 
   it("Path 2: modelAuth resolves key → direct API succeeds → returns eval", async () => {
     setAnthropicFetchResponse(VALID_EVAL_JSON);
@@ -573,12 +576,15 @@ describe("evaluateWithLlm", () => {
     expect(opts.headers.Authorization).toBe("Bearer key");
   });
 
-  it("Path 2: modelAuth resolves no apiKey → falls through", async () => {
+  // ── Local-safe baseline: no env-key fallback ────────────
+
+  it("modelAuth resolves no apiKey → falls back to stub (no env-var fallback)", async () => {
     const auth = mockModelAuthNoKey();
     const logger = mockLogger();
 
+    // Even if an LLM API-key env var happens to be set, ClawLens must not read it.
     const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "should-not-be-used-env-key";
 
     try {
       const result = await evaluateWithLlm(
@@ -592,9 +598,6 @@ describe("evaluateWithLlm", () => {
       );
 
       expect(result.reasoning).toContain("Stub evaluation");
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("modelAuth resolved no API key"),
-      );
       expect(mockFetch).not.toHaveBeenCalled();
     } finally {
       if (originalKey !== undefined) {
@@ -605,63 +608,31 @@ describe("evaluateWithLlm", () => {
     }
   });
 
-  it("Path 2 fail → Path 3: modelAuth rejects → env var set → direct API succeeds", async () => {
-    setAnthropicFetchResponse(VALID_EVAL_JSON);
-    const auth = mockModelAuthRejecting("Auth not resolved");
+  it("modelAuth rejects → falls back to stub (no env-var fallback) and records degraded health", async () => {
+    const auth = mockModelAuthRejecting("Auth provider not initialized");
     const logger = mockLogger();
 
+    // Sanity: env key would have powered the old Path 3. Must not be read.
     const originalKey = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "env-key-456";
-
-    try {
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "ls" },
-        [],
-        tier1Score(),
-        { modelAuth: auth },
-        logger,
-        { provider: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY" },
-      );
-
-      expect(result.adjustedScore).toBe(42);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("modelAuth key resolution failed"),
-      );
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  // ── All paths fail ────────────────────────────────────
-
-  it("all paths fail → returns stub with tier-1 score", async () => {
-    const auth = mockModelAuthRejecting("Not resolved");
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "should-not-be-used-env-key";
 
     try {
       const result = await evaluateWithLlm(
         "exec",
         { command: "test" },
         [],
-        tier1Score({ score: 55, tags: ["network"] }),
+        tier1Score(),
         { modelAuth: auth },
         logger,
         { provider: "anthropic" },
       );
 
-      expect(result.adjustedScore).toBe(55);
       expect(result.reasoning).toContain("Stub evaluation");
-      expect(result.confidence).toBe("low");
-      expect(result.tags).toEqual(["network"]);
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("All eval paths exhausted"));
+      expect(mockFetch).not.toHaveBeenCalled();
+      // Degraded health is the dashboard's signal — the modelAuth failure must
+      // surface as a recorded failure attempt, not a silent fallback.
+      const snap = llmHealthTracker.snapshot();
+      expect(snap.recentFailures).toBeGreaterThan(0);
     } finally {
       if (originalKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = originalKey;
@@ -671,11 +642,11 @@ describe("evaluateWithLlm", () => {
     }
   });
 
-  it("no runtime, no env var → returns stub", async () => {
+  it("no runtime → returns stub (does not read env vars)", async () => {
     const logger = mockLogger();
 
     const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "should-not-be-used-env-key";
 
     try {
       const result = await evaluateWithLlm(
@@ -690,6 +661,7 @@ describe("evaluateWithLlm", () => {
 
       expect(result.adjustedScore).toBe(55);
       expect(result.reasoning).toContain("Stub evaluation");
+      expect(mockFetch).not.toHaveBeenCalled();
     } finally {
       if (originalKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = originalKey;
@@ -699,12 +671,12 @@ describe("evaluateWithLlm", () => {
     }
   });
 
-  it("skips modelAuth when no provider is set", async () => {
+  it("skips modelAuth when no provider is set → stub (no env fallback)", async () => {
     const auth = mockModelAuth("key");
     const logger = mockLogger();
 
     const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "should-not-be-used-env-key";
 
     try {
       const result = await evaluateWithLlm(
@@ -719,6 +691,7 @@ describe("evaluateWithLlm", () => {
 
       expect(auth.resolveApiKeyForProvider).not.toHaveBeenCalled();
       expect(result.reasoning).toContain("Stub evaluation");
+      expect(mockFetch).not.toHaveBeenCalled();
     } finally {
       if (originalKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = originalKey;
@@ -728,102 +701,44 @@ describe("evaluateWithLlm", () => {
     }
   });
 
-  it("embedded agent + modelAuth both fail → env var succeeds", async () => {
-    const agent = mockEmbeddedAgentError("Runtime down");
-    const auth = mockModelAuthRejecting("Auth broken");
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "env-key";
-    setAnthropicFetchResponse(VALID_EVAL_JSON);
-
-    try {
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { agent, modelAuth: auth },
-        logger,
-        { provider: "anthropic" },
-      );
-
-      expect(result.adjustedScore).toBe(42);
-      expect(agent.runEmbeddedPiAgent).toHaveBeenCalled();
-      expect(auth.resolveApiKeyForProvider).toHaveBeenCalled();
-      expect(mockFetch).toHaveBeenCalled();
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("modelAuth rejects at eval time (not registration) → graceful fallthrough", async () => {
-    const auth = {
-      resolveApiKeyForProvider: vi
-        .fn()
-        .mockRejectedValue(new Error("Auth provider not initialized")),
-    };
-    const logger = mockLogger();
-
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    try {
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { modelAuth: auth },
-        logger,
-        { provider: "anthropic" },
-      );
-
-      expect(result.reasoning).toContain("Stub evaluation");
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Auth provider not initialized"),
-      );
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
-  });
-
-  it("unknown provider → skips modelAuth, falls through", async () => {
+  it("unknown provider → skips modelAuth, falls through to stub", async () => {
     const auth = mockModelAuth("key");
     const logger = mockLogger();
 
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score(),
+      { modelAuth: auth },
+      logger,
+      { provider: "custom-llm" },
+    );
 
-    try {
-      const result = await evaluateWithLlm(
-        "exec",
-        { command: "test" },
-        [],
-        tier1Score(),
-        { modelAuth: auth },
-        logger,
-        { provider: "custom-llm" },
-      );
+    // modelAuth skipped because provider has no endpoint
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.reasoning).toContain("Stub evaluation");
+  });
 
-      // modelAuth skipped because provider has no endpoint
-      expect(mockFetch).not.toHaveBeenCalled();
-      expect(result.reasoning).toContain("Stub evaluation");
-    } finally {
-      if (originalKey !== undefined) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      } else {
-        delete process.env.ANTHROPIC_API_KEY;
-      }
-    }
+  it("returns stub.tags from the tier-1 score when all eval paths fail", async () => {
+    const auth = mockModelAuthRejecting("Not resolved");
+    const logger = mockLogger();
+
+    const result = await evaluateWithLlm(
+      "exec",
+      { command: "test" },
+      [],
+      tier1Score({ score: 55, tags: ["network"] }),
+      { modelAuth: auth },
+      logger,
+      { provider: "anthropic" },
+    );
+
+    expect(result.adjustedScore).toBe(55);
+    expect(result.reasoning).toContain("Stub evaluation");
+    expect(result.confidence).toBe("low");
+    expect(result.tags).toEqual(["network"]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("All eval paths exhausted"));
   });
 });
 

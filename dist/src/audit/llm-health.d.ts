@@ -6,7 +6,7 @@
  * LLM call site in ClawLens (risk evaluator + session summarizer).
  * The class itself is exported for tests and future scoped usage.
  */
-export type LlmFailureReason = "billing" | "rate_limit" | "provider" | "other";
+export type LlmFailureReason = "no_key" | "billing" | "rate_limit" | "provider" | "other";
 export type LlmHealthStatus = "ok" | "degraded" | "down";
 export interface LlmHealthAttempt {
     timestamp: number;

@@ -7,6 +7,64 @@ import { AttentionStore, isValidAckScope } from "./attention-state.js";
 import { describeRule, KNOWN_TOOL_NAMES } from "./categories.js";
 import { getDashboardHtml } from "./html.js";
 import { getSessionSummary } from "./session-summary.js";
+// ── SSE connection registry (issue #77) ─────────────────────────────────
+//
+// On plugin hot reload, OpenClaw re-invokes register() with a fresh api
+// object. Any /api/stream SSE clients that were already connected survive
+// the swap — their req.close never fires — so their 'entry' listeners stay
+// attached to the process-singleton AuditLogger. Each reload leaks another
+// batch of listeners until Node logs MaxListenersExceededWarning, which is
+// both noisy and a signal that we're sitting on stale response objects.
+//
+// The registry below tracks every active connection so the plugin's
+// register() hook can drain them deterministically before binding the new
+// registry's routes. It is keyed off a globalThis Symbol.for slot rather
+// than a module-local variable because the AuditLogger itself is globalThis-
+// keyed — under OpenClaw's embedded-agent fallback the plugin module can be
+// re-imported with a fresh module scope, and a module-local registry would
+// give us one registry per import while the AuditLogger lives across all of
+// them.
+const SSE_REGISTRY_SYMBOL = Symbol.for("clawlens.sse.activeConnections");
+function getSseRegistry() {
+    const g = globalThis;
+    let registry = g[SSE_REGISTRY_SYMBOL];
+    if (!registry) {
+        registry = new Set();
+        g[SSE_REGISTRY_SYMBOL] = registry;
+    }
+    return registry;
+}
+// Eager-initialise the slot at module import so tests (and the plugin
+// lifecycle hook) can rely on Object.getOwnPropertySymbols(globalThis)
+// surfacing it without first opening a stream.
+getSseRegistry();
+/**
+ * Tear down every active SSE connection: removes each per-connection 'entry'
+ * listener from the AuditLogger it was attached to, ends each response if
+ * not already ended, and clears the global registry. Returns the count of
+ * connections drained.
+ *
+ * Called from the plugin's register() at the top of each invocation (so a
+ * hot reload starts from a clean slate) and from the service stop hook.
+ * Idempotent — invoking it on an empty registry returns 0 without throwing.
+ */
+export function tearDownSseConnections() {
+    const registry = getSseRegistry();
+    const drained = registry.size;
+    // Snapshot before iterating — cleanup mutates the registry via its own
+    // Set.delete call, and iterating a Set while it mutates is brittle.
+    for (const conn of [...registry]) {
+        try {
+            conn.cleanup();
+        }
+        catch {
+            // Cleanup of one connection must not block cleanup of others. The
+            // per-connection cleanup is already wrapped in try/catch around res.end
+            // — this outer guard is defence-in-depth against future edits.
+        }
+    }
+    return drained;
+}
 const MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
@@ -366,7 +424,10 @@ export function registerDashboardRoutes(api, deps) {
             if (subPath === "api/stats") {
                 const date = url.searchParams.get("date") || undefined;
                 const entries = deps.auditLogger.readEntries();
-                sendJson(res, computeEnhancedStats(entries, date));
+                // Route layer is where the runtime config lives; computeEnhancedStats
+                // stays config-agnostic by accepting the resolved boolean. Issue #76.
+                const llmEnabled = deps.config?.risk?.llmEnabled === true;
+                sendJson(res, computeEnhancedStats(entries, date, llmEnabled));
                 return true;
             }
             if (subPath === "api/fleet-risk-index") {
@@ -597,13 +658,15 @@ export function registerDashboardRoutes(api, deps) {
             if (summaryMatch) {
                 const sessionKey = decodeURIComponent(summaryMatch[1]);
                 const entries = deps.auditLogger.readEntries();
-                const riskConfig = deps.config?.risk ?? {
-                    llmModel: "claude-haiku-4-5-20251001",
-                    llmApiKeyEnv: "ANTHROPIC_API_KEY",
-                };
+                const riskConfig = deps.config?.risk;
+                // Do NOT hardcode llmModel here — that would short-circuit the
+                // `model || DEFAULT_EVAL_MODELS[provider]` fallback in
+                // generateLlmSummary and send a Claude-shaped model name to an
+                // OpenAI-shaped endpoint when the user's OpenClaw provider is openai.
+                // The provider comes from OpenClaw's auth profiles; the model is
+                // derived from that provider's default in v1.0.1 (spec §1 L180).
                 const result = await getSessionSummary(sessionKey, entries, {
-                    llmModel: riskConfig.llmModel,
-                    llmApiKeyEnv: riskConfig.llmApiKeyEnv,
+                    llmEnabled: riskConfig?.llmEnabled === true,
                     modelAuth: deps.modelAuth,
                     provider: deps.provider,
                     agent: deps.agent,
@@ -662,9 +725,38 @@ export function registerDashboardRoutes(api, deps) {
                     res.write(`data: ${JSON.stringify(mapped)}\n\n`);
                 };
                 deps.auditLogger.on("entry", listener);
-                req.on("close", () => {
-                    deps.auditLogger.off("entry", listener);
-                });
+                // Per-stream cleanup. The `done` flag makes this idempotent across
+                // every teardown path so the listener is removed exactly once even
+                // when (a) req.close fires, then (b) the ended response emits
+                // res.close as a consequence. Same flag protects tearDownSseConnections()
+                // re-entering on top of an in-flight req-close event.
+                const registry = getSseRegistry();
+                let done = false;
+                const connection = {
+                    cleanup: () => {
+                        if (done)
+                            return;
+                        done = true;
+                        deps.auditLogger.off("entry", listener);
+                        registry.delete(connection);
+                        if (!res.writableEnded) {
+                            try {
+                                res.end();
+                            }
+                            catch {
+                                // Response already torn down by the transport — nothing to do.
+                            }
+                        }
+                    },
+                };
+                registry.add(connection);
+                // Bind to all three teardown paths. Don't rely on req.close alone:
+                // Tailscale-proxied / HTTP/2 / aborted connections may not fire it
+                // reliably. The `done` flag in cleanup() handles whichever fires first.
+                const cleanup = connection.cleanup;
+                req.once("close", cleanup);
+                req.once("error", cleanup);
+                res.once("close", cleanup);
                 return true;
             }
             // ── Static files from React SPA build ───────

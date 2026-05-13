@@ -104,7 +104,18 @@ export class AuditLogger extends EventEmitter {
 
     const dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      // POSIX: owner-only directory. On Windows the mode arg is a no-op and
+      // ACLs inherit from the parent — README documents this caveat.
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    } else {
+      // Best-effort tighten of a pre-existing directory. chmod is a no-op on
+      // Windows; swallow EPERM/EACCES on restricted filesystems instead of
+      // failing plugin init.
+      try {
+        fs.chmodSync(dir, 0o700);
+      } catch {
+        // non-POSIX or non-writable — fall through
+      }
     }
 
     // Read existing file to recover last hash for chain continuity
@@ -120,9 +131,15 @@ export class AuditLogger extends EventEmitter {
           this.lastHash = "0";
         }
       }
+      // Best-effort tighten of a pre-existing file.
+      try {
+        fs.chmodSync(this.filePath, 0o600);
+      } catch {
+        // non-POSIX or non-writable — fall through
+      }
     }
 
-    this.writeStream = fs.createWriteStream(this.filePath, { flags: "a" });
+    this.writeStream = fs.createWriteStream(this.filePath, { flags: "a", mode: 0o600 });
   }
 
   private computeHash(entryWithoutHash: Omit<AuditEntry, "hash">): string {
@@ -134,7 +151,7 @@ export class AuditLogger extends EventEmitter {
     if (!this.writeStream) {
       const dir = path.dirname(this.filePath);
       if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
       // Recover last hash from existing file
       if (this.lastHash === "0" && fs.existsSync(this.filePath)) {
@@ -149,7 +166,7 @@ export class AuditLogger extends EventEmitter {
           }
         }
       }
-      this.writeStream = fs.createWriteStream(this.filePath, { flags: "a" });
+      this.writeStream = fs.createWriteStream(this.filePath, { flags: "a", mode: 0o600 });
     }
   }
 

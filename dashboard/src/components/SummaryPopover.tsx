@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import type { SummaryKind } from "../lib/types";
 
 interface Props {
   /** Resolved summary text. `null` while idle/closed; `null` + loading=true while fetching. */
@@ -10,6 +11,13 @@ interface Props {
   agentId: string;
   /** Card owns popoverOpen state; popover signals dismiss intent up. */
   onClose: () => void;
+  /**
+   * Backend-decided source of truth (issue #76). When "degraded_no_key" the
+   * popover renders the summary text in a warn color so the operator notices
+   * the actionable reason instead of reading it as a routine summary. Other
+   * kinds render with the existing primary-text styling.
+   */
+  summaryKind?: SummaryKind;
 }
 
 const WORD_STAGGER_MS = 30;
@@ -25,7 +33,13 @@ const WORD_STAGGER_MS = 30;
  * fetchSummary call. Dismiss intents (Esc, outside-click) are signalled via
  * onClose. Tests render this component in isolation with controlled props.
  */
-export default function SummaryPopover({ summary, loading, agentId, onClose }: Props) {
+export default function SummaryPopover({
+  summary,
+  loading,
+  agentId,
+  onClose,
+  summaryKind,
+}: Props) {
   const popRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -59,12 +73,18 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
   // displaying the skeleton until summary lands).
   const showBody = summary !== null && !loading;
 
+  // Degraded body uses the same amber warn color the card chip uses so the
+  // two surfaces read as the same "no provider key" signal at a glance.
+  const isDegraded = summaryKind === "degraded_no_key";
+  const bodyColor = isDegraded ? "var(--cl-risk-medium)" : "var(--cl-text-primary)";
+
   return (
     <div
       ref={popRef}
       role="tooltip"
       aria-live="polite"
       data-cl-summary-popover
+      data-cl-summary-kind={summaryKind}
       className="cl-card"
       style={{
         position: "absolute",
@@ -118,7 +138,7 @@ export default function SummaryPopover({ summary, loading, agentId, onClose }: P
         <div
           data-cl-summary-body
           style={{
-            color: "var(--cl-text-primary)",
+            color: bodyColor,
             fontFamily: "var(--cl-font-sans)",
             fontSize: 13,
             lineHeight: 1.5,

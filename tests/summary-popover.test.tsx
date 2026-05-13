@@ -25,6 +25,7 @@ function renderPopover(props: {
   loading: boolean;
   agentId?: string;
   onClose?: () => void;
+  summaryKind?: "llm" | "template" | "disabled" | "degraded_no_key";
 }) {
   return render(
     <MemoryRouter>
@@ -33,6 +34,7 @@ function renderPopover(props: {
         loading={props.loading}
         agentId={props.agentId ?? "alpha"}
         onClose={props.onClose ?? (() => {})}
+        summaryKind={props.summaryKind}
       />
     </MemoryRouter>,
   );
@@ -263,6 +265,93 @@ describe("SummaryPopover — Open agent footer click-through", () => {
     const button = container.querySelector<HTMLButtonElement>("button[data-cl-summary-pop-link]")!;
     fireEvent.click(button);
     expect(navigateSpy).toHaveBeenCalledWith("/agent/alpha%2Fbeta");
+  });
+});
+
+describe("SummaryPopover — summaryKind branching (issue #76)", () => {
+  // Backend-decided source of truth: the popover branches on `summaryKind`
+  // from the API response. No frontend re-derivation from llmHealth or
+  // config — the same /api/session/:key/summary response that powers the
+  // body decides which icon/style to render alongside it.
+  const DEGRADED_TEXT =
+    "LLM evaluation is enabled, but OpenClaw could not resolve a provider key. ClawLens is using deterministic scoring only.";
+  const DISABLED_TEXT =
+    "Enable LLM evaluation in plugins.entries.clawlens.config.risk.llmEnabled to generate summaries.";
+
+  it("renders the summary body with a [data-cl-summary-kind=degraded_no_key] marker when summaryKind='degraded_no_key'", () => {
+    const { container } = renderPopover({
+      summary: DEGRADED_TEXT,
+      loading: false,
+      summaryKind: "degraded_no_key",
+    });
+    const pop = container.querySelector<HTMLElement>("[data-cl-summary-popover]");
+    expect(pop).not.toBeNull();
+    expect(pop!.getAttribute("data-cl-summary-kind")).toBe("degraded_no_key");
+    const body = container.querySelector<HTMLElement>("[data-cl-summary-body]");
+    expect(body).not.toBeNull();
+    expect(body!.textContent ?? "").toContain("OpenClaw could not resolve a provider key");
+  });
+
+  it("renders a warn-tinted body when summaryKind='degraded_no_key'", () => {
+    // Distinct from the normal text-primary color so the operator's eye is
+    // drawn to the actionable degraded reason rather than reading it as a
+    // routine summary.
+    const { container } = renderPopover({
+      summary: DEGRADED_TEXT,
+      loading: false,
+      summaryKind: "degraded_no_key",
+    });
+    const body = container.querySelector<HTMLElement>("[data-cl-summary-body]");
+    expect(body).not.toBeNull();
+    expect(body!.style.color).toContain("var(--cl-risk-medium)");
+  });
+
+  it("renders the disabled message body unchanged when summaryKind='disabled' (matches existing behavior)", () => {
+    const { container } = renderPopover({
+      summary: DISABLED_TEXT,
+      loading: false,
+      summaryKind: "disabled",
+    });
+    const pop = container.querySelector<HTMLElement>("[data-cl-summary-popover]");
+    expect(pop!.getAttribute("data-cl-summary-kind")).toBe("disabled");
+    const body = container.querySelector<HTMLElement>("[data-cl-summary-body]");
+    expect(body).not.toBeNull();
+    expect(body!.textContent ?? "").toContain("risk.llmEnabled");
+  });
+
+  it("renders normally when summaryKind='llm' — primary text color, no warn tinting", () => {
+    const { container } = renderPopover({
+      summary: "Triaging customer disputes and resolving routine refunds.",
+      loading: false,
+      summaryKind: "llm",
+    });
+    const body = container.querySelector<HTMLElement>("[data-cl-summary-body]");
+    expect(body).not.toBeNull();
+    expect(body!.style.color).toContain("var(--cl-text-primary)");
+    expect(body!.style.color).not.toContain("--cl-risk-medium");
+  });
+
+  it("renders normally when summaryKind='template' (the deterministic-fallback content path)", () => {
+    const { container } = renderPopover({
+      summary: "Ran 5 actions. Avg risk: 20.",
+      loading: false,
+      summaryKind: "template",
+    });
+    const body = container.querySelector<HTMLElement>("[data-cl-summary-body]");
+    expect(body).not.toBeNull();
+    expect(body!.style.color).toContain("var(--cl-text-primary)");
+    expect(body!.style.color).not.toContain("--cl-risk-medium");
+  });
+
+  it("renders normally when summaryKind is undefined (back-compat for older callers)", () => {
+    const { container } = renderPopover({
+      summary: "A summary without an explicit kind field.",
+      loading: false,
+    });
+    const body = container.querySelector<HTMLElement>("[data-cl-summary-body]");
+    expect(body).not.toBeNull();
+    expect(body!.style.color).toContain("var(--cl-text-primary)");
+    expect(body!.style.color).not.toContain("--cl-risk-medium");
   });
 });
 

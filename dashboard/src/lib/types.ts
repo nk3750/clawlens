@@ -12,8 +12,21 @@ export type RiskTier = "low" | "medium" | "high" | "critical";
 export type RiskPosture = "calm" | "elevated" | "high" | "critical";
 
 // Mirror of src/audit/llm-health.ts. Keep in sync.
-export type LlmFailureReason = "billing" | "rate_limit" | "provider" | "other";
+export type LlmFailureReason = "no_key" | "billing" | "rate_limit" | "provider" | "other";
 export type LlmHealthStatus = "ok" | "degraded" | "down";
+
+// Mirror of src/dashboard/session-summary.ts::SummaryKind. Keep in sync.
+export type SummaryKind = "llm" | "template" | "disabled" | "degraded_no_key";
+
+// Mirror of src/dashboard/session-summary.ts::SessionSummary. Surfaced
+// through /api/session/:key/summary; useSessionSummary consumes this.
+export interface SessionSummaryResponse {
+  sessionKey: string;
+  summary: string;
+  generatedAt: string;
+  isLlmGenerated: boolean;
+  summaryKind: SummaryKind;
+}
 
 export interface LlmHealthSnapshot {
   recentAttempts: number;
@@ -57,6 +70,13 @@ export interface StatsResponse {
   /** Max timestamp across all audit entries. undefined when log is empty. */
   lastEntryTimestamp?: string;
   llmHealth: LlmHealthSnapshot;
+  /**
+   * Issue #76: fleet-wide signal for "config asks for LLM but no provider
+   * key resolved". Non-null only when config.risk.llmEnabled is true AND
+   * the last failure reason on llmHealthTracker was a no_key. The card
+   * footer renders a "⚠ no key" chip when this is set.
+   */
+  llmDegraded: "no_key" | null;
 }
 
 export interface InterventionEntry {

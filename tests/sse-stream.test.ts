@@ -81,18 +81,23 @@ function makeApi(): {
 
 function makeReq(url: string): IncomingMessage {
   const handlers: Record<string, Array<(...a: unknown[]) => void>> = {};
+  const add = (evt: string, fn: (...a: unknown[]) => void) => {
+    let list = handlers[evt];
+    if (!list) {
+      list = [];
+      handlers[evt] = list;
+    }
+    list.push(fn);
+  };
   return {
     url,
     method: "GET",
     headers: { host: "localhost:18789" },
-    on: (evt: string, fn: (...a: unknown[]) => void) => {
-      let list = handlers[evt];
-      if (!list) {
-        list = [];
-        handlers[evt] = list;
-      }
-      list.push(fn);
-    },
+    on: add,
+    // .once is needed by the SSE handler's per-stream cleanup wiring (issue
+    // #77) — these tests never actually fire close/error so the listener
+    // never runs; the contract is just that the call exists.
+    once: add,
     // biome-ignore lint/suspicious/noExplicitAny: minimal IncomingMessage shape
   } as any as IncomingMessage;
 }
@@ -116,6 +121,9 @@ function makeRes(): { res: ServerResponse; out: CapturedResponse } {
     end: (chunk?: string) => {
       if (chunk) out.body += chunk;
     },
+    // .once needed by the SSE handler's cleanup wiring (issue #77). These
+    // tests don't fire res.close, so the listener never runs.
+    once: () => {},
     // biome-ignore lint/suspicious/noExplicitAny: minimal ServerResponse shape
   } as any as ServerResponse;
   return { res, out };

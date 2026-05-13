@@ -1033,7 +1033,7 @@ export function checkHealth(entries) {
 }
 // ── New v2 functions ────────────────────────────────────
 /** Enhanced stats with risk breakdown and active counts. Accepts optional date for past-day view. */
-export function computeEnhancedStats(entries, date) {
+export function computeEnhancedStats(entries, date, llmEnabled) {
     const isPastDay = date !== undefined;
     const windowEntries = isPastDay ? getDayEntries(entries, date) : getTodayEntries(entries);
     const windowDecisions = windowEntries.filter(isDecisionEntry);
@@ -1166,6 +1166,12 @@ export function computeEnhancedStats(entries, date) {
             lastEntryTimestamp = e.timestamp;
         }
     }
+    const llmHealth = llmHealthTracker.snapshot();
+    // Fleet-stats degraded badge. Same llmHealthTracker the per-call summary
+    // path writes into, so the indicator stays consistent with the popover
+    // copy. Gated on llmEnabled because a no_key failure recorded while the
+    // gate was off is not actionable until the operator opts in.
+    const llmDegraded = llmEnabled === true && llmHealth.lastFailureReason === "no_key" ? "no_key" : null;
     return {
         total,
         allowed,
@@ -1183,7 +1189,8 @@ export function computeEnhancedStats(entries, date) {
         yesterdayTotal,
         weekAverage,
         lastEntryTimestamp,
-        llmHealth: llmHealthTracker.snapshot(),
+        llmHealth,
+        llmDegraded,
     };
 }
 /**

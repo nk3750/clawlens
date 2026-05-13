@@ -7,7 +7,7 @@
  * The class itself is exported for tests and future scoped usage.
  */
 
-export type LlmFailureReason = "billing" | "rate_limit" | "provider" | "other";
+export type LlmFailureReason = "no_key" | "billing" | "rate_limit" | "provider" | "other";
 export type LlmHealthStatus = "ok" | "degraded" | "down";
 
 export interface LlmHealthAttempt {
@@ -36,6 +36,16 @@ const WINDOW_MS = 15 * 60 * 1000;
  */
 export function classifyError(errMsg?: string): LlmFailureReason {
   if (!errMsg) return "other";
+  // "no_key" must come first: a modelAuth failure that incidentally mentions
+  // a rate-limit number or billing string still needs the operator to add a
+  // key, not wait out a 429 or top up. Call-site strings to match:
+  //   - src/dashboard/session-summary.ts:407 → "modelAuth: no api key"
+  //   - src/risk/llm-evaluator.ts:341         → "modelAuth: no api key"
+  //   - src/risk/llm-evaluator.ts:357 thrown err.message → often
+  //     "modelAuth key resolution failed: ..."
+  if (/modelAuth|no\s+api\s+key|provider\s+key\s+resolution|key\s+resolution/i.test(errMsg)) {
+    return "no_key";
+  }
   // Production messages say "credit balance is too low" — keep the match
   // loose enough to cover that plus explicit "billing" references.
   if (/credit balance|billing/i.test(errMsg)) return "billing";

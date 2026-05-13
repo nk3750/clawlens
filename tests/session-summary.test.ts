@@ -5,6 +5,8 @@ import {
   clearSummaryCache,
   getSessionSummary,
   getSummaryCacheSize,
+  SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE,
+  SUMMARY_LLM_DISABLED_MESSAGE,
 } from "../src/dashboard/session-summary";
 
 function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
@@ -34,8 +36,8 @@ describe("getSessionSummary", () => {
       entry({ sessionKey: "s1", decision: "allow", timestamp: "2026-03-29T10:00:00Z" }),
     ];
     const result = await getSessionSummary("nonexistent", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -44,7 +46,7 @@ describe("getSessionSummary", () => {
     }
   });
 
-  it("generates template summary for <3 entries", async () => {
+  it("generates template summary for <3 entries when LLM enabled", async () => {
     const entries = [
       entry({
         sessionKey: "s1",
@@ -63,8 +65,8 @@ describe("getSessionSummary", () => {
     ];
 
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -87,8 +89,8 @@ describe("getSessionSummary", () => {
     ];
 
     const config = {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     };
 
     const first = await getSessionSummary("s1", entries, config);
@@ -117,10 +119,9 @@ describe("getSessionSummary", () => {
     ];
 
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
-    // Template now says "Ran N actions" — matches stat strip format
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary.summary).toMatch(/Ran 2 action/);
@@ -128,8 +129,13 @@ describe("getSessionSummary", () => {
     }
   });
 
-  it("falls back to template when no API key and no modelAuth", async () => {
-    // 3+ entries would try LLM, but no key → falls back to template
+  it("surfaces degraded_no_key when LLM enabled but no modelAuth and no agent (issue #76)", async () => {
+    // Pre-#76 this path silently returned a template "Ran N actions" summary,
+    // even though the underlying signal was the same as "modelAuth resolved
+    // nothing" — both lead through `if (!apiKey)` and both record
+    // "modelAuth: no api key" on the health tracker. The architectural fix
+    // for #76 is that this path now surfaces the spec §8 L723 degraded
+    // sentence so the operator gets an actionable reason.
     const entries = Array.from({ length: 5 }, (_, i) =>
       entry({
         sessionKey: "s1",
@@ -140,27 +146,19 @@ describe("getSessionSummary", () => {
       }),
     );
 
-    // Ensure no API key is set
-    const original = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.summary.summary).toMatch(/Ran \d+ action/);
-    }
-
-    // Restore
-    if (original !== undefined) {
-      process.env.ANTHROPIC_API_KEY = original;
+      expect(result.summary.summaryKind).toBe("degraded_no_key");
+      expect(result.summary.summary).toBe(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE);
+      expect(result.summary.isLlmGenerated).toBe(false);
     }
   });
 
-  it("attempts modelAuth before env var for summary generation", async () => {
-    // modelAuth rejects, no env var → should still fall back to template
+  it("attempts modelAuth before falling back to template (no env-var fallback)", async () => {
     const entries = Array.from({ length: 5 }, (_, i) =>
       entry({
         sessionKey: "s1",
@@ -171,8 +169,9 @@ describe("getSessionSummary", () => {
       }),
     );
 
+    // Even with an env key set, summary generation must not use it.
     const original = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "should-not-be-used";
 
     const modelAuth = {
       resolveApiKeyForProvider: vi.fn().mockRejectedValue(new Error("Not resolved")),
@@ -180,18 +179,16 @@ describe("getSessionSummary", () => {
     };
 
     const result = await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       modelAuth,
       provider: "anthropic",
     });
 
-    // modelAuth was attempted
     expect(modelAuth.resolveApiKeyForProvider).toHaveBeenCalledWith({
       provider: "anthropic",
       cfg: undefined,
     });
-    // Falls back to template
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary.summary).toMatch(/Ran \d+ action/);
@@ -199,6 +196,8 @@ describe("getSessionSummary", () => {
 
     if (original !== undefined) {
       process.env.ANTHROPIC_API_KEY = original;
+    } else {
+      delete process.env.ANTHROPIC_API_KEY;
     }
   });
 
@@ -214,8 +213,8 @@ describe("getSessionSummary", () => {
     ];
 
     await getSessionSummary("s1", entries, {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
     });
     expect(getSummaryCacheSize()).toBe(1);
 
@@ -224,22 +223,94 @@ describe("getSessionSummary", () => {
   });
 });
 
+describe("getSessionSummary — risk.llmEnabled=false gate (v1.0.1)", () => {
+  beforeEach(() => {
+    clearSummaryCache();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns the disabled-message summary when llmEnabled is false (3+ entries)", async () => {
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    const result = await getSessionSummary("s1", entries, {
+      llmEnabled: false,
+      llmModel: "claude-haiku-4-5-20251001",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summary).toBe(SUMMARY_LLM_DISABLED_MESSAGE);
+    expect(result.summary.isLlmGenerated).toBe(false);
+  });
+
+  it("never calls modelAuth or fetch when llmEnabled=false", async () => {
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+
+    const modelAuth = {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: "real-key",
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await getSessionSummary("s1", entries, {
+        llmEnabled: false,
+        llmModel: "claude-haiku-4-5-20251001",
+        modelAuth,
+        provider: "anthropic",
+      });
+
+      expect(modelAuth.resolveApiKeyForProvider).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("references the exact config key in the disabled message", () => {
+    // Lock the spec wording §8 L716-720 verbatim so future copy drifts are
+    // caught by the test suite.
+    expect(SUMMARY_LLM_DISABLED_MESSAGE).toContain("risk.llmEnabled");
+    expect(SUMMARY_LLM_DISABLED_MESSAGE).toContain("plugins.entries.clawlens.config");
+  });
+});
+
 // #25: capSummaryLength is content-shaped (sentence-terminator preferred) with
-// a 400-char panic stop. Direct unit tests on the helper lock the new shape;
-// the LLM-integration tests below pin the soft prompt + token-headroom changes
-// that motivated the rewrite.
+// a 400-char panic stop.
 describe("capSummaryLength", () => {
   it("returns full raw when input ends in a sentence terminator (≥40 chars)", () => {
-    // Last terminator is at the very end → slice up to and including it gives
-    // the full string. Most common LLM-output shape post-fix.
     const input = "Agent monitors remote host with heartbeat probes.";
     expect(input.length).toBeGreaterThanOrEqual(40);
     expect(capSummaryLength(input)).toBe(input);
   });
 
   it("returns full raw for multi-sentence input under the panic cap", () => {
-    // Last terminator dominates → full string returned. Hybrid display in the
-    // popover scrolls if needed; no truncation here.
     const input = "Sentence one ends here. Then a second clean sentence follows.";
     expect(input.length).toBeGreaterThanOrEqual(40);
     expect(input.length).toBeLessThan(400);
@@ -247,9 +318,6 @@ describe("capSummaryLength", () => {
   });
 
   it("caps at the last terminator that yields ≥40 chars when raw runs past the panic budget", () => {
-    // Long tail with no further terminators forces a content-shaped cap at the
-    // last `.` in the leading prose. Ellipsis is NOT appended — the sentence
-    // terminator already signals completion.
     const head = "First. This is the second sentence here.";
     expect(head.length).toBeGreaterThanOrEqual(40);
     const input = `${head} ${"x".repeat(500)}`;
@@ -258,17 +326,12 @@ describe("capSummaryLength", () => {
   });
 
   it("returns full raw for short input ending in '.' (no leading-fragment truncation, no '…')", () => {
-    // The 40-char fragment guard exists to avoid truncating 'Yes. Done — agent
-    // monitors X' to just 'Yes.'. For inputs already <40 chars, both branches
-    // return raw unchanged.
     const input = "Yes. Done.";
     expect(input.length).toBeLessThan(40);
     expect(capSummaryLength(input)).toBe(input);
   });
 
   it("does NOT truncate to a leading <40-char fragment when the only terminator is too early", () => {
-    // 'Yes.' produces a 4-char slice → guard rejects it. Falls through to
-    // passthrough since raw (under 400) is below the panic cap.
     const input =
       "Yes. The agent is currently monitoring remote hosts and emitting heartbeat traffic";
     expect(input.length).toBeLessThan(400);
@@ -277,9 +340,6 @@ describe("capSummaryLength", () => {
   });
 
   it("falls back to word-boundary char-cap with '…' when no terminator AND raw exceeds 400", () => {
-    // True LLM misbehavior — long stream of words with no terminators. Last
-    // resort: the legacy word-boundary slice plus the '…' marker so the user
-    // sees the truncation explicitly.
     const word = "lorem ";
     const input = word.repeat(80).trimEnd(); // 479 chars, spaces, no terminators
     expect(input.length).toBeGreaterThan(400);
@@ -291,9 +351,8 @@ describe("capSummaryLength", () => {
 });
 
 // LLM-integration tests: stub fetch so we can assert the system prompt + user
-// prompt content + max_tokens that the summary path sends upstream. These pin
-// the soft-target wording + 100-token headroom from #25 so a regression back
-// to "MAXIMUM 140 characters" / 48 tokens fails CI.
+// prompt content + max_tokens that the summary path sends upstream when
+// llmEnabled=true + modelAuth resolves a key.
 describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   function manyEntries(): AuditEntry[] {
     return Array.from({ length: 5 }, (_, i) =>
@@ -307,16 +366,23 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
     );
   }
 
-  let originalKey: string | undefined;
   let mockFetch: ReturnType<typeof vi.fn>;
   let lastUserMessage = "";
   let lastSystemPrompt = "";
   let lastMaxTokens: number | undefined;
 
+  function modelAuthOk(key: string) {
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: key,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
   beforeEach(() => {
     clearSummaryCache();
-    originalKey = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "test-key";
 
     lastUserMessage = "";
     lastSystemPrompt = "";
@@ -326,11 +392,6 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   });
 
   afterEach(() => {
-    if (originalKey === undefined) {
-      delete process.env.ANTHROPIC_API_KEY;
-    } else {
-      process.env.ANTHROPIC_API_KEY = originalKey;
-    }
     vi.unstubAllGlobals();
   });
 
@@ -355,9 +416,10 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
     setLlmResponse(clean);
 
     const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       provider: "anthropic",
+      modelAuth: modelAuthOk("test-key"),
     });
 
     expect(result.ok).toBe(true);
@@ -367,35 +429,279 @@ describe("getSessionSummary — LLM prompt + token shape (#25)", () => {
   });
 
   it("uses a soft length target in the system prompt — no MAXIMUM 140 hard-cap language", async () => {
-    // Locks the #25 fix: "MAXIMUM 140 characters" is what caused the popover to
-    // land mid-thought. The new framing prefers a complete sentence over a hard
-    // count.
     setLlmResponse("ok");
 
     await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       provider: "anthropic",
+      modelAuth: modelAuthOk("test-key"),
     });
 
     expect(lastSystemPrompt).toContain("complete thought");
     expect(lastSystemPrompt).toContain("200 characters");
     expect(lastSystemPrompt).not.toMatch(/MAXIMUM\s+140/);
-    // User-side persona framing is preserved.
     expect(lastUserMessage).toContain("one present-tense sentence");
   });
 
   it("requests max_tokens=100 on the direct-API call (room for a long-but-complete sentence)", async () => {
-    // Bumped from 48 → 100 in #25 so the LLM has headroom to land on a sentence
-    // terminator instead of truncating mid-word against the upstream cap.
     setLlmResponse("ok");
 
     await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
       llmModel: "claude-haiku-4-5-20251001",
-      llmApiKeyEnv: "ANTHROPIC_API_KEY",
       provider: "anthropic",
+      modelAuth: modelAuthOk("test-key"),
     });
 
     expect(lastMaxTokens).toBe(100);
+  });
+});
+
+// Spec §1 L180: opt-in LLM evaluation must use OpenClaw's current configured
+// provider/model through OpenClaw's runtime. Hardcoding a model name in the
+// route layer breaks non-Anthropic setups (e.g. provider=openai gets sent a
+// Claude model name and the upstream API rejects the request). The model
+// should be derived from `DEFAULT_EVAL_MODELS[provider]` when no explicit
+// override is configured.
+describe("getSessionSummary — provider-aware model defaults", () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+  let lastUrl = "";
+  let lastModel: string | undefined;
+
+  function modelAuthOk(key: string) {
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: key,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
+  function manyEntries(): AuditEntry[] {
+    return Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    clearSummaryCache();
+    lastUrl = "";
+    lastModel = undefined;
+    mockFetch = vi.fn(async (url: string, opts: { body: string }) => {
+      lastUrl = url;
+      const body = JSON.parse(opts.body);
+      lastModel = body.model;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+      } as Response;
+    });
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses gpt-4o-mini when provider=openai and no model override is supplied", async () => {
+    // Reproduces the route-layer regression: hardcoding the Anthropic model
+    // here would send "claude-haiku-..." to the OpenAI endpoint and fail.
+    await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      llmModel: "",
+      provider: "openai",
+      modelAuth: modelAuthOk("openai-key"),
+    });
+
+    expect(lastUrl).toBe("https://api.openai.com/v1/chat/completions");
+    expect(lastModel).toBe("gpt-4o-mini");
+  });
+
+  it("uses claude-haiku-4-5-20251001 when provider=anthropic and no model override is supplied", async () => {
+    // Build a fresh fetch mock for anthropic's response shape.
+    mockFetch.mockImplementation(async (url: string, opts: { body: string }) => {
+      lastUrl = url;
+      const body = JSON.parse(opts.body);
+      lastModel = body.model;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ content: [{ type: "text", text: "ok" }] }),
+      } as Response;
+    });
+
+    await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      llmModel: "",
+      provider: "anthropic",
+      modelAuth: modelAuthOk("anth-key"),
+    });
+
+    expect(lastUrl).toBe("https://api.anthropic.com/v1/messages");
+    expect(lastModel).toBe("claude-haiku-4-5-20251001");
+  });
+});
+
+// Issue #76: summaryKind 4-state matrix lock. The four operator-facing states
+// must not be conflated — each carries a different message body and a
+// different UI affordance. "disabled" (LLM gate is off) and "degraded_no_key"
+// (LLM gate is on but modelAuth resolved nothing) in particular use different
+// sentences for different intent. The "no_key" signal MUST come from this
+// per-call generateLlmSummary path, not the global llmHealthTracker snapshot,
+// because the global tracker is fleet-wide and 15-min rolling — the wrong
+// granularity for a per-summary decision.
+describe("getSessionSummary — summaryKind 4-state matrix (issue #76)", () => {
+  function manyEntries(): AuditEntry[] {
+    return Array.from({ length: 5 }, (_, i) =>
+      entry({
+        sessionKey: "s1",
+        decision: "allow",
+        toolName: "exec",
+        riskScore: 20,
+        timestamp: `2026-03-29T10:${String(i).padStart(2, "0")}:00Z`,
+      }),
+    );
+  }
+
+  function modelAuthOk(key: string) {
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: key,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
+  function modelAuthNoKey() {
+    // modelAuth resolves cleanly but with no apiKey — the exact production
+    // path that motivates this fix. resolveApiKeyForProvider never throws;
+    // generateLlmSummary inspects `auth?.apiKey` and falls through with
+    // `apiKey === undefined`.
+    return {
+      resolveApiKeyForProvider: vi.fn().mockResolvedValue({
+        apiKey: undefined,
+        source: "test",
+        mode: "api-key" as const,
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    clearSummaryCache();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-29T14:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("[state=disabled] llmEnabled=false → summaryKind='disabled' + the enable-LLM message (>=3 entries)", async () => {
+    const result = await getSessionSummary("s1", manyEntries(), { llmEnabled: false });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("disabled");
+    expect(result.summary.summary).toBe(SUMMARY_LLM_DISABLED_MESSAGE);
+    expect(result.summary.isLlmGenerated).toBe(false);
+  });
+
+  it("[state=degraded_no_key] llmEnabled=true + modelAuth resolved no key → summaryKind='degraded_no_key' + spec §8 L723 sentence", async () => {
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthNoKey(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("degraded_no_key");
+    expect(result.summary.summary).toBe(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE);
+    expect(result.summary.isLlmGenerated).toBe(false);
+    // Spec §8 L723 content lock.
+    expect(result.summary.summary).toContain("OpenClaw could not resolve a provider key");
+    expect(result.summary.summary).toContain("deterministic scoring only");
+  });
+
+  it("[state=degraded_no_key] does NOT fall through to a template 'Ran N actions' summary — the per-call signal wins", async () => {
+    // Regression guard for the architectural fix. Before #76, a no-key
+    // failure inside generateLlmSummary returned null and the caller fell
+    // through to templateSummary, masking the real reason the LLM didn't
+    // run. The discriminated union must surface "no_key" so the operator
+    // sees the actionable degraded sentence.
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthNoKey(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summary).not.toMatch(/Ran \d+ action/);
+    expect(result.summary.summary).not.toMatch(/Avg risk:/);
+  });
+
+  it("[state=llm] llmEnabled=true + modelAuth resolves a key + >=3 entries → summaryKind='llm' + isLlmGenerated=true", async () => {
+    const mockFetch = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({
+            content: [{ type: "text", text: "Agent runs scheduled health checks." }],
+          }),
+        }) as Response,
+    );
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await getSessionSummary("s1", manyEntries(), {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthOk("real-key"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("llm");
+    expect(result.summary.isLlmGenerated).toBe(true);
+    expect(result.summary.summary).toBe("Agent runs scheduled health checks.");
+  });
+
+  it("[state=template] llmEnabled=true + key resolves + <3 decisions → summaryKind='template' + isLlmGenerated=false", async () => {
+    const twoEntries = manyEntries().slice(0, 2);
+    const result = await getSessionSummary("s1", twoEntries, {
+      llmEnabled: true,
+      provider: "anthropic",
+      modelAuth: modelAuthOk("real-key"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary.summaryKind).toBe("template");
+    expect(result.summary.isLlmGenerated).toBe(false);
+    expect(result.summary.summary).toMatch(/Ran \d+ action/);
+  });
+});
+
+// Spec §8 L723 content lock — the degraded sentence is what the operator
+// reads when their LLM is gated on but no provider key is wired. Keep this
+// string stable; UI surfaces (popover + SessionHeader) test against the same
+// constant.
+describe("SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE", () => {
+  it("calls out OpenClaw provider-key resolution + deterministic-only fallback", () => {
+    expect(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE).toContain("LLM evaluation is enabled");
+    expect(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE).toContain(
+      "OpenClaw could not resolve a provider key",
+    );
+    expect(SUMMARY_LLM_DEGRADED_NO_KEY_MESSAGE).toContain("deterministic scoring only");
   });
 });

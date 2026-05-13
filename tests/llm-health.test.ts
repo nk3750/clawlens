@@ -23,6 +23,29 @@ describe("classifyError", () => {
     expect(classifyError("")).toBe("other");
     expect(classifyError("connection reset")).toBe("other");
   });
+
+  // Issue #76: per-call signal for "modelAuth could not resolve a provider
+  // key". The two exact call-site strings are:
+  //   - src/dashboard/session-summary.ts:407 → "modelAuth: no api key"
+  //   - src/risk/llm-evaluator.ts:341         → "modelAuth: no api key"
+  // src/risk/llm-evaluator.ts:357 also passes the thrown err.message from
+  // resolveApiKeyForProvider, whose error often contains "key resolution".
+  it("recognises 'no_key' failures from modelAuth signals", () => {
+    expect(classifyError("modelAuth: no api key")).toBe("no_key");
+    expect(classifyError("modelAuth key resolution failed: timeout")).toBe("no_key");
+    expect(classifyError("No API Key configured")).toBe("no_key");
+    expect(classifyError("provider key resolution returned nothing")).toBe("no_key");
+  });
+
+  it("classifies 'no_key' BEFORE billing/rate_limit when one message contains both signals", () => {
+    // A modelAuth failure that happens to mention 429 or billing must still
+    // classify as no_key — the operator fix is "add a key", not "wait out a
+    // rate limit" or "top up billing".
+    expect(classifyError("modelAuth: no api key (request was rate-limited with 429)")).toBe(
+      "no_key",
+    );
+    expect(classifyError("no api key — credit balance is too low")).toBe("no_key");
+  });
 });
 
 describe("LlmHealthTracker", () => {

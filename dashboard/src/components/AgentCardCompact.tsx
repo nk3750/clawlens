@@ -28,15 +28,32 @@ interface Props {
   /** 1 by default; bump to 2 when the parent detects a first-character collision
    *  among rendered fleet agents (agent-grid-polish §2(c)). */
   avatarLetterCount?: 1 | 2;
+  /**
+   * Issue #76: derived once at the page level from `stats.llmDegraded ===
+   * "no_key"` and passed down so every card stays consistent without re-
+   * fetching stats per card. Toggles the "⚠ no key" footer chip next to
+   * the summarize button.
+   */
+  llmNoKey?: boolean;
 }
 
-export default function AgentCard({ agent, needsAttention, avatarLetterCount = 1 }: Props) {
+export default function AgentCard({
+  agent,
+  needsAttention,
+  avatarLetterCount = 1,
+  llmNoKey = false,
+}: Props) {
   const isActive = agent.status === "active";
   const hasActivity = agent.todayToolCalls > 0;
   const attentionFlag = needsAttention ?? agent.needsAttention;
   const triggerLabel = parseTriggerLabel(agent.currentContext, agent.mode, agent.schedule);
   const sessionKey = agent.lastSessionKey ?? agent.currentSession?.sessionKey ?? null;
-  const { summary, loading: summaryLoading, generate: fetchSummary } = useSessionSummary(sessionKey ?? "");
+  const {
+    summary,
+    summaryKind,
+    loading: summaryLoading,
+    generate: fetchSummary,
+  } = useSessionSummary(sessionKey ?? "");
   const tier = worstMeaningfulTier(agent.todayRiskMix);
   const [popoverOpen, setPopoverOpen] = useState(false);
 
@@ -200,12 +217,40 @@ export default function AgentCard({ agent, needsAttention, avatarLetterCount = 1
             </span>
           </>
         )}
+        {hasActivity && llmNoKey && (
+          // Issue #76: fleet-level "no provider key" indicator. Sits in the
+          // same footer row, immediately to the left of the summarize button.
+          // ml-auto pushes the chip + summarize cluster to the card's right
+          // edge so it never collides with count · time on the left.
+          <span
+            data-cl-llm-no-key
+            className="ml-auto shrink-0"
+            style={{
+              color: "var(--cl-risk-medium)",
+              fontFamily: "var(--cl-font-mono)",
+              fontFeatureSettings: "normal",
+              fontSize: 12,
+            }}
+            aria-label="No provider key — LLM evaluation degraded"
+            title="LLM evaluation is enabled but OpenClaw could not resolve a provider key"
+          >
+            ⚠ no key
+          </span>
+        )}
         {hasActivity && sessionKey && (
           // position: relative anchors SummaryPopover's `position: absolute`
           // to the trigger column, not the whole card row. Without this the
           // popover would anchor to the outer card <Link> and slip out of
           // alignment whenever the bottom row's flex layout shifts.
-          <span className="ml-auto shrink-0" style={{ position: "relative" }}>
+          //
+          // ml-auto applies only when the no-key chip isn't already pushing
+          // the cluster right — that way summarize follows the chip naturally
+          // via the parent's gap-2 spacing instead of fighting it for the
+          // auto-margin slot.
+          <span
+            className={llmNoKey ? "shrink-0" : "ml-auto shrink-0"}
+            style={{ position: "relative" }}
+          >
             <button
               type="button"
               className="cl-ai-shine"
@@ -241,6 +286,7 @@ export default function AgentCard({ agent, needsAttention, avatarLetterCount = 1
             {popoverOpen && (
               <SummaryPopover
                 summary={summary}
+                summaryKind={summaryKind}
                 loading={summaryLoading}
                 agentId={agent.id}
                 onClose={() => setPopoverOpen(false)}
