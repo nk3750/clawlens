@@ -4,7 +4,7 @@ import { exportToCSV, exportToJSON } from "./src/audit/exporter.js";
 import { getAuditLogger } from "./src/audit/logger.js";
 import { resolveConfig } from "./src/config.js";
 import { AttentionStore } from "./src/dashboard/attention-state.js";
-import { registerDashboardRoutes } from "./src/dashboard/routes.js";
+import { registerDashboardRoutes, tearDownSseConnections } from "./src/dashboard/routes.js";
 import { GuardrailStore } from "./src/guardrails/store.js";
 import { createAfterToolCallHandler } from "./src/hooks/after-tool-call.js";
 import { createBeforeToolCallHandler, } from "./src/hooks/before-tool-call.js";
@@ -34,15 +34,23 @@ export function buildInitConfigSnippet(opts) {
     }, null, 2);
 }
 // ── Module-level state ──────────────────────────────────────────────────────
-// Components + handler created once. Hooks registered per unique api object
-// (gateway dispatches tool calls through different api contexts).
+// Components + handler created once. Hooks + service + CLI + dashboard routes
+// register per unique api object: OpenClaw dispatches through different api
+// contexts and, on hot reload, swaps in a fresh api representing the new
+// plugin registry. Pre-#77 a module-lifetime _serviceRegistered boolean
+// gated the service/CLI/dashboard registrations, which meant hot reloads
+// got "Plugin registered" but never "Service started" and /plugins/clawlens
+// returned 404. The WeakSets below replace that gate with per-api tracking
+// so each fresh registry gets a clean bind, and `replaceExisting: true` on
+// registerHttpRoute lets the gateway swap the dashboard handler safely.
 let _handlerDeps;
 let _attentionStore;
 let _pendingApprovalStore;
 let _savedSearchesStore;
-let _serviceRegistered = false;
 // biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
 const _hookedApis = new WeakSet();
+// biome-ignore lint/suspicious/noExplicitAny: OpenClaw api identity tracking
+const _registeredApis = new WeakSet();
 // biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
 let _beforeToolCallHandler;
 // biome-ignore lint/suspicious/noExplicitAny: handler refs shared across api registrations
@@ -57,6 +65,13 @@ const plugin = {
     description: "Agent observability and guardrails for OpenClaw — risk scoring, audit trails, dashboard",
     version: "1.0.1",
     register(api) {
+        // Hot-reload safety: drain any SSE listeners still attached to the
+        // process-singleton AuditLogger from the prior plugin registry. Without
+        // this, a sustained reload pattern (toggle config N times) accumulates
+        // leaked 'entry' listeners on the AuditLogger EventEmitter until Node
+        // logs MaxListenersExceededWarning. Idempotent — first call sees an
+        // empty registry and returns 0. Issue #77.
+        tearDownSseConnections();
         const config = resolveConfig(api.pluginConfig, api.resolvePath);
         // Resolve runtime from OpenClaw plugin API (may differ per session)
         const runtime = api.runtime;
@@ -115,10 +130,17 @@ const plugin = {
             _sessionEndHandler = createSessionEndHandler(auditLogger, config, api.logger, sessionContext);
         }
         else {
-            // Subsequent init: refresh session-scoped state on shared deps
+            // Subsequent init (hot reload). Pre-#77 only refreshed runtime/
+            // provider/logger; config + openClawConfig stayed pointing at the
+            // first-call snapshot, so toggling risk.llmEnabled etc. had no effect
+            // on running handlers until a full gateway restart. Refresh both
+            // here — handler closures hold _handlerDeps by reference, so live
+            // mutation propagates to them without re-creating the handler.
             _handlerDeps.runtime = typedRuntime;
             _handlerDeps.provider = provider;
             _handlerDeps.logger = api.logger;
+            _handlerDeps.config = config;
+            _handlerDeps.openClawConfig = api.config;
         }
         // ── Register hooks on each unique api object ──
         // Gateway dispatches tool calls through different api contexts;
@@ -130,8 +152,12 @@ const plugin = {
             api.on("session_end", _sessionEndHandler);
             _hookedApis.add(api);
         }
-        // ── One-time registrations: service, CLI, dashboard ──
-        if (!_serviceRegistered) {
+        // ── Per-api registrations: service, CLI, dashboard ──
+        // Each fresh api (e.g. a new registry after OpenClaw hot reload) gets
+        // its own service start hook + CLI commands + dashboard route binding.
+        // Within one api, the WeakSet keeps us from double-binding (which the
+        // gateway tolerates today but is wasted work and risks future churn).
+        if (!_registeredApis.has(api)) {
             const { auditLogger, evalCache, guardrailStore: grStore } = _handlerDeps;
             api.registerService({
                 id: "clawlens",
@@ -212,7 +238,7 @@ const plugin = {
                 pendingApprovalStore: _pendingApprovalStore,
                 savedSearchesStore: _savedSearchesStore,
             });
-            _serviceRegistered = true;
+            _registeredApis.add(api);
         }
         api.logger.info("ClawLens: Plugin registered");
     },
