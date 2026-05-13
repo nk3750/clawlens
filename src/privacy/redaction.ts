@@ -54,7 +54,13 @@ const TOKEN_PREFIX_REGEXES: RegExp[] = [
 const SENSITIVE_QUERY_RE =
   /([?&])(token|api[-_]?key|access[-_]?token|refresh[-_]?token|client[-_]?secret|secret|password|passwd|key)=([^&#\s]+)/gi;
 
-const URL_USERINFO_RE = /^(https?:\/\/)([^/@?#]+)@/i;
+// Issue #75: must catch URL userinfo when the URL is embedded in a free-form
+// command string (e.g. `curl https://user:pass@api.example.com`), not just when
+// it appears at the start. Drop the `^` anchor, add the `g` flag so multiple
+// embedded URLs in one string are all redacted, and add `\s` to the negated
+// userinfo class so the match cannot span whitespace and mis-redact an
+// email-like substring sitting after a benign URL.
+const URL_USERINFO_RE = /(https?:\/\/)([^/@?#\s]+)@/gi;
 
 const AUTHORIZATION_HEADER_RE =
   /(Authorization:\s*)(?:(Bearer|Basic|Digest|Token|API-Key|Apikey)\s+)?(\S+)/gi;

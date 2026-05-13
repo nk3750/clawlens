@@ -179,6 +179,39 @@ describe("redactString — token prefixes in free text", () => {
   });
 });
 
+describe("redactString — embedded URL userinfo (issue #75)", () => {
+  it("redacts URL userinfo embedded in a command string", () => {
+    expect(redactString("curl https://user:pass@api.example.com/v1")).toBe(
+      "curl https://<redacted:url-credential>@api.example.com/v1",
+    );
+    expect(redactString("GET https://admin:secret@example.com/api then continue")).toContain(
+      "<redacted:url-credential>",
+    );
+  });
+
+  it("redacts multiple URL userinfo occurrences in one string", () => {
+    const out = redactString("curl https://a:1@x.com && curl https://b:2@y.com");
+    expect(out).not.toContain("a:1");
+    expect(out).not.toContain("b:2");
+    expect((out.match(/<redacted:url-credential>/g) || []).length).toBe(2);
+  });
+
+  it("preserves the existing start-of-string match (regression guard)", () => {
+    expect(redactString("https://user:pass@api.example.com/v1")).toBe(
+      "https://<redacted:url-credential>@api.example.com/v1",
+    );
+  });
+
+  it("does not match across whitespace (\\s guard in userinfo class)", () => {
+    // Without the \s guard, `[^/@?#]+` would greedily span the space and
+    // mis-redact an email-like substring as URL userinfo.
+    const input = "text https://api.example.com path then user@example.com more";
+    const out = redactString(input);
+    expect(out).toBe(input);
+    expect(out).not.toContain("<redacted:url-credential>");
+  });
+});
+
 describe("redactUrl", () => {
   it("removes userinfo from URL", () => {
     const input = "https://user:pass@api.example.com/v1/resource";
