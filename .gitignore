@@ -32,3 +32,10 @@ venv/
 # Playwright MCP per-session snapshots + ad-hoc screenshots from review walks
 .playwright-mcp/
 *-review.png
+
+# Release smoke artifacts (npm pack tarballs, walkthrough screenshots) — these
+# regenerate every release cycle and the Obsidian Git vault-backup will sweep
+# them in if left lying around. Keep them out of history.
+nk3750-openclaw-clawlens-*.tgz
+*-smoke-*.png
+v[0-9]*.[0-9]*.[0-9]*-*.png
