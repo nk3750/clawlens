@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/assets/clawlens-logo.jpeg" alt="ClawLens" width="120"><br>
+  <img src="https://raw.githubusercontent.com/nk3750/clawlens/main/docs/assets/clawlens-logo.jpeg" alt="ClawLens" width="120"><br>
   ClawLens
 </h1>
 
@@ -21,7 +21,7 @@ Use it when your agents can run shell commands, edit files, call external APIs, 
 
 <p align="center">
   <a href="https://youtu.be/AKzhw5GWw5I">
-    <img src="docs/assets/clawlens-product-demo-poster.jpg" alt="Watch the ClawLens product demo" width="900">
+    <img src="https://raw.githubusercontent.com/nk3750/clawlens/main/docs/assets/clawlens-thumbnail.png" alt="Watch the ClawLens product demo" width="900">
   </a><br>
   <sub><a href="https://youtu.be/AKzhw5GWw5I">Watch the 2-minute product demo</a></sub>
 </p>
@@ -81,7 +81,9 @@ Agents often take many small actions before the one that matters. ClawLens gives
 | Add LLM context | Optional LLM risk evaluation and session summaries when `risk.llmEnabled=true`, using redacted tool-call metadata. |
 
 <p align="center">
-  <img src="docs/assets/clawlens-homepage.png" alt="ClawLens dashboard" width="900">
+  <a href="https://raw.githubusercontent.com/nk3750/clawlens/main/docs/assets/clawlens-homepage.png" target="_self">
+    <img src="https://raw.githubusercontent.com/nk3750/clawlens/main/docs/assets/clawlens-homepage.png" alt="ClawLens dashboard" width="900">
+  </a>
 </p>
 
 ---
@@ -110,7 +112,9 @@ Guardrails are rules you create from real activity.
 Rules can match specific commands, paths, URLs, tools, agents, or broader patterns. They can apply to one agent or the whole fleet.
 
 <p align="center">
-  <img src="docs/assets/clawlens-guardrail-add.png" alt="Create a ClawLens guardrail" width="900">
+  <a href="https://raw.githubusercontent.com/nk3750/clawlens/main/docs/assets/clawlens-guardrail-add.png" target="_self">
+    <img src="https://raw.githubusercontent.com/nk3750/clawlens/main/docs/assets/clawlens-guardrail-add.png" alt="Create a ClawLens guardrail" width="900">
+  </a>
 </p>
 
 ---
