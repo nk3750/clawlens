@@ -75,7 +75,7 @@ Agents often take many small actions before the one that matters. ClawLens gives
 | Need | ClawLens gives you |
 |---|---|
 | Know what happened | A local JSONL audit log plus live dashboard views for agents, sessions, and individual tool calls. |
-| Spot risky behavior | Deterministic risk scores and tags for destructive commands, external network access, sensitive paths, remote operations, model manipulation, and repeated attempts. |
+| Spot risky behavior | Deterministic risk scores and tags for destructive commands, external network access, remote operations, sensitive system paths, credential access, and persistence. |
 | Respond quickly | Guardrails created from observed actions, scoped to one agent or the whole fleet. |
 | Review later | Hash-chained audit entries that make later edits, deletes, or reordering detectable. |
 | Add LLM context | Optional LLM risk evaluation and session summaries when `risk.llmEnabled=true`, using redacted tool-call metadata. |
