@@ -255,3 +255,7 @@ PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). All changes need tests, and
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+<sub>Built by <a href="https://www.neelabhbuilds.com">Neelabh Kumar</a> — AI engineer and builder.</sub>
