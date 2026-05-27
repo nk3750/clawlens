@@ -258,4 +258,4 @@ MIT. See [LICENSE](LICENSE).
 
 ---
 
-<sub>Built by <a href="https://www.neelabhbuilds.com">Neelabh Kumar</a> — AI engineer and agent builder.</sub>
+<sub>Built by <a href="https://www.neelabhbuilds.com">Neelabh Kumar</a> — builder.</sub>
