@@ -8,7 +8,7 @@ export function createAfterToolCallHandler(auditLogger: AuditLogger) {
       timestamp: new Date().toISOString(),
       toolName: event.toolName,
       toolCallId: event.toolCallId,
-      executionResult: event.result ? "success" : "failure",
+      executionResult: event.error ? "failure" : "success",
       agentId: ctx?.agentId as string | undefined,
       sessionKey: sessionKey !== "default" ? sessionKey : undefined,
     });

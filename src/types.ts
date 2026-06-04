@@ -127,6 +127,7 @@ export interface AfterToolCallEvent {
   toolName: string;
   params: Record<string, unknown>;
   result: unknown;
+  error?: unknown;
   runId?: string;
   toolCallId?: string;
 }

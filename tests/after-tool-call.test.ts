@@ -76,17 +76,45 @@ describe("createAfterToolCallHandler", () => {
     expect(call.sessionKey).toBeUndefined();
   });
 
-  it("records executionResult: 'failure' when result is falsy (null)", () => {
+  it("records executionResult: 'failure' when event.error is set", () => {
     const handler = createAfterToolCallHandler(auditLogger as unknown as AuditLogger);
 
-    handler(makeEvent({ result: null, toolCallId: "tc-after-004" }), {
-      agentId: "worker-7",
-      sessionKey: "session-xyz",
-    });
+    handler(
+      makeEvent({
+        result: "[exec-guard] blocked: crontab",
+        error: "exec-guard rejected: crontab",
+        toolCallId: "tc-after-004",
+      }),
+      { agentId: "worker-7", sessionKey: "session-xyz" },
+    );
 
     const call = auditLogger.logResult.mock.calls[0][0];
     expect(call.executionResult).toBe("failure");
     expect(call.agentId).toBe("worker-7");
     expect(call.sessionKey).toBe("session-xyz");
+  });
+
+  it("records executionResult: 'success' for silent-success commands (empty result, no error)", () => {
+    const handler = createAfterToolCallHandler(auditLogger as unknown as AuditLogger);
+
+    handler(makeEvent({ result: "", toolCallId: "tc-after-005" }), {
+      agentId: "worker-7",
+      sessionKey: "session-xyz",
+    });
+
+    const call = auditLogger.logResult.mock.calls[0][0];
+    expect(call.executionResult).toBe("success");
+  });
+
+  it("records executionResult: 'success' when result is falsy (null) but no error is set", () => {
+    const handler = createAfterToolCallHandler(auditLogger as unknown as AuditLogger);
+
+    handler(makeEvent({ result: null, toolCallId: "tc-after-006" }), {
+      agentId: "worker-7",
+      sessionKey: "session-xyz",
+    });
+
+    const call = auditLogger.logResult.mock.calls[0][0];
+    expect(call.executionResult).toBe("success");
   });
 });
